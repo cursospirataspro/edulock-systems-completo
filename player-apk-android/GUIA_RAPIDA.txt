@@ -1,0 +1,199 @@
+🎓 EDULOCK Player - APK Android
+═════════════════════════════════════════════════════════════════════════════
+
+📱 GUÍA RÁPIDA: IMPORTAR Y COMPILAR EN ANDROID STUDIO
+═════════════════════════════════════════════════════════════════════════════
+
+✅ REQUISITOS PREVIOS
+─────────────────────────────────────────────────────────────────────────────
+✓ Android Studio instalado (versión 2023.1+)
+✓ SDK Android 13+ (API 34)
+✓ JDK 11 o superior
+✓ Conexión a internet (para descargar dependencias)
+
+═════════════════════════════════════════════════════════════════════════════
+PASO 1: IMPORTAR PROYECTO
+═════════════════════════════════════════════════════════════════════════════
+
+1. Abre Android Studio
+
+2. En el menú principal:
+   File → Open
+   
+3. Navega a:
+   d:\descargas\proyectos hunter 2\reproductor-cursos-master\player-apk-android
+   
+4. Haz clic en "Open"
+   
+5. ESPERA: Android Studio sincronizará Gradle (puede tomar 2-5 minutos)
+   
+6. Verás en la esquina inferior: "Gradle build finished"
+
+═════════════════════════════════════════════════════════════════════════════
+PASO 2: CONFIGURAR DISPOSITIVO
+═════════════════════════════════════════════════════════════════════════════
+
+OPCIÓN A: Dispositivo Físico
+────────────────────────────
+1. Conecta tu teléfono Android vía USB
+2. En el teléfono: Settings → About → tap "Build Number" 7 veces
+3. Settings → Developer Options → USB Debugging → ON
+4. Android Studio detectará automáticamente el dispositivo
+
+OPCIÓN B: Emulador
+──────────────────
+1. En Android Studio: Tools → Device Manager
+2. Create device → selecciona "Pixel 5" (o similar)
+3. Finish
+4. Espera a que se inicie el emulador
+
+═════════════════════════════════════════════════════════════════════════════
+PASO 3: COMPILAR Y EJECUTAR
+═════════════════════════════════════════════════════════════════════════════
+
+1. En Android Studio, en el menú principal:
+   Build → Build Bundle(s) / APK(s) → Build APK(s)
+   
+2. O simplemente presiona: Shift + F10
+   
+3. Se abrirá ventana de selección de dispositivo
+   Selecciona tu dispositivo y haz clic "OK"
+   
+4. ESPERA: La compilación tarda 30-60 segundos la primera vez
+   
+5. ¡LISTO! La app debería instalarse y ejecutarse en el dispositivo
+
+═════════════════════════════════════════════════════════════════════════════
+PASO 4: USAR LA APLICACIÓN
+═════════════════════════════════════════════════════════════════════════════
+
+1. SPLASH SCREEN (3 segundos)
+   → Muestra logo de EDULOCK
+
+2. LOGIN
+   → Correo: tu-email@tudominio.com
+   → Contraseña: tu-contraseña
+   → Botón "Iniciar Sesión"
+   
+3. CATÁLOGO
+   → Lista de cursos disponibles
+   → Tap en un curso para reproducir
+   
+4. REPRODUCTOR
+   → Video con marca de agua
+   → Controles: Play, Pause, Volumen, Pantalla Completa
+   → Anti-screenshot activado (🔒)
+
+═════════════════════════════════════════════════════════════════════════════
+COMPILACIÓN MANUAL (DESDE TERMINAL/CMD)
+═════════════════════════════════════════════════════════════════════════════
+
+Windows (Command Prompt o PowerShell):
+─────────────────────────────────────────
+cd d:\descargas\proyectos hunter 2\reproductor-cursos-master\player-apk-android
+setup-windows.bat
+
+Linux/Mac (Terminal):
+──────────────────────
+cd ~/ruta/al/player-apk-android
+chmod +x setup-linux-mac.sh
+./setup-linux-mac.sh
+
+═════════════════════════════════════════════════════════════════════════════
+GENERACIÓN DE APK PARA DISTRIBUCIÓN
+═════════════════════════════════════════════════════════════════════════════
+
+APK Debug (para testing):
+ Build → Build Bundle(s) / APK(s) → Build APK(s)
+ Archivo: app/build/outputs/apk/debug/app-debug.apk
+ 
+APK Release (producción con firma):
+ Build → Build Bundle(s) / APK(s) → Build APK(s)
+ Selecciona Release
+ Archivo: app/build/outputs/apk/release/app-release.apk
+ 
+Bundle para Google Play:
+ Build → Build Bundle(s) / APK(s) → Build Bundle(s)
+ Archivo: app/build/outputs/bundle/release/app-release.aab
+
+═════════════════════════════════════════════════════════════════════════════
+CAMBIAR URL DEL SERVIDOR
+═════════════════════════════════════════════════════════════════════════════
+
+Si necesitas cambiar la URL del servidor:
+
+1. Abre archivo: app.properties
+2. Cambia la línea:
+   API_BASE_URL=http://localhost:3000/
+   
+   Por tu servidor:
+   API_BASE_URL=https://tu-dominio.com/
+   
+3. Recompila: Shift + F10
+
+═════════════════════════════════════════════════════════════════════════════
+SOLUCIÓN DE PROBLEMAS
+═════════════════════════════════════════════════════════════════════════════
+
+❌ "Gradle sync failed"
+   → Build → Clean Project
+   → Build → Rebuild Project
+   → Si persiste: File → Invalidate Caches → OK
+
+❌ "No devices detected"
+   → Verifica: adb devices
+   → Intenta: adb kill-server && adb start-server
+   → Recarga driver USB en dispositivo
+
+❌ "Installation failed"
+   → Desinstala primero: adb uninstall com.edulock.player
+   → Reintenta compilar
+
+❌ "Video no se reproduce"
+   → Verifica que el servidor Node.js está corriendo
+   → Verifica la URL en app.properties
+   → Revisa logs: adb logcat | grep EDULOCK
+
+═════════════════════════════════════════════════════════════════════════════
+CARACTERÍSTICAS DE SEGURIDAD IMPLEMENTADAS
+═════════════════════════════════════════════════════════════════════════════
+
+✅ FLAG_SECURE (bloquea capturas)
+✅ Anti-grabación de pantalla
+✅ Detección de debugger
+✅ Cifrado de almacenamiento local
+✅ Marca de agua forense
+✅ Monitoreo de seguridad en background
+✅ Obfuscación de código (ProGuard)
+✅ Validación de tokens JWT
+
+═════════════════════════════════════════════════════════════════════════════
+ESTRUCTURA DEL PROYECTO
+═════════════════════════════════════════════════════════════════════════════
+
+player-apk-android/
+├── app/
+│   ├── src/main/
+│   │   ├── java/com/edulock/player/
+│   │   │   ├── api/              → Llamadas al servidor
+│   │   │   ├── security/         → Protecciones de seguridad
+│   │   │   ├── ui/               → Interfaces (Activities)
+│   │   │   ├── utils/            → Herramientas (Logging, Fingerprint)
+│   │   │   └── EdulockApp.kt    → Inicialización
+│   │   ├── res/layout/           → Diseños XML
+│   │   ├── res/values/           → Colores, strings, estilos
+│   │   └── AndroidManifest.xml   → Configuración
+│   └── build.gradle              → Dependencias
+├── build.gradle
+├── settings.gradle
+├── app.properties                → Configuración
+├── README.md                     → Documentación completa
+└── setup-windows.bat / setup-linux-mac.sh → Scripts de setup
+
+═════════════════════════════════════════════════════════════════════════════
+
+📧 Soporte: soporte@edulock.com
+📖 Docs: https://docs.edulock.com
+🐛 Bugs: https://github.com/edulock/player-apk
+
+═════════════════════════════════════════════════════════════════════════════

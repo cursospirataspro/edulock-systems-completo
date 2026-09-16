@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edulock Systems</title>
+    <link rel="icon" type="image/png" href="/logo.png">
+    <style>
+        :root{
+            --c-primary:#c72b24; --c-primary-h:#e0392f;
+            --c-bg:#0d0d0d; --c-surface:#171717; --c-border:#333333;
+            --c-text:#f5f5f5; --c-muted:#9ca3af;
+        }
+        *{margin:0;padding:0;box-sizing:border-box}
+        html,body{height:100%;background:var(--c-bg);font-family:'Segoe UI',Tahoma,sans-serif;color:var(--c-text);overflow:hidden}
+        #stage{position:relative;width:100%;height:100vh;background:#000;display:flex;align-items:center;justify-content:center}
+        video{width:100%;height:100%;object-fit:contain;background:#000}
+        #wm{position:absolute;color:rgba(255,255,255,.22);text-shadow:1px 1px 2px rgba(0,0,0,.8);
+            font:600 13px monospace;letter-spacing:1px;pointer-events:none;z-index:20;white-space:nowrap;user-select:none;
+            transition:top 10s ease-in-out,left 10s ease-in-out}
+        #ov{position:absolute;inset:0;background:#000;z-index:10;display:flex;flex-direction:column;
+            align-items:center;justify-content:center;gap:14px}
+        #ov.hidden{display:none}
+        .spin{width:44px;height:44px;border:3px solid rgba(255,255,255,.12);border-top-color:var(--c-primary);
+            border-radius:50%;animation:s .7s linear infinite}
+        @keyframes s{to{transform:rotate(360deg)}}
+        #ov p{color:var(--c-muted);font-size:.85rem;text-align:center;max-width:80%}
+        #err{color:var(--c-primary-h)!important}
+        img.logo{width:72px;opacity:.9}
+    </style>
+</head>
+<body>
+<div id="stage">
+    <video id="v" playsinline controls controlslist="nodownload noremoteplayback" disablePictureInPicture></video>
+    <div id="wm"></div>
+    <div id="ov">
+        <img class="logo" src="/logo.png" alt="Edulock">
+        <div class="spin"></div>
+        <p id="msg">Descifrando contenido protegido…</p>
+    </div>
+</div>
+
+<script src="/js/edu-player.js"></script>
+<script>
+(function(){
+    const $ = id => document.getElementById(id);
+    const q = new URLSearchParams(location.search);
+    const contentId = q.get('c') || q.get('contentId') || '';
+    const token = q.get('token') || (window.localStorage && localStorage.getItem('edulock_token')) || '';
+
+    function fail(m){ $('msg').textContent = m; $('msg').id='err'; $('msg').style.color='var(--c-primary-h)';
+        $('ov').querySelector('.spin').style.display='none'; }
+    function hexToBytes(h){ const a=new Uint8Array(h.length/2); for(let i=0;i<a.length;i++) a[i]=parseInt(h.substr(i*2,2),16); return a; }
+
+    // Marca de agua en movimiento (forense por comprador)
+    function startWatermark(text){
+        const wm=$('wm'); wm.textContent=text;
+        function move(){ const s=$('stage'); wm.style.top=(Math.random()*(s.clientHeight-40))+'px';
+            wm.style.left=(Math.random()*(s.clientWidth-Math.max(160,text.length*8)))+'px'; }
+        move(); setInterval(move,10000);
+    }
+
+    async function run(){
+        if(!contentId){ return fail('Falta el parámetro de contenido.'); }
+        if(!token){ return fail('No hay sesión. Inicia sesión de nuevo.'); }
+        try{
+            // 1) Clave online por sesión (valida licencia en el servidor)
+            const kr = await fetch('/api/edu/key',{method:'POST',
+                headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+                body:JSON.stringify({contentId})});
+            if(kr.status===403){ return fail('No tienes acceso a este contenido o tu acceso fue revocado.'); }
+            if(!kr.ok){ return fail('No se pudo obtener la clave ('+kr.status+').'); }
+            const k = await kr.json();
+
+            // 2) Descargar el .edu cifrado (proxy desde Bunny)
+            $('msg').textContent='Descargando contenido…';
+            const dr = await fetch('/api/edu/data/'+encodeURIComponent(contentId)+'?token='+encodeURIComponent(token));
+            if(!dr.ok){ return fail('No se pudo descargar el contenido ('+dr.status+').'); }
+            const ab = await dr.arrayBuffer();
+
+            // 3) Descifrar en el navegador (WebCrypto)
+            $('msg').textContent='Descifrando…';
+            const { mp4 } = await EduPlayer.decrypt(ab, hexToBytes(k.cek));
+
+            // 4) Reproducir. NOTA (endurecimiento): en producción migrar a MSE +
+            //    fMP4 para descifrar por trozos y no tener el mp4 entero en memoria.
+            const blob = new Blob([mp4], {type:'video/mp4'});
+            const url = URL.createObjectURL(blob);
+            const v = $('v'); v.src = url;
+            v.oncanplay = () => { $('ov').classList.add('hidden'); };
+            if(k.watermark) startWatermark(k.watermark);
+            v.play().catch(()=>{});
+        }catch(e){ fail('Error: '+(e && e.message ? e.message : e)); }
+    }
+    run();
+})();
+</script>
+</body>
+</html>

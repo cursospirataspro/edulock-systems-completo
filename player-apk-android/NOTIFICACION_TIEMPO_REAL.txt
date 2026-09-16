@@ -1,0 +1,464 @@
+🔔 NOTIFICACIÓN Y SINCRONIZACIÓN EN TIEMPO REAL
+═════════════════════════════════════════════════════════════════════════════
+
+PREGUNTA ESPECÍFICA: 
+"¿Cómo el usuario SABE que fue aprobado?"
+"¿Le llega notificación?"
+"¿Cómo todo está conectado?"
+
+═════════════════════════════════════════════════════════════════════════════
+📲 OPCIÓN 1: POLLING AUTOMÁTICO (IMPLEMENTADO ACTUALMENTE)
+═════════════════════════════════════════════════════════════════════════════
+
+La APK hace una CONSULTA AUTOMÁTICA cada 10 segundos:
+
+[TIMELINE: Usuario espera aprobación]
+
+MINUTO 0:00
+   Usuario → Solicita registro desde APK
+   APK → POST /api/auth/register-request
+   Render → Guarda solicitud (status="pending")
+   APK → Muestra: "⏳ Solicitud pendiente..."
+
+MINUTO 0:10
+   APK → GET /api/auth/check-device?deviceId=XXX
+   Render → "status": "pending" (aún no aprobado)
+   APK → Sigue esperando...
+
+MINUTO 0:20
+   APK → GET /api/auth/check-device?deviceId=XXX
+   Render → "status": "pending"
+   APK → Sigue esperando...
+
+... (más consultas cada 10 segundos)
+
+MINUTO 3:45
+   ► TÚ (ADMIN) APRUEBAS DESDE DASHBOARD ◄
+   
+   [RENDER BACKEND]:
+      POST /api/admin/registrations/req_123/approve
+      {
+          "courseIds": ["course_python", "course_react"],
+          "notes": "Alumno de grupo 2B"
+      }
+   
+   [RESULTADO EN BD]:
+      registration_requests.status = "approved"
+      students.approval_status = "approved"
+      student_courses: asigna 2 cursos
+
+MINUTO 3:55
+   APK → GET /api/auth/check-device?deviceId=XXX
+   Render → ¡¡CAMBIO DETECTADO!!
+            "status": "approved",
+            "email": "usuario@ejemplo.com"
+   
+   [APK DETECTA EL CAMBIO]
+      ✓ Detiene el polling
+      ✓ Muestra pantalla de ÉXITO
+      ✓ Habilita acceso a catálogo
+
+[PANTALLA EN APK - CAMBIO INSTANTÁNEO]
+
+ANTES (Minuto 0:00 - 3:50):
+┌─────────────────────────────┐
+│ ⏳ SOLICITUD PENDIENTE       │
+│                              │
+│ Tu solicitud está siendo     │
+│ revisada por el             │
+│ administrador.              │
+│                              │
+│ Verificando estado...       │
+│ (última actualización: -10s)│
+│                              │
+│    [REINTENTAR AHORA]       │
+│                              │
+│    [CANCELAR]               │
+└─────────────────────────────┘
+
+DESPUÉS (Minuto 3:55 - ¡CAMBIO!):
+┌─────────────────────────────┐
+│ ✅ ¡APROBADO!               │
+│                              │
+│ Tu solicitud ha sido        │
+│ aprobada por el             │
+│ administrador.              │
+│                              │
+│ Tienes acceso a:            │
+│  • Curso Python             │
+│  • Curso React              │
+│                              │
+│     [IR AL CATÁLOGO]        │
+│                              │
+└─────────────────────────────┘
+
+═════════════════════════════════════════════════════════════════════════════
+📲 OPCIÓN 2: PUSH NOTIFICATIONS (OPCIONAL - FUTURO)
+═════════════════════════════════════════════════════════════════════════════
+
+Se puede implementar Firebase Cloud Messaging (FCM):
+
+[CUANDO TÚ APRUEBAS]:
+   Backend de Render:
+      1. Actualiza base de datos
+      2. Prepara mensaje de notificación
+      3. Envía notificación push a dispositivo del usuario
+      4. Incluye: "Tu acceso fue aprobado a 2 cursos"
+
+[EN EL TELÉFONO DEL USUARIO]:
+   Notificación de sistema:
+      ┌─────────────────────────────────┐
+      │ 📬 EDULOCK Player              │
+      │                                 │
+      │ ✅ ¡Acceso aprobado!            │
+      │                                 │
+      │ Tu solicitud fue aprobada.      │
+      │ Toca para ver tus cursos.       │
+      │                                 │
+      │ [Descartar]  [Abrir]            │
+      └─────────────────────────────────┘
+
+[SI TOCA "ABRIR"]:
+   APK abre automáticamente
+   Va directo al catálogo de cursos
+   Muestra: "Curso Python" y "Curso React"
+
+═════════════════════════════════════════════════════════════════════════════
+🔄 SINCRONIZACIÓN EN TIEMPO REAL - ARQUITECTURA
+═════════════════════════════════════════════════════════════════════════════
+
+                    ┌───────────────────────────────┐
+                    │    RENDER (Node.js)           │
+                    │    PostgreSQL                 │
+                    │                               │
+                    │  Tabla: registration_requests │
+                    │  Tabla: students              │
+                    │  Tabla: student_courses       │
+                    │  Tabla: audit_log             │
+                    │                               │
+                    └───────────────────────────────┘
+                              ▲
+                              │
+                    ┌─────────┴──────────┐
+                    │                    │
+               Admin Panel           APK Android
+            (tu dashboard)        (dispositivo del usuario)
+                    │                    │
+                    │ TÚ APRUEBAS        │ APK CONSULTA
+                    └────────────────────┘ CADA 10s
+                              │
+                    ┌─────────▼──────────┐
+                    │                    │
+                 CAMBIO EN BD      GET /check-device
+              ✓ Actualiza status
+              ✓ Asigna cursos      RESPUESTA:
+              ✓ Guarda logs        ✓ Detecta cambio
+                                   ✓ Muestra success
+                                   ✓ Va al catálogo
+
+═════════════════════════════════════════════════════════════════════════════
+📡 ENDPOINTS CLAVE EN RENDER PARA SINCRONIZACIÓN
+═════════════════════════════════════════════════════════════════════════════
+
+API QUE USA LA APK PARA SABER SI FUE APROBADO:
+┌──────────────────────────────────────────────────────────────┐
+│ GET /api/auth/check-device?deviceId=a1b2c3d4e5f6g7h8      │
+│                                                              │
+│ Response (si aún PENDIENTE):                               │
+│ {                                                           │
+│    "status": "pending",                                    │
+│    "email": "usuario@ejemplo.com",                         │
+│    "name": "Juan Pérez",                                   │
+│    "requestId": "req_123456789"                            │
+│ }                                                           │
+│                                                              │
+│ Response (si APROBADO):                                    │
+│ {                                                           │
+│    "status": "approved",                                   │
+│    "email": "usuario@ejemplo.com",                         │
+│    "name": "Juan Pérez",                                   │
+│    "requestId": "req_123456789"                            │
+│ }                                                           │
+│                                                              │
+│ Response (si RECHAZADO):                                   │
+│ {                                                           │
+│    "status": "rejected",                                   │
+│    "email": "usuario@ejemplo.com"                          │
+│ }                                                           │
+│                                                              │
+│ Response (si SUSPENDIDO):                                  │
+│ {                                                           │
+│    "status": "suspended",                                  │
+│    "email": "usuario@ejemplo.com"                          │
+│ }                                                           │
+│                                                              │
+│ Response (si no existe solicitud):                         │
+│ {                                                           │
+│    "status": "none"                                        │
+│ }                                                           │
+└──────────────────────────────────────────────────────────────┘
+
+═════════════════════════════════════════════════════════════════════════════
+🎯 LO QUE SUCEDE AUTOMÁTICAMENTE DESPUÉS DE APROBACIÓN
+═════════════════════════════════════════════════════════════════════════════
+
+[RENDER - BACKEND AUTOMÁTICO]
+
+1. TABLA registration_requests
+   ✓ status = "pending" → "approved"
+   ✓ reviewed_at = ahora
+   ✓ reviewed_by = "admin"
+   ✓ notes = "Alumno de grupo 2B"
+
+2. TABLA students (CREADA O ACTUALIZADA)
+   ✓ id = "uuid_random"
+   ✓ email = "usuario@ejemplo.com"
+   ✓ name = "Juan Pérez"
+   ✓ student_id = "usuario"
+   ✓ active = 1 (true)
+   ✓ approval_status = "approved"
+   ✓ device_id = "a1b2c3d4e5f6g7h8..." (del registro)
+   ✓ created_at = fecha actual
+
+3. TABLA student_courses (ASIGNACIONES)
+   ✓ student_id = (id del estudiante)
+   ✓ course_id = "course_python"
+   ✓ status = "active"
+   ✓ assigned_at = ahora
+   ✓ assigned_by = "admin"
+   
+   ✓ student_id = (id del estudiante)
+   ✓ course_id = "course_react"
+   ✓ status = "active"
+   ✓ assigned_at = ahora
+   ✓ assigned_by = "admin"
+
+4. TABLA audit_log (REGISTRO)
+   ✓ type = "registration_approved"
+   ✓ user_id = (id del admin)
+   ✓ target_id = (id del estudiante)
+   ✓ timestamp = ahora
+   ✓ description = "Admin aprobó solicitud de usuario@ejemplo.com"
+
+[APK - SIGUIENTE CONSULTA]
+
+   GET /api/auth/check-device?deviceId=a1b2c3d4e5f6g7h8
+
+   Backend verifica:
+      SELECT * FROM registration_requests 
+      WHERE device_id = 'a1b2c3d4e5f6g7h8'
+      
+      RESULTADO: status = "approved"
+   
+   Response a APK:
+      { status: "approved", email: "usuario@ejemplo.com" }
+
+   APK recibe y:
+      ✓ Detiene el polling
+      ✓ Borra la pantalla de espera
+      ✓ Muestra: "✅ ¡APROBADO!"
+      ✓ Automáticamente va al LOGIN
+      ✓ Se autentica con su email/contraseña
+      ✓ Backend emite JWT con sus cursos
+      ✓ APK carga CATÁLOGO con 2 cursos
+
+═════════════════════════════════════════════════════════════════════════════
+🔐 SEGURIDAD - ¿CÓMO SABE RENDER QUE ES EL MISMO USUARIO?
+═════════════════════════════════════════════════════════════════════════════
+
+DEVICEID (Identificador Único del Teléfono)
+┌─────────────────────────────────────────────────────────┐
+│ DeviceId = SHA-256 de:                                  │
+│ • Manufacturer (ej: "Samsung")                          │
+│ • Model (ej: "Galaxy A10")                              │
+│ • Device name (ej: "Juan's Phone")                      │
+│ • ANDROID_ID (único del sistema operativo)              │
+│ • MCC/MNC (código de país/operador móvil)               │
+│                                                         │
+│ Resultado: a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5     │
+│                                                         │
+│ Este ID es ÚNICO para ese teléfono específico          │
+│ No se puede duplicar (o es muy difícil)               │
+│                                                         │
+│ VENTAJA: Si el usuario instala la APK en otro         │
+│ teléfono, tendrá otro deviceId diferente y se         │
+│ requiere nueva aprobación                             │
+└─────────────────────────────────────────────────────────┘
+
+FLUJO DE SEGURIDAD:
+   
+   Registro (teléfono Juan):
+      deviceId = a1b2c3d4e5f6g7h8
+      email = juan@ejemplo.com
+      status = pending
+   
+   APK consulta cada 10s:
+      ¿Existe registro con deviceId=a1b2c3d4e5f6g7h8?
+      SÍ → ¿Cuál es el status?
+      Si status=approved → ✅ APROBADO
+   
+   Si alguien intenta en otro teléfono:
+      deviceId = DIFERENTE (ej: z9y8x7w6v5u4t3s2)
+      APK consulta → No encuentra registro
+      Resultado → debe crear NUEVA solicitud
+      admin lo ve como "nuevo dispositivo"
+      admin decide si aprueba o rechaza
+
+═════════════════════════════════════════════════════════════════════════════
+📊 VISTA DE ADMIN - DURANTE EL PROCESO
+═════════════════════════════════════════════════════════════════════════════
+
+[DASHBOARD - TAB "SOLICITUDES EN TIEMPO REAL"]
+
+┌────────────────────────────────────────────────────────────┐
+│ 📋 SOLICITUDES DE REGISTRO - EN TIEMPO REAL              │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│ 🔴 1 NUEVA SOLICITUD (hace 2 minutos)                   │
+│                                                            │
+│    Email: usuario@ejemplo.com                            │
+│    Nombre: Juan Pérez                                    │
+│    Dispositivo: Samsung Galaxy A10                       │
+│    Device ID: a1b2c3d4e5f6g7h8...                       │
+│    IP: 192.168.1.100 (México)                            │
+│    Hora: 28/05/2026 14:32:15                            │
+│    Status: 🟡 PENDIENTE                                  │
+│                                                            │
+│    [Ver Detalles Completos]                              │
+│                                                            │
+│    Asignar Cursos:                                        │
+│    ☑️ Curso Python (id: course_python)                   │
+│    ☑️ Curso React (id: course_react)                     │
+│    ☐ Curso Node.js (id: course_nodejs)                  │
+│    ☐ Curso Vue.js (id: course_vuejs)                    │
+│                                                            │
+│    Notas (opcional):                                      │
+│    [Alumno de grupo 2B - verificado correctamente]       │
+│                                                            │
+│                    [✅ APROBAR]  [❌ RECHAZAR]            │
+│                                                            │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│ ⚪ 2. usuario2@ejemplo.com (hace 5 horas)                │
+│    Status: 🟡 PENDIENTE                                  │
+│    ...                                                    │
+│                                                            │
+│ ⚪ 3. usuario3@ejemplo.com (hace 1 día)                  │
+│    Status: 🟡 PENDIENTE                                  │
+│    ...                                                    │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+
+[TURAS DESPUÉS DE HACER CLIC EN "APROBAR"]
+
+┌────────────────────────────────────────────────────────────┐
+│ ✅ SOLICITUD APROBADA                                     │
+│                                                            │
+│ Email: usuario@ejemplo.com                               │
+│ Cursos asignados:                                        │
+│    ✓ Curso Python                                        │
+│    ✓ Curso React                                         │
+│                                                            │
+│ Usuario puede acceder desde:                             │
+│    → Teléfono: Samsung Galaxy A10                        │
+│    → Device ID: a1b2c3d4e5f6g7h8...                     │
+│                                                            │
+│ Máximo 2 dispositivos más permitidos para esta cuenta   │
+│                                                            │
+│ Aprobado por: admin@tudominio.com                        │
+│ Fecha: 28/05/2026 14:35:22                              │
+│                                                            │
+│ La APK del usuario lo detectará en la próxima           │
+│ consulta (máximo 10 segundos).                          │
+│                                                            │
+│              [OK - VOLVER A LISTA]                        │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+
+═════════════════════════════════════════════════════════════════════════════
+📧 EMAIL AUTOMÁTICO (OPCIONAL)
+═════════════════════════════════════════════════════════════════════════════
+
+Se puede configurar para enviar email automáticamente cuando apruebas:
+
+[EMAIL QUE RECIBE EL USUARIO]
+
+De: noreply@tudominio.com
+Asunto: ✅ Tu solicitud fue APROBADA - EDULOCK Player
+
+┌─────────────────────────────────────────────────────────────┐
+│ ¡Hola Juan Pérez!                                          │
+│                                                            │
+│ 🎉 ¡Tu solicitud fue aprobada!                            │
+│                                                            │
+│ Tienes acceso a los siguientes cursos:                   │
+│  • Curso Python                                          │
+│  • Curso React                                           │
+│                                                            │
+│ Ahora puedes:                                            │
+│  1. Abrir la app EDULOCK Player en tu teléfono         │
+│  2. La app detectará automáticamente tu aprobación      │
+│  3. Accede a tu catálogo de cursos                      │
+│                                                            │
+│ Si no tienes la app, descárgala aquí:                   │
+│ https://play.google.com/store/apps/details?id=...      │
+│                                                            │
+│ Soporte: support@tudominio.com                          │
+│                                                            │
+│ ¡Que disfrutes aprendiendo!                             │
+│ Equipo EDULOCK                                         │
+│                                                            │
+└─────────────────────────────────────────────────────────────┘
+
+═════════════════════════════════════════════════════════════════════════════
+🌍 TODO ESTÁ CONECTADO EN TIEMPO REAL
+═════════════════════════════════════════════════════════════════════════════
+
+         TÚ (ADMIN)                    RENDER                    USUARIO
+            │                            │                          │
+            ├─ Ves solicitud pending ────► BD: status="pending" ──────┐
+            │                            │                          │
+            │                            │ APK consulta cada 10s    │
+            │                            ◄─── GET /check-device ────┤
+            │                            │                          │
+            │  Haces clic APROBAR        │ BD: status="pending"    │
+            ├────────────────────────────► (aún no cambió)          │
+            │                            │                          │
+            │                     UPDATE status="approved"          │
+            │                     ASSIGN cursos                     │
+            │                            │                          │
+            │  ✓ COMPLETADO              │ APK consulta:           │
+            │                            ◄─── GET /check-device ────┤
+            │                            │                          │
+            │                            │ RESPUESTA:              │
+            │                            └──► { status:"approved"} ─┤
+            │                            │                          │
+            │                            │ APK RECIBE Y:            │
+            │                            │  ✓ Muestra éxito        │
+            │                            │  ✓ Va al catálogo       │
+            │                            │  ✓ Carga sus cursos     │
+            │                            │                          │
+            │                            │ USUARIO VE:             │
+            │                            │  ✅ ACCESO APROBADO     │
+            │                            │  📚 Mis cursos:         │
+            │                            │     • Python            │
+            │                            │     • React             │
+            │                            │  [▶ REPRODUCIR]         │
+            │                            │                          │
+            │                            └──► PUEDE EMPEZAR!       │
+
+═════════════════════════════════════════════════════════════════════════════
+⏰ TIEMPOS TÍPICOS
+═════════════════════════════════════════════════════════════════════════════
+
+Registro desde APK:        0.5 segundos (envío + almacenamiento)
+Consulta de estado:        0.3 segundos (query a BD)
+Aprobación desde admin:    1 segundo (click + actualización)
+Detección de cambio (APK): 0-10 segundos (siguiente polling)
+Total (desde registro a acceso): 0-11 segundos
+
+═════════════════════════════════════════════════════════════════════════════
+
+¿Preguntas? Ahora entiendes cómo TODO funciona conectado en tiempo real.
+
+═════════════════════════════════════════════════════════════════════════════

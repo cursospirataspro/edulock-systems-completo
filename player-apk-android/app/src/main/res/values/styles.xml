@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.EdulockPlayer" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <!-- Primary brand color - Edulock Systems palette -->
+        <item name="colorPrimary">@color/accent_violet</item>
+        <item name="colorPrimaryVariant">@color/secondary_dark</item>
+        <!-- Secondary brand color -->
+        <item name="colorSecondary">@color/accent_bright</item>
+        <item name="colorSecondaryVariant">@color/accent_glow</item>
+        <!-- Background -->
+        <item name="android:colorBackground">@color/primary_dark</item>
+        <item name="android:windowBackground">@color/primary_dark</item>
+        <!-- Status bar -->
+        <item name="android:statusBarColor">@color/primary_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <style name="Theme.EdulockPlayer.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowFullscreen">false</item>
+    </style>
+
+    <style name="Theme.EdulockPlayer.FullScreen">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/black</item>
+    </style>
+</resources>

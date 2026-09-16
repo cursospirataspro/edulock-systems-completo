@@ -1,0 +1,797 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edulock Systems</title>
+    <link rel="icon" type="image/png" href="/logo.png">
+    <style>
+        :root {
+            --c-primary: #c72b24;
+            --c-primary-h: #e0392f;
+            --c-bg: #0d0d0d;
+            --c-surface: #171717;
+            --c-border: #333333;
+            --c-text: #f5f5f5;
+            --c-muted: #9ca3af;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; background: var(--c-bg); font-family: "Segoe UI", Tahoma, sans-serif; color: var(--c-text); overflow: hidden; }
+        body { display: flex; flex-direction: column; }
+
+        /* ---- PLAYER ---- */
+        #player-container {
+            flex: 1; position: relative;
+            background: #000;
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden; min-height: 0;
+        }
+        video#hls-video {
+            width: 100%; height: 100%;
+            max-height: 100%; object-fit: contain; background: #000;
+        }
+
+        /* ---- WATERMARK VISIBLE (device fingerprint) ---- */
+        #watermark-overlay {
+            position: absolute;
+            color: rgba(255,255,255,0.22);
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+            font-size: 13px; font-weight: 600;
+            font-family: monospace; letter-spacing: 1px;
+            pointer-events: none; z-index: 20;
+            white-space: nowrap; user-select: none;
+            transition: top 10s ease-in-out, left 10s ease-in-out;
+        }
+        /* ---- WATERMARK FORENSE (invisble al ojo) ---- */
+        #watermark-forensic {
+            position: absolute;
+            color: rgba(200,200,200,0.06);
+            font-size: 8px; font-weight: 400;
+            font-family: monospace; letter-spacing: 0.5px;
+            pointer-events: none; z-index: 19;
+            white-space: nowrap; user-select: none;
+            transition: top 60s ease-in-out, left 60s ease-in-out;
+        }
+
+        /* ---- LOADING / ERROR ---- */
+        #loading-overlay {
+            position: absolute; inset: 0; background: #000; z-index: 10;
+            display: flex; align-items: center; justify-content: center;
+            flex-direction: column; gap: 14px;
+        }
+        #loading-overlay.hidden { display: none; }
+        .spinner {
+            width: 44px; height: 44px;
+            border: 3px solid rgba(255,255,255,0.12);
+            border-top-color: var(--c-primary);
+            border-radius: 50%; animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #loading-overlay p { color: var(--c-muted); font-size: 0.82rem; }
+        #player-error {
+            position: absolute; inset: 0; z-index: 15;
+            display: none; align-items: center; justify-content: center;
+            flex-direction: column; gap: 10px; background: #000;
+        }
+        #player-error p { color: #ff6b6b; font-size: 0.9rem; text-align: center; padding: 0 24px; }
+        #player-error button {
+            margin-top: 8px; padding: 8px 22px;
+            background: var(--c-primary); color: #fff;
+            border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem;
+        }
+
+        /* ---- STATUS BAR (oculta) ---- */
+        #status-bar { display: none; }
+
+        @media (max-width: 480px) {
+            #watermark-overlay { font-size: 10px; }
+        }
+
+        /* Ocultar botón de overflow/descarga de los controles nativos */
+        video::-webkit-media-controls-overflow-button { display: none !important; }
+        video::-webkit-media-controls-fullscreen-button { display: none !important; }
+
+        /* Panel de calidad */
+        #settings-panel {
+            position: absolute; top: 50px; right: 10px; z-index: 26;
+            background: rgba(15,15,15,0.97); border: 1px solid rgba(255,255,255,0.13);
+            border-radius: 10px; width: 160px;
+            backdrop-filter: blur(8px); box-shadow: 0 6px 28px rgba(0,0,0,0.7);
+            display: none; flex-direction: column; overflow: hidden;
+        }
+        #settings-panel.open { display: flex; }
+        .sp-section-title {
+            font-size: 0.65rem; color: var(--c-muted); text-transform: uppercase;
+            letter-spacing: 0.08em; padding: 10px 14px 4px;
+            font-family: 'Segoe UI', sans-serif; user-select: none;
+        }
+        .sp-option {
+            background: none; border: none; color: #ddd;
+            font-size: 0.82rem; padding: 8px 14px; text-align: left;
+            cursor: pointer; display: flex; justify-content: space-between;
+            align-items: center; font-family: 'Segoe UI', sans-serif;
+            transition: background 0.12s;
+        }
+        .sp-option:hover { background: rgba(255,255,255,0.08); }
+        .sp-option.active { color: var(--c-primary); }
+        .sp-option .sp-check { opacity: 0; font-size: 0.75rem; }
+        .sp-option.active .sp-check { opacity: 1; }
+
+        /* Big play button en centro */
+        #big-play {
+            position: absolute; top: 50%; left: 50%; z-index: 21;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.55); border: none;
+            width: 68px; height: 68px; border-radius: 50%;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: background 0.15s, opacity 0.2s;
+            backdrop-filter: blur(4px);
+        }
+        #big-play:hover { background: rgba(199,43,36,0.85); }
+        #big-play svg { width: 32px; height: 32px; fill: #fff; margin-left: 4px; }
+        #big-play.hidden { opacity: 0; pointer-events: none; }
+
+        /* Selector de calidad en esquina superior derecha */
+        #settings-btn {
+            position: absolute; top: 10px; right: 12px; z-index: 25;
+            background: rgba(0,0,0,0.5); border: none;
+            color: #fff; font-size: 1rem;
+            width: 32px; height: 32px; border-radius: 50%;
+            cursor: pointer; display: none; align-items: center; justify-content: center;
+            transition: background 0.15s, transform 0.25s;
+        }
+        #settings-btn:hover { background: rgba(60,60,60,0.9); transform: rotate(30deg); }
+    </style>
+</head>
+<body>
+
+<div id="player-container">
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <p id="loading-msg">Cargando...</p>
+    </div>
+    <div id="player-error">
+        <p id="player-error-msg">No se pudo cargar el video.</p>
+        <button onclick="location.reload()">Reintentar</button>
+    </div>
+    <video id="hls-video" playsinline controls
+        controlslist="nodownload noremoteplayback"
+        disablePictureInPicture></video>
+
+    <div id="watermark-overlay"></div>
+    <div id="watermark-forensic"></div>
+
+    <!-- Reproductor VdoCipher (se muestra solo cuando el video es de VdoCipher) -->
+    <iframe id="vdo-frame" style="display:none;position:absolute;inset:0;width:100%;height:100%;border:none;z-index:5;background:#000;" allowfullscreen allow="autoplay; encrypted-media; fullscreen"></iframe>
+
+    <!-- Engranaje calidad (esquina superior derecha) -->
+    <button id="settings-btn" title="Calidad">&#9881;</button>
+    <div id="settings-panel"></div>
+
+<div id="status-bar">
+    <span id="status-text">Iniciando...</span>
+    <span style="opacity:0.4">●</span>
+</div>
+
+<script src="/js/shaka-player.compiled.js"></script>
+<script src="/js/security.js"></script>
+<script>
+'use strict';
+
+const STATE = {
+    token: null, mediaToken: null, videoId: null,
+    deviceId: null, sessionId: null, hls: null
+};
+
+const API_BASE = window.location.origin;
+const WM_OS_KEY = (() => {
+    const ua = String(navigator.userAgent || '').toLowerCase();
+    const platform = String(navigator.platform || '').toLowerCase();
+    if (/iphone|ipad|ipod/.test(ua) || /ios/.test(platform)) return 'ios';
+    if (/android/.test(ua)) return 'android';
+    if (/mac|macintosh|mac os x/.test(ua) || /mac/.test(platform)) return 'mac';
+    if (/linux/.test(ua) || /linux/.test(platform)) return 'linux';
+    if (/win|windows/.test(ua) || /win/.test(platform)) return 'windows';
+    return 'web';
+})();
+let wmConfig = null;
+let wmStream = null;
+const $  = id => document.getElementById(id);
+const setStatus     = t => $('status-text').textContent = t;
+const showLoading   = m => { $('loading-msg').textContent = m || 'Cargando...'; $('loading-overlay').classList.remove('hidden'); };
+const hideLoading   = () => $('loading-overlay').classList.add('hidden');
+const showError     = m => { hideLoading(); $('player-error-msg').textContent = m; $('player-error').style.display = 'flex'; };
+
+function parseJwt(token) {
+    try { return JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }
+    catch { return {}; }
+}
+let _memoryToken = null;
+function saveSession(t) { _memoryToken = t; try { sessionStorage.setItem('_rt', t); } catch {} }
+function loadSession()  { try { return sessionStorage.getItem('_rt') || _memoryToken; } catch { return _memoryToken; } }
+
+// ================================================================
+//  DEVICE FINGERPRINT — identifica el dispositivo del espectador
+// ================================================================
+function getDeviceFingerprint() {
+    const parts = [];
+    parts.push(navigator.userAgent || '');
+    parts.push(navigator.language || '');
+    parts.push(`${screen.width}x${screen.height}x${screen.colorDepth}`);
+    parts.push(String(new Date().getTimezoneOffset()));
+    parts.push(String(navigator.hardwareConcurrency || 0));
+    // Hash simple sin crypto.subtle (compatible con iframes cross-origin)
+    const str = parts.join('|');
+    let h = 0;
+    for (let i = 0; i < str.length; i++) { h = ((h << 5) - h + str.charCodeAt(i)) | 0; }
+    const n = (h >>> 0);
+    const CHARS = '0123456789abcdefghijklmnopqrstuvwxyz';
+    let id = ''; let rem = n;
+    while (rem > 0) { id = CHARS[rem % 36] + id; rem = Math.floor(rem / 36); }
+    return id.padStart(6, '0').slice(-6);
+}
+
+// ================================================================
+//  INICIO AUTOMÁTICO
+// ================================================================
+window.addEventListener('DOMContentLoaded', async () => {
+    const params    = new URLSearchParams(window.location.search);
+    STATE.videoId   = params.get('v') || params.get('videoId') || null;
+    const sessionId = params.get('session') || params.get('sessionId') || null;
+
+    // Modo session: el token JWT viene en ?auth= (enviado por Electron via protocolo cdp://)
+    const authToken = params.get('auth') || null;
+    if (authToken) {
+        STATE.token = authToken;
+        saveSession(authToken);
+    }
+
+    if (!STATE.videoId && !sessionId) {
+        showError('No se especificó un video. Usa ?v=<videoId> o ?session=<sessionId> en la URL.');
+        return;
+    }
+
+    // Verificar si hay restricción de dominios y si estamos en un iframe permitido
+    try {
+        const embedRes = await fetch(API_BASE + '/api/embed-status');
+        const embedData = await embedRes.json();
+        if (embedData.restricted && window.self === window.top) {
+            showError('Este video solo puede reproducirse desde un sitio autorizado.');
+            return;
+        }
+    } catch {}
+
+    showLoading('Preparando reproducción...');
+
+    // 1. Generar ID de dispositivo
+    // Si se pasó un deviceId por URL (?did=), usarlo directamente para vincular alumno↔device
+    const externalDid = params.get('did');
+    const externalUid = params.get('uid') || ''; // email del alumno enviado por URL
+    if (externalDid && /^[a-zA-Z0-9_-]{4,64}$/.test(externalDid)) {
+        STATE.deviceId = externalDid;
+    } else {
+        try {
+            STATE.deviceId = getDeviceFingerprint();
+        } catch {
+            const r = crypto.getRandomValues(new Uint8Array(4));
+            const n = ((r[0] << 24) | (r[1] << 16) | (r[2] << 8) | r[3]) >>> 0;
+            const C = '0123456789abcdefghijklmnopqrstuvwxyz';
+            let id = ''; let rem = n;
+            while (rem > 0) { id = C[rem % 36] + id; rem = Math.floor(rem / 36); }
+            STATE.deviceId = id.padStart(6, '0').slice(-6);
+        }
+    }
+
+    // 2. Obtener token de sesión (reutilizar si no expiró)
+    const cached = loadSession();
+    if (cached) {
+        const p   = parseJwt(cached);
+        const now = Math.floor(Date.now() / 1000);
+        // Reutilizar solo si el device ID coincide y el token no expiró
+        if (p.exp && p.exp > now + 30 && p.deviceId === STATE.deviceId) {
+            STATE.token = cached;
+        }
+    }
+
+    if (!STATE.token) {
+        showLoading('Preparando reproducción...');
+        try {
+            let autoUrl = API_BASE + '/api/auth/auto?did=' + encodeURIComponent(STATE.deviceId);
+            if (externalUid) autoUrl += '&uid=' + encodeURIComponent(externalUid);
+            const r = await fetch(autoUrl);
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const { token } = await r.json();
+            STATE.token = token;
+            saveSession(token);
+        } catch (err) {
+            showError('Error al iniciar sesión: ' + err.message);
+            return;
+        }
+    }
+
+    if (sessionId) {
+        await loadAndPlayBySession(sessionId);
+    } else {
+        await loadAndPlayVideo(STATE.videoId);
+    }
+});
+
+// ================================================================
+//  CARGA POR SESSION_ID (flujo Electron / web player)
+// ================================================================
+async function loadAndPlayBySession(sessionId) {
+    try {
+        showLoading('Validando sesión...');
+        if (!STATE.token) {
+            showError('Se requiere autenticación para reproducir por sesión.');
+            return;
+        }
+        setStatus('Obteniendo credenciales de video...');
+        const r = await fetch(API_BASE + '/api/playback/session/' + encodeURIComponent(sessionId) + '/video-token', {
+            headers: { Authorization: 'Bearer ' + STATE.token }
+        });
+        if (!r.ok) {
+            const e = await r.json().catch(() => ({}));
+            throw new Error(e.error || 'Error ' + r.status);
+        }
+        const data = await r.json();
+        if (data.otp && data.playbackInfo) {
+            // VdoCipher (video propio — OTP generado por el servidor)
+            hideLoading();
+            startVdoCipher(data.otp, data.playbackInfo);
+        } else if (data.sourceType === 'vdocipher_direct' && data.directUrl) {
+            // VdoCipher link directo (video de cualquier cuenta)
+            hideLoading();
+            startVdoCipherDirect(data.directUrl);
+        } else if (data.manifestUrl) {
+            // Bunny HLS
+            STATE.mediaToken = data.mediaToken || '';
+            STATE.sessionId  = sessionId;
+            STATE.videoId    = data.videoId || null;
+            scheduleTokenRefresh((data.ttl || 3600) * 0.8 * 1000, data.videoId);
+            startHeartbeat();
+            initPlayer(data.manifestUrl, data.mediaToken);
+            startWatermark(data.watermarkText || STATE.deviceId);
+        } else {
+            throw new Error('Respuesta de sesión desconocida');
+        }
+        setStatus('\u25CF Reproduciendo');
+    } catch (err) {
+        console.error('[session-play]', err);
+        showError(err.message || 'No se pudo iniciar la reproducción por sesión');
+    }
+}
+
+// ================================================================
+//  CARGA Y REPRODUCCIÓN
+// ================================================================
+async function loadAndPlayVideo(videoId) {
+    try {
+        // Cerrar sesión anterior si existe
+        if (STATE.sessionId) {
+            stopHeartbeat();
+            sendEnd(STATE.sessionId);
+            STATE.sessionId = null;
+        }
+
+        setStatus('Obteniendo licencia...');
+        const r = await fetch(API_BASE + '/api/video/' + encodeURIComponent(videoId) + '/play', {
+            headers: { Authorization: 'Bearer ' + STATE.token }
+        });
+        if (!r.ok) {
+            const e = await r.json().catch(() => ({}));
+            throw new Error(e.error || 'Error ' + r.status);
+        }
+        const { manifestUrl, mediaToken, watermarkText, ttl, sessionId } = await r.json();
+        STATE.mediaToken = mediaToken;
+        STATE.sessionId  = sessionId || null;
+
+        // Log de entrega
+        fetch(API_BASE + '/api/watermark/log', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ mediaToken })
+        }).catch(() => {});
+
+        scheduleTokenRefresh(ttl * 0.8 * 1000, videoId);
+        startHeartbeat();
+        initPlayer(manifestUrl, mediaToken);
+
+        // watermarkText viene del servidor = STATE.deviceId (ya enviado en el token)
+        // Si CDP_SECURITY está disponible, toma el control del watermark mejorado
+        if (window.CDP_SECURITY) {
+            window._cdpSecActive = true;
+            const emailFromToken = parseJwt(STATE.token).email || parseJwt(STATE.token).studentEmail || '';
+            window.CDP_SECURITY.init({
+                apiBase:      API_BASE,
+                token:        STATE.token,
+                videoId:      STATE.videoId,
+                studentCode:  data.studentCode || null,  // del endpoint /resolve si se usó
+                studentEmail: emailFromToken,
+                sessionId:    STATE.sessionId,
+            });
+        } else {
+            // Fallback: watermark básico existente
+            startWatermark(watermarkText);
+            startForensicWatermark(watermarkText);
+        }
+
+        setStatus('\u25CF ' + STATE.deviceId);
+
+    } catch (err) {
+        console.error('[play]', err);
+        showError(err.message || 'No se pudo iniciar la reproducción');
+    }
+}
+
+// ================================================================
+//  REPRODUCTOR VDOCIPHER LINK DIRECTO (cualquier cuenta)
+// ================================================================
+function startVdoCipherDirect(directUrl) {
+    const video = $('hls-video');
+    if (video) video.style.display = 'none';
+    const settingsBtn = $('settings-btn');
+    if (settingsBtn) settingsBtn.style.display = 'none';
+    if (STATE.hls) { STATE.hls.destroy(); STATE.hls = null; }
+
+    const frame = $('vdo-frame');
+    if (!frame) { showError('Error interno: contenedor VdoCipher no encontrado.'); return; }
+
+    // Cargar la URL directamente en el iframe — sin proxy, sin Referer de nuestro dominio
+    frame.src = directUrl;
+    frame.style.display = 'block';
+    hideLoading();
+    setStatus('\u25CF Reproduciendo');
+}
+
+// ================================================================
+//  REPRODUCTOR VDOCIPHER (iframe via /api/vdo-player para mantener dominio)
+// ================================================================
+function startVdoCipher(otp, playbackInfo) {
+    // Ocultar reproductor HLS
+    const video = $('hls-video');
+    if (video) video.style.display = 'none';
+    const settingsBtn = $('settings-btn');
+    if (settingsBtn) settingsBtn.style.display = 'none';
+
+    // Detener Shaka si estaba activo
+    if (STATE.hls) { STATE.hls.destroy(); STATE.hls = null; }
+
+    const frame = $('vdo-frame');
+    if (!frame) {
+        showError('Error interno: contenedor VdoCipher no encontrado.');
+        return;
+    }
+
+    // Cargar el embed a través del proxy del servidor para que VdoCipher
+    // vea el dominio del servidor (edulocksystemsoficial.dpdns.org)
+    // en lugar de intentar usarse directamente con fetch cross-origin.
+    const token = STATE.token || '';
+    const src = API_BASE + '/api/vdo-player'
+        + '?otp='          + encodeURIComponent(otp)
+        + '&playbackInfo=' + encodeURIComponent(playbackInfo)
+        + '&token='        + encodeURIComponent(token);
+
+    frame.src = src;
+    frame.style.display = 'block';
+    hideLoading();
+    setStatus('\u25CF Reproduciendo');
+}
+
+// ================================================================
+//  REPRODUCTOR SHAKA PLAYER
+// ================================================================
+function initPlayer(manifestUrl, mediaToken) {
+    const video = $('hls-video');
+    if (STATE.hls) { STATE.hls.destroy(); STATE.hls = null; }
+
+    shaka.polyfill.installAll();
+
+    if (!shaka.Player.isBrowserSupported()) {
+        showError('Tu navegador no soporta reproducción. Usa Chrome, Firefox o Edge actualizado.');
+        return;
+    }
+
+    const player = new shaka.Player(video);
+    STATE.hls = player;
+
+    // Auth headers en segmentos y endpoints DRM
+    player.getNetworkingEngine().registerRequestFilter((type, request) => {
+        const url = request.uris[0] || '';
+        if (url.includes('/api/r/') || url.includes('/api/b/') || url.includes('/api/drm/')) {
+            request.headers['Authorization'] = 'Bearer ' + STATE.mediaToken;
+        }
+    });
+
+    // Decodificar manifest envuelto en JSON { d: base64 } (equivalente al SecureLoader de HLS.js)
+    player.getNetworkingEngine().registerResponseFilter((type, response) => {
+        if (type === shaka.net.NetworkingEngine.RequestType.MANIFEST) {
+            try {
+                const text = new TextDecoder().decode(response.data);
+                const j = JSON.parse(text);
+                if (j && j.d) {
+                    const decoded = atob(j.d.replace(/-/g, '+').replace(/_/g, '/'));
+                    response.data = new TextEncoder().encode(decoded).buffer;
+                }
+            } catch {} // no envuelto, ignorar
+        }
+    });
+
+    player.configure({
+        streaming: {
+            bufferingGoal:          30,
+            rebufferingGoal:        5,
+            startAtSegmentBoundary: true,
+        }
+    });
+
+    player.addEventListener('error', (event) => {
+        const error = event.detail;
+        console.error('[shaka] error', error.code, error);
+        if (error.severity === shaka.util.Error.Severity.CRITICAL) {
+            showError('Error de reproducción (' + error.code + '). Recarga la página.');
+        }
+    });
+
+    player.addEventListener('adaptation', () => updateSettingsMenu());
+
+    player.load(manifestUrl).then(() => {
+        hideLoading();
+        buildSettingsMenu(player);
+    }).catch((err) => {
+        console.error('[shaka] load error', err);
+        showError('No se pudo cargar el video: ' + (err.message || String(err)));
+    });
+}
+
+// ================================================================
+//  SETTINGS / CALIDAD (Shaka Player)
+// ================================================================
+function buildSettingsMenu(player) {
+    const btn   = $('settings-btn');
+    const panel = $('settings-panel');
+    const tracks = player.getVariantTracks();
+    if (!tracks || tracks.length < 2) return;
+
+    btn.style.display = 'flex';
+    btn.onclick = (e) => { e.stopPropagation(); panel.classList.toggle('open'); };
+    document.addEventListener('click', () => panel.classList.remove('open'));
+
+    renderSettingsPanel(player);
+}
+
+function renderSettingsPanel(player) {
+    const panel = $('settings-panel');
+    panel.innerHTML = '';
+
+    const qt = document.createElement('div');
+    qt.className = 'sp-section-title';
+    qt.textContent = 'Calidad';
+    panel.appendChild(qt);
+
+    const abrEnabled = player.getConfiguration().abr.enabled;
+    const autoOpt = document.createElement('button');
+    autoOpt.className = 'sp-option' + (abrEnabled ? ' active' : '');
+    autoOpt.innerHTML = 'Auto <span class="sp-check">✓</span>';
+    autoOpt.onclick = (e) => {
+        e.stopPropagation();
+        player.configure({ abr: { enabled: true } });
+        renderSettingsPanel(player);
+    };
+    panel.appendChild(autoOpt);
+
+    const tracks = player.getVariantTracks();
+    const seen = new Set();
+    [...tracks]
+        .filter(t => { if (seen.has(t.height)) return false; seen.add(t.height); return true; })
+        .sort((a, b) => (b.height || 0) - (a.height || 0))
+        .forEach(track => {
+            const lbl = track.height ? track.height + 'p' : Math.round(track.bandwidth / 1000) + ' kbps';
+            const opt = document.createElement('button');
+            const active = player.getVariantTracks().find(t => t.active);
+            const isActive = !abrEnabled && active && active.height === track.height;
+            opt.className = 'sp-option' + (isActive ? ' active' : '');
+            opt.innerHTML = lbl + ' <span class="sp-check">✓</span>';
+            opt.onclick = (e) => {
+                e.stopPropagation();
+                player.configure({ abr: { enabled: false } });
+                player.selectVariantTrack(track, true);
+                renderSettingsPanel(player);
+            };
+            panel.appendChild(opt);
+        });
+}
+
+function updateSettingsMenu() {
+    if (!STATE.hls) return;
+    renderSettingsPanel(STATE.hls);
+}
+
+// ================================================================
+//  REFRESCO DE TOKEN
+// ================================================================
+let refreshTimer = null;
+function scheduleTokenRefresh(delayMs, videoId) {
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(async () => {
+        try {
+            // 1. Renovar token de autenticación
+            const r = await fetch(API_BASE + '/api/auth/auto?did=' + encodeURIComponent(STATE.deviceId));
+            if (!r.ok) throw new Error('auth refresh failed');
+            const { token } = await r.json();
+            STATE.token = token;
+            saveSession(token);
+
+            // 2. Renovar mediaToken sin reiniciar el reproductor
+            const r2 = await fetch(API_BASE + '/api/video/' + encodeURIComponent(videoId) + '/play', {
+                headers: { Authorization: 'Bearer ' + STATE.token }
+            });
+            if (r2.ok) {
+                const data = await r2.json();
+                STATE.mediaToken = data.mediaToken;
+                if (data.sessionId) STATE.sessionId = data.sessionId;
+                // Actualizar token en CDP_SECURITY para que los eventos sigan enviándose
+                if (window.CDP_SECURITY) window.CDP_SECURITY.updateToken(STATE.token);
+                // Reprogramar siguiente refresco
+                scheduleTokenRefresh(data.ttl * 0.8 * 1000, videoId);
+            }
+        } catch(e) { console.warn('[refresh]', e.message); }
+    }, delayMs);
+}
+
+// ================================================================
+//  WATERMARK VISIBLE (device fingerprint — se mueve cada 10s)
+//  Nota: CDP_SECURITY.init() toma el control si está disponible.
+// ================================================================
+let wmTimer = null;
+let fwTimer = null;
+
+function wmHexToRgba(hex, alpha) {
+    const m = /^#([0-9a-fA-F]{6})$/.exec(String(hex || ''));
+    if (!m) return `rgba(255,255,255,${alpha})`;
+    const n = parseInt(m[1], 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+function applyWatermarkVisuals(el, kind = 'visible') {
+    if (!el) return;
+    const defaults = kind === 'forensic'
+        ? { size: 8, color: '#c8c8c8', weight: 400, alpha: 0.06 }
+        : { size: 13, color: '#ffffff', weight: 600, alpha: 0.22 };
+    const cfg = (wmConfig && typeof wmConfig === 'object') ? wmConfig : null;
+    const source = kind === 'forensic' ? (cfg?.forensic || cfg?.visible || null) : (cfg?.visible || null);
+    const size = Number.isFinite(Number(source?.size)) ? Number(source.size) : defaults.size;
+    const weight = Number.isFinite(Number(source?.weight)) ? Number(source.weight) : defaults.weight;
+    const alpha = Number.isFinite(Number(source?.alpha)) ? Number(source.alpha) : defaults.alpha;
+    const color = (typeof source?.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(source.color)) ? source.color : defaults.color;
+    Object.assign(el.style, {
+        fontSize: `${Math.max(6, Math.min(80, size))}px`,
+        fontWeight: String(Math.max(100, Math.min(900, weight))),
+        color: wmHexToRgba(color, alpha),
+        opacity: String(Math.min(1, Math.max(0, alpha))),
+    });
+}
+
+function subscribeWmConfig() {
+    if (wmStream || typeof EventSource === 'undefined') return;
+    if (!STATE.token) return;
+    const courseId = STATE.wmCourseId || '__default__';
+    const url = `${API_BASE}/api/watermark/stream/${encodeURIComponent(courseId)}?token=${encodeURIComponent(STATE.token)}&os=${encodeURIComponent(WM_OS_KEY)}`;
+    try {
+        const es = new EventSource(url);
+        wmStream = es;
+        es.addEventListener('config', (e) => {
+            try {
+                const full = JSON.parse(e.data);
+                wmConfig = full?.[WM_OS_KEY] || full || wmConfig;
+                const wm = $('watermark-overlay');
+                const fw = $('watermark-forensic');
+                applyWatermarkVisuals(wm, 'visible');
+                applyWatermarkVisuals(fw, 'forensic');
+            } catch {}
+        });
+        es.onerror = () => {};
+    } catch {}
+}
+
+function startWatermark(text) {
+    if (!text) return;
+    const wm = $('watermark-overlay');
+    wm.textContent = text;
+    applyWatermarkVisuals(wm, 'visible');
+    // Si CDP_SECURITY está activo, NO iniciar el timer de posición aleatoria
+    // (CDP_SECURITY maneja las 5 posiciones definidas)
+    if (window._cdpSecActive) {
+        subscribeWmConfig();
+        return;
+    }
+    placeWatermark();
+    wmTimer = setInterval(placeWatermark, 10000);
+    subscribeWmConfig();
+}
+function placeWatermark() {
+    if (window._cdpSecActive) return; // CDP_SECURITY lo maneja
+    const wm = $('watermark-overlay'), c = $('player-container');
+    const maxX = Math.max(0, c.clientWidth  - wm.offsetWidth  - 20);
+    const maxY = Math.max(0, c.clientHeight - wm.offsetHeight - 20);
+    wm.style.left = (10 + Math.random() * maxX) + 'px';
+    wm.style.top  = (10 + Math.random() * maxY) + 'px';
+    applyWatermarkVisuals(wm, 'visible');
+}
+
+// ================================================================
+//  WATERMARK FORENSE (casi invisible, rota entre las 4 esquinas)
+// ================================================================
+function startForensicWatermark(fp) {
+    if (!fp) return;
+    const wm = $('watermark-forensic');
+    const hour = Math.floor(Date.now() / 3600000).toString(16);
+    wm.textContent = fp.slice(0, 32) + '·' + hour;
+    applyWatermarkVisuals(wm, 'forensic');
+    placeForensic(fp);
+    fwTimer = setInterval(() => placeForensic(fp), 60000);
+}
+function placeForensic(fp) {
+    const wm = $('watermark-forensic');
+    const corners = [
+        { top: '8px',    left: '8px',  right: '',    bottom: '' },
+        { top: '8px',    right: '8px', left: '',     bottom: '' },
+        { bottom: '28px', left: '8px', top: '',      right:  '' },
+        { bottom: '28px', right: '8px', top: '',     left:   '' },
+    ];
+    const idx = (Math.floor(Date.now() / 60000) + (fp.charCodeAt(0) || 0)) % 4;
+    const c = corners[idx];
+    Object.assign(wm.style, { top: c.top, left: c.left, right: c.right, bottom: c.bottom });
+    applyWatermarkVisuals(wm, 'forensic');
+}
+
+// ================================================================
+//  HEARTBEAT DE SESIÓN
+// ================================================================
+let heartbeatTimer = null;
+function startHeartbeat() {
+    stopHeartbeat();
+    heartbeatTimer = setInterval(async () => {
+        if (!STATE.sessionId || !STATE.mediaToken) return;
+        try {
+            const _vid = document.getElementById('hls-video');
+            const r = await fetch(API_BASE + '/api/session/heartbeat', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({
+                    sessionId:   STATE.sessionId,
+                    mediaToken:  STATE.mediaToken,
+                    currentTime: Math.floor(_vid?.currentTime || 0),
+                    duration:    Math.floor(_vid?.duration    || 0)
+                })
+            });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok || d.revoked) {
+                const v = $('hls-video');
+                if (v && !v.paused) v.pause();
+                stopHeartbeat();
+                const msg = d.reason === 'token_expired'     ? 'Tu sesión expiró.' :
+                            d.reason === 'session_not_found' ? 'Sesión cerrada.' : 'Sesión terminada.';
+                showError(msg + ' Recarga la página para continuar.');
+            }
+        } catch {}
+    }, 30000);
+}
+function stopHeartbeat() { if (heartbeatTimer) clearInterval(heartbeatTimer); heartbeatTimer = null; }
+
+function sendEnd(sessionId) {
+    const body = JSON.stringify({ sessionId });
+    if (navigator.sendBeacon) {
+        navigator.sendBeacon(API_BASE + '/api/session/end', new Blob([body], { type: 'application/json' }));
+    } else {
+        fetch(API_BASE + '/api/session/end', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
+    }
+}
+window.addEventListener('pagehide', () => {
+    if (STATE.sessionId) sendEnd(STATE.sessionId);
+    // Limpiar sistema de seguridad al cerrar
+    try { if (window.CDP_SECURITY) window.CDP_SECURITY.destroy(); } catch {}
+});
+</script>
+</body>
+</html>

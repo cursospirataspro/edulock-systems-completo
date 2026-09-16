@@ -1,0 +1,276 @@
+✅ RESUMEN SIMPLE - CÓMO FUNCIONA TODO
+═════════════════════════════════════════════════════════════════════════════
+
+LA PREGUNTA DEL USUARIO:
+"¿Cómo el reproductor de APK estará conectado a mi página de Render?"
+"¿Cuándo apruebo acceso, cómo le llega al usuario?"
+"¿Cómo funciona?"
+
+LA RESPUESTA SIMPLE:
+
+┌─────────────────────────────────────────────────────────────────┐
+│                     5 PASOS SIMPLES                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│ PASO 1: Usuario descarga APK en su teléfono                   │
+│ ────────────────────────────────────────────────────────────── │
+│                                                                 │
+│    📱 → Instala EDULOCK Player                               │
+│    📱 → Abre app                                              │
+│    📱 → Ve pantalla REGISTRAR                                 │
+│                                                                 │
+│    ▼                                                            │
+│                                                                 │
+│ PASO 2: Usuario envía solicitud desde APK                     │
+│ ────────────────────────────────────────────────────────────── │
+│                                                                 │
+│    📱 User completa:                                           │
+│       • Email: usuario@ejemplo.com                            │
+│       • Nombre: Juan Pérez                                    │
+│       • [ENVIAR SOLICITUD]                                    │
+│                                                                 │
+│    📡 APK envía a Render (HTTPS):                             │
+│       POST /api/auth/register-request                        │
+│       {                                                        │
+│         email: "usuario@ejemplo.com",                        │
+│         name: "Juan Pérez",                                  │
+│         deviceId: "a1b2c3d4..."  ← ID único teléfono         │
+│       }                                                        │
+│                                                                 │
+│    💾 Render guarda en PostgreSQL:                            │
+│       Tabla: registration_requests                           │
+│       Status: "pending"  ← PENDIENTE DE APROBACIÓN           │
+│                                                                 │
+│    📱 APK muestra: "⏳ Solicitud pendiente..."                │
+│                                                                 │
+│    ▼                                                            │
+│                                                                 │
+│ PASO 3: TÚ (ADMIN) VES SOLICITUD EN RENDER                    │
+│ ────────────────────────────────────────────────────────────── │
+│                                                                 │
+│    🖥️  Abres tu Dashboard de Admin:                           │
+│       https://tu-dominio.com/admin                          │
+│                                                                 │
+│    🖥️  Ves en tab "SOLICITUDES":                              │
+│       ✉️ usuario@ejemplo.com - PENDIENTE                      │
+│       📱 Dispositivo: Samsung Galaxy A10                      │
+│       🔗 Device ID: a1b2c3d4...                              │
+│                                                                 │
+│    🖥️  Puedes:                                                │
+│       ☑️ Seleccionar cursos a asignar                        │
+│          • Curso Python                                      │
+│          • Curso React                                       │
+│                                                                 │
+│    ▼                                                            │
+│                                                                 │
+│ PASO 4: TÚ APRUEBAS (1 clic)                                  │
+│ ────────────────────────────────────────────────────────────── │
+│                                                                 │
+│    🖥️  Haces clic: [✅ APROBAR]                               │
+│                                                                 │
+│    🔄 Render ejecuta:                                         │
+│       • registration_requests.status = "approved"           │
+│       • Asigna cursos (Python, React)                        │
+│       • Guarda logs de auditoría                             │
+│                                                                 │
+│    🔔 Usuario NO recibe notificación inmediata               │
+│       (la APK lo detectará sola)                             │
+│                                                                 │
+│    ▼                                                            │
+│                                                                 │
+│ PASO 5: La APK DETECTA AUTOMÁTICAMENTE                        │
+│ ────────────────────────────────────────────────────────────── │
+│                                                                 │
+│    📱 Cada 10 segundos, APK pregunta:                         │
+│       GET /api/auth/check-device?deviceId=a1b2c3d4...      │
+│                                                                 │
+│    Mientras espera:                                           │
+│       (10 segundos) → Pregunta → "aún pending"               │
+│       (20 segundos) → Pregunta → "aún pending"               │
+│       (30 segundos) → Pregunta → "aún pending"               │
+│       ... etc ...                                             │
+│                                                                 │
+│    Cuando TÚ APRUEBAS:                                        │
+│       (En Render) status = "approved"                        │
+│       (Siguiente consulta) ✅ ¡APK DETECTA!                  │
+│                                                                 │
+│    📡 Render responde:                                        │
+│       {                                                        │
+│         status: "approved",                                  │
+│         email: "usuario@ejemplo.com",                        │
+│         name: "Juan Pérez"                                   │
+│       }                                                        │
+│                                                                 │
+│    📱 APK recibe cambio Y:                                    │
+│       ✓ Deja de hacer consultas                              │
+│       ✓ Muestra pantalla: "✅ ¡APROBADO!"                    │
+│       ✓ Botón: "IR AL CATÁLOGO"                              │
+│                                                                 │
+│    📱 Usuario ve sus 2 cursos:                               │
+│       • Curso Python         [▶ REPRODUCIR]                   │
+│       • Curso React          [▶ REPRODUCIR]                   │
+│                                                                 │
+│    📱 Hace clic en "Reproducir"                              │
+│       ✓ Video se abre                                        │
+│       ✓ Con marca de agua forense                            │
+│       ✓ Anti-screenshot ACTIVADO 🔒                          │
+│       ✓ Anti-grabación ACTIVADO 🔒                           │
+│                                                                 │
+│    ✅ FIN - Usuario disfrutando contenido seguro              │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+═════════════════════════════════════════════════════════════════════════════
+🎯 RESPUESTAS A TUS PREGUNTAS ESPECÍFICAS
+═════════════════════════════════════════════════════════════════════════════
+
+P1: ¿Cómo está conectado APK a Render?
+───────────────────────────────────────
+Mediante HTTPS/REST API:
+• APK → POST/GET a Render
+• Render responde con JSON
+• Totalmente automático
+
+URL Base: http://localhost:3000/ (o tu dominio en Render)
+Endpoints: /api/auth/*, /api/video/*, /api/watermark/*
+
+
+P2: ¿Cómo le llega el acceso al usuario?
+────────────────────────────────────────
+NO es notificación instantánea.
+Es DETECCIÓN AUTOMÁTICA cada 10 segundos:
+
+1. Él espera viendo "⏳ Pendiente"
+2. Cada 10s la APK pregunta "¿ya me aprobaron?"
+3. Render responde "Aún no" o "¡Sí!"
+4. APK automáticamente actualiza pantalla
+
+Tiempo total: 0-10 segundos después de que apruebas
+
+
+P3: ¿Cómo funciona exactamente?
+──────────────────────────────
+Así de simple:
+
+User:  EMAIL, click REGISTRAR
+  │
+  └─► APK: Envía datos a Render
+       └─► Render: Guarda en BD (status="pending")
+           └─► APK: Muestra "⏳ Pendiente"
+
+⏰ ADMIN APRUEBA:
+
+Admin: [✓ APROBAR en Dashboard]
+  │
+  └─► Render: Actualiza BD (status="approved")
+
+📲 USER RECIBE (AUTO):
+
+APK: GET /check-device (cada 10s)
+  │
+  └─► Render: "✅ Aprobado"
+       └─► APK: "¡Acceso concedido!"
+           └─► User: Ve sus cursos
+               └─► [▶ REPRODUCIR]
+
+═════════════════════════════════════════════════════════════════════════════
+📊 COMPARACIÓN: ¿CÓMO LLEGABA ANTES (SIN APK)?
+═════════════════════════════════════════════════════════════════════════════
+
+ANTES (Reproductor Windows):
+   Usuario → Abre reproductor → Login directo
+   Admin → Crea usuario manualmente en BD
+   Usuario → Inicia sesión y accede
+
+AHORA (Con APK):
+   Usuario → Instala APK → Solicita acceso automáticamente
+   Admin → Revisa solicitud en dashboard → Aprueba
+   Usuario → APK detecta automáticamente → Acceso sin hacer nada
+
+VENTAJA:
+   ✓ No necesitas crear usuarios manualmente
+   ✓ No necesitas compartir credenciales
+   ✓ Usuario controla cuándo solicita
+   ✓ Admin controla quiénes aprueban
+   ✓ Rastreo completo de quién aprobó cuándo
+
+═════════════════════════════════════════════════════════════════════════════
+🔐 SEGURIDAD EN TODO EL PROCESO
+═════════════════════════════════════════════════════════════════════════════
+
+1. IDENTIFICACIÓN (deviceId):
+   ✓ Cada teléfono tiene ID único (no falseable)
+   ✓ Si instalan APK en otro teléfono = ID diferente
+   ✓ Máximo 2 dispositivos por usuario
+
+2. CIFRADO:
+   ✓ HTTPS (canal encriptado)
+   ✓ Tokens JWT con expiración
+   ✓ Datos en BD encriptados
+   ✓ Base de datos PostgreSQL en Render (protegida)
+
+3. PROTECCIÓN DE VIDEO:
+   ✓ FLAG_SECURE: No screenshot, no grabación
+   ✓ DRM Widevine: Cifrado de contenido
+   ✓ Watermark forense: Si se filtra, sabes quién
+   ✓ Límite de dispositivos: Max 2 por usuario
+
+═════════════════════════════════════════════════════════════════════════════
+📈 ESTADÍSTICAS EN TIEMPO REAL
+═════════════════════════════════════════════════════════════════════════════
+
+En tu Dashboard de Admin puedes ver:
+   • Solicitudes pendientes: 7
+   • Usuarios activos: 45
+   • Reproduciendo ahora: 12
+   • Total de reproducciones: 1,243
+   • Videos más vistos: [Python: 342x, React: 215x]
+
+═════════════════════════════════════════════════════════════════════════════
+🚀 FLUJO VISUAL SIMPLE
+═════════════════════════════════════════════════════════════════════════════
+
+        USUARIO                  RENDER               TÚ (ADMIN)
+          │                       │                      │
+          │─ Instala APK ────────►│                      │
+          │                       │                      │
+          │─ Click REGISTRAR ────►│                      │
+          │                       │─ Solicitud PENDIENTE │
+          │                       │◄─ Ves en Dashboard ──│
+          │                       │                      │
+          │◄─ ⏳ Pendiente... ────┤                      │
+          │                       │                      │
+          │ (APK consulta cada 10s)                      │
+          │◄─ Aún pendiente ──────┤                      │
+          │                       │                      │
+          │                       │                  ┌─► [✓ APROBAR]
+          │                       │                  │
+          │                       │─ BD actualiza ──┘
+          │                       │ (status="approved")
+          │                       │
+          │◄─ ✅ ¡APROBADO! ─────┤
+          │                       │
+          │─ Va al catálogo ──────┤
+          │                       │
+          │─ [▶ REPRODUCIR] ─────►│
+          │                       │
+          │◄─ Video + watermark ──│
+          │                       │
+          │ 🎥 VIENDO CONTENIDO SEGURO 🔒
+          │
+
+═════════════════════════════════════════════════════════════════════════════
+
+CONCLUSIÓN:
+
+Todo funciona automáticamente:
+   1. User solicita desde APK
+   2. Tú lo ves en Render
+   3. Apruebas con 1 clic
+   4. APK detecta cambio automáticamente (0-10s)
+   5. User accede sin hacer nada más
+   6. Video se reproduce seguro con protecciones
+
+ES TOTALMENTE AUTOMÁTICO Y EN TIEMPO REAL.
+
+═════════════════════════════════════════════════════════════════════════════

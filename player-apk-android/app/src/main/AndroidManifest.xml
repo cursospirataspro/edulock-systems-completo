@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- PERMISOS NECESARIOS -->
+    <!-- Red -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+
+    <!-- Hardware -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Notificaciones (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <application
+        android:name="com.edulock.player.EdulockApp"
+        android:allowBackup="false"
+        android:allowAudioPlaybackCapture="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="false"
+        android:theme="@style/Theme.EdulockPlayer"
+        android:usesCleartextTraffic="false">
+
+        <!-- Actividades -->
+        <activity
+            android:name="com.edulock.player.ui.SplashActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.EdulockPlayer.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Protocolo cdp:// para links directos -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="cdp"
+                    android:host="play" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="cdp" android:host="resource" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name="com.edulock.player.ui.LoginActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.EdulockPlayer.NoActionBar" />
+
+        <activity
+            android:name="com.edulock.player.ui.PlayerActivity"
+            android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.EdulockPlayer.FullScreen"
+            android:supportsPictureInPicture="false" />
+
+        <activity
+            android:name="com.edulock.player.ui.WaitingActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.EdulockPlayer.NoActionBar" />
+
+        <activity
+            android:name="com.edulock.player.ui.LicenseActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.EdulockPlayer.NoActionBar" />
+
+        <activity android:name="com.edulock.player.ui.ResourceActivity"
+            android:exported="false" android:supportsPictureInPicture="false"
+            android:theme="@style/Theme.EdulockPlayer.NoActionBar" />
+        <activity android:name="com.edulock.player.ui.CatalogActivity"
+            android:exported="false" android:theme="@style/Theme.EdulockPlayer.NoActionBar" />
+
+        <!-- Servicios -->
+        <service
+            android:name="com.edulock.player.security.SecurityMonitorService"
+            android:exported="false" />
+
+        <!-- Firebase Cloud Messaging Service -->
+        <service
+            android:name="com.edulock.player.services.EdulockNotificationService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Deshabilitar auto-init de Firebase (evita crash con keys de desarrollo) -->
+        <meta-data
+            android:name="firebase_messaging_auto_init_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="firebase_analytics_collection_enabled"
+            android:value="false" />
+
+        <!-- Configuración de seguridad -->
+        <meta-data
+            android:name="android.max_aspect_ratio"
+            android:value="2.1" />
+
+    </application>
+
+    <!-- Características de dispositivo requeridas -->
+    <uses-feature
+        android:name="android.hardware.screen.landscape"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.wifi"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="true" />
+
+</manifest>

@@ -1,0 +1,219 @@
+{
+  "createdAt": "2026-09-13T02:31:09.5858928Z",
+  "buildStatus": "BUILD SUCCESSFUL",
+  "buildDuration": "8m53s",
+  "unitTests": 26,
+  "unitFailures": 0,
+  "lint": {
+    "debug": {
+      "warnings": 111,
+      "errors": 0
+    },
+    "release": {
+      "warnings": 111,
+      "errors": 0
+    }
+  },
+  "deviceExecution": "not_run_no_connected_devices",
+  "adbStartedForProbeAndStopped": true,
+  "artifacts": [
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\dist-resources-qa\\Edulock-Android-1.1.0-resources-debug.apk",
+      "bytes": 14330923,
+      "sha256": "9A2E45D062F6328EEF62309078EBA33B1A5D0ED37827F4C84345926CF13EFCB0",
+      "signature": "Android Debug, APK v2 verified"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\dist-resources-qa\\Edulock-Android-1.1.0-resources-release-unsigned.apk",
+      "bytes": 7105697,
+      "sha256": "EB623241BA81554C666B2276DCA58748F8AA1F91C8F70A9D447405AC56DE59A4",
+      "signature": "unsigned"
+    }
+  ],
+  "sourceHashes": [
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\AndroidManifest.xml",
+      "sha256": "90B79D1003335782800EF647FEADD57D3F956DC9BC5C8D5991F1239C53D5930C"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\api\\ApiClient.kt",
+      "sha256": "89B610362A106EB979C5DB3EC894A982C305ACDFE37046F27BE944922C76FF0F"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\api\\data\\Models.kt",
+      "sha256": "37A3551A5F7D099DFC5F98B57BF1A49079A8B56D7F62CE64E75E16F4C5029B9E"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\api\\EdulockApiService.kt",
+      "sha256": "F79C93C1D1F743CC596149A82550EA2A2876010666EF064A9725B543CBBEBF94"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\api\\LicenseManager.kt",
+      "sha256": "AD77920CB74D65AAF6DE16A3A1C2608FF12DBBA3F3CAAA35264DE56B202A077B"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\api\\ResourceClient.kt",
+      "sha256": "899C2E1B0FE4D0248B3D0895D226188DF08E0217B0B4ED28EA9C3503A7F89994"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\EdulockApp.kt",
+      "sha256": "3B74DD75F4C86325E3C5BAD300AC83A7FADB94677068D7594E40376C671CF84B"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\security\\SecurityMonitorService.kt",
+      "sha256": "5346D8E12619CC655D1099177958E8F7AA8AE4032FBFB9F7D15474C21FD30ED8"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\services\\EdulockNotificationService.kt",
+      "sha256": "3C26BCE64D684F237641A21AB04649A14E4A10B70E084CB38837E7A7AB383626"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\ui\\AuthResponsePolicy.kt",
+      "sha256": "A8F543256BCF7D5BAF59081DE1B4A2B5B59132BB0A52BE4FBE9A4A62A39C563C"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\ui\\CatalogActivity.kt",
+      "sha256": "010D3D6AD17262C64C8D124F4856A6CBFCFF74932AA161A7874A31425D4E486C"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\ui\\LicenseActivity.kt",
+      "sha256": "5D20FA720BC90D10F4DE02366B9FD29CB1E0C6861698FFC95A84793B63C2EE27"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\ui\\LoginActivity.kt",
+      "sha256": "27232E355EFB84054A63F966F669808E831E43F584650216D3BD6005452F8DE7"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\ui\\PasswordRecovery.kt",
+      "sha256": "C7A65602A852E4C18832426AD43F820222DBD9B49C1712C73E78BD9BE25BF76B"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\ui\\PlayerActivity.kt",
+      "sha256": "BC165C46498C7BAE569600154B7F63000E7B0DEDB418240798EB5E978D670C46"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\ui\\ResourceActivity.kt",
+      "sha256": "A75F7D5BD81464EA467669973EB87DF5670BE876C3BB56104D1FFDD8F7AA4E7A"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\ui\\ResourcePolicy.kt",
+      "sha256": "006CAB6A998AECAF1FEED26984259084F845324D72050DABAB4366293B16AB71"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\ui\\SplashActivity.kt",
+      "sha256": "B16B0FE60F4C1D7AB346E28474AF3C67BF10E1A1ABB0225A983431D139EEE72C"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\ui\\VideoAdapter.kt",
+      "sha256": "86940BE3CB29F02E21085DF64BCAC9BB14A6D485BD7DD6AD69D32D3DD87C049A"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\ui\\WaitingActivity.kt",
+      "sha256": "0EABB760CA65ACCA37C60E4902A83B08E8B83861A9FB4827F0C5FCB6C5296F90"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\util\\Base64WrappedDataSource.kt",
+      "sha256": "088F2C66C5E6F6DF11B9948315480806AA5E6864562CEB839F4075B7DF6F43AB"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\utils\\ActivationStore.kt",
+      "sha256": "D2E357DD3D4A84C13AB4776D173C4CC8E1E00BB13BDEC4D01AB5B76F361A7FA4"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\utils\\AppSignature.kt",
+      "sha256": "EA100C365C819DB481D945974F8B338923BED59712385681B67C4933525D1111"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\utils\\DeviceChangeDetector.kt",
+      "sha256": "B0BE1917A119D7017B630A644D37E558C5DD8A979DAFFCA6793980150D50FDBB"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\utils\\DeviceFingerprint.kt",
+      "sha256": "C756075FFCF9B11FA365961CE63A0EBCE79B5B933F2D027690BD4885657B1B31"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\utils\\DeviceFingerprintAdvanced.kt",
+      "sha256": "17116961FD6F01E6E7DD72DE1FE61A33CE7300CE2B19831A648E5BE1B89BBF86"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\utils\\NotificationPermissionHelper.kt",
+      "sha256": "7A9DBAE8272DBF058D1A98D48DCFC125892C6805F98E9061ADF9A9EEC9B42B57"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\kotlin\\com\\edulock\\player\\utils\\SessionManager.kt",
+      "sha256": "F0C144696970C51AF2EFEB526D05130ACBAC2DBEAAA7EB4F8AA828AB69A455B3"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\drawable\\ic_launcher_background.xml",
+      "sha256": "EF11C9C9702B362C5011A959D6D29CF842B850FF095B5EEAE666EB5503E06A06"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\drawable\\ic_launcher_foreground.xml",
+      "sha256": "22898805298B05E79A88535419687EC042A7BE66841DBF582EF40338761761D5"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\layout\\activity_catalog.xml",
+      "sha256": "A3340C013750819B19EC186A6BBC93534E395B2CB6D8FDA05A2C3C04C66AD82B"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\layout\\activity_license.xml",
+      "sha256": "E4CF8EB31D0162682E018CBA6E2B672F085CCAAE26C4A86AEFF7E2DEB18CBCAD"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\layout\\activity_login.xml",
+      "sha256": "A0A22687FCFA480E5F1AA3461874E5C20822D0C424D207AF90561016AE9F901E"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\layout\\activity_player.xml",
+      "sha256": "67C022807CF296310115105EE656251DDB5A97F850260915EF5A9CB2E83100C9"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\layout\\activity_splash.xml",
+      "sha256": "AA6E1F3534F11FB19D61DF91D24BD72A791A1631888817DB70CB0F3A7BB98E6A"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\layout\\activity_waiting.xml",
+      "sha256": "9CEB8DEC5AE9F8EA110A1C640FD80098BA59FBCCF93254E05EA5F0E2C53F1908"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\layout\\item_video.xml",
+      "sha256": "31A483E6C8A8A9ACFA71990BED89AECBBC678B4E122693858529679B1917BDA7"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\mipmap-anydpi-v26\\ic_launcher_round.xml",
+      "sha256": "EF89CD1D0AEC3669AE3B417FB5A204D304B406CA9147160EF5BE390E3D303C97"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\mipmap-anydpi-v26\\ic_launcher.xml",
+      "sha256": "EF89CD1D0AEC3669AE3B417FB5A204D304B406CA9147160EF5BE390E3D303C97"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\values\\colors.xml",
+      "sha256": "84209A1D99BA264B0FE4A3226DAA7778850172784804814E9856048D0A493441"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\values\\dimens.xml",
+      "sha256": "DA92F2BEB49A2272BAF9A1F5FD44914C648623887432F8ED82C020E3F75FFDC0"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\values\\strings.xml",
+      "sha256": "961765AB22B7E5823D5A942EB21A2E227753BE7C9412C3F55CC4DDBCD33C8389"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\main\\res\\values\\styles.xml",
+      "sha256": "0C0151BBD91816BBE4AF87BCE159D6F9DA083962077DBF74132076D7FA44D7B1"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\test\\kotlin\\com\\edulock\\player\\ui\\AuthResponsePolicyTest.kt",
+      "sha256": "F7A82792BA4784D406B1BDB0CA8DBB7E68C0786728A0668AF32F8E2AD9A7073B"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\test\\kotlin\\com\\edulock\\player\\ui\\PasswordRecoveryTest.kt",
+      "sha256": "13B67E40396B57C14E5E4D0EBF52BC49E0AB142FECBF1B827BABDEC1E08AF20F"
+    },
+    {
+      "path": "C:\\Users\\KENDOR GARCIA\\Documents\\New project\\edulock-system\\player-apk-android\\app\\src\\test\\kotlin\\com\\edulock\\player\\ui\\ResourcePolicyTest.kt",
+      "sha256": "5662C88B10979E4DEA2CD9FADC3D45B67FBBBDCFCEDC9DE2151ABF8C7ED42F66"
+    }
+  ]
+}

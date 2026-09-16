@@ -1,0 +1,45 @@
+# Dependencias
+node_modules/
+**/node_modules/
+
+# Secretos y credenciales (NUNCA subir) - van directo a la VPS
+.env
+.env.*
+!.env.example
+firebase-service-account.json
+*.pem
+*.key
+*.p12
+
+# Datos locales y generados
+data/
+logs/
+public/hls/
+*.log
+
+# Compilaciones y ejecutables pesados
+dist/
+**/dist/
+build/
+**/build/
+.gradle/
+*.jks
+*.keystore
+keystore.properties
+key.properties
+*.exe
+*.dmg
+*.deb
+*.AppImage
+*.tar.gz
+*.zip
+
+# Estado privado y material temporal de QA
+.qa-*
+qa-*.json
+qa-*.txt
+qa-*.mp4
+qa-*.ts
+server-qa.tar.gz
+
+_env_backup.json

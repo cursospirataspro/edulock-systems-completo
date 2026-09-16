@@ -1,0 +1,11 @@
+{
+  "name": "edulock-pdf-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Isolated server-side PDF rendering dependencies",
+  "engines": { "node": ">=20.16.0" },
+  "dependencies": {
+    "pdfjs-dist": "5.4.624",
+    "@napi-rs/canvas": "0.1.88"
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "name": "edulock-systems-player",
+  "version": "1.0.0",
+  "description": "Reproductor externo seguro Edulock Systems Player",
+  "main": "main.js",
+  "author": {
+    "name": "Edulock Systems",
+    "email": "admin@edulocksystemsoficial.dpdns.org"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "generate-icons": "node scripts/create-icon.js",
+    "prebuild": "node scripts/create-icon.js",
+    "build:win": "electron-builder --win --x64",
+    "build:win-portable": "electron-builder --win portable --x64",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "test": "node --test tests/playback.test.js tests/edu-native.test.js tests/driver-probe.test.js tests/security-compatibility.test.js tests/device-identity-simulation.test.js tests/security-main-simulation.test.js tests/auth-ui.test.js tests/auth-response.test.js tests/protected-resources.test.js tests/resource-window.test.js tests/resource-viewer.test.js"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9",
+    "hls.js": "^1.5.13"
+  },
+  "devDependencies": {
+    "@electron/fuses": "^1.8.0",
+    "electron": "https://github.com/castlabs/electron-releases#v42.0.0+wvcus",
+    "electron-builder": "^26.15.3",
+    "jimp": "^1.6.1",
+    "png-to-ico": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "build": {
+    "afterPack": "scripts/setup-fuses.js",
+    "afterSign": "scripts/sign-evs.js",
+    "productName": "Edulock Systems Player",
+    "appId": "com.edulock.player",
+    "copyright": "Copyright © 2026 Edulock Systems. Todos los derechos reservados.",
+    "electronDist": "node_modules/electron/dist",
+    "electronVersion": "42.0.0+wvcus",
+    "files": [
+      "main.js",
+      "auth-response.js",
+      "preload.js",
+      "resource-preload.js",
+      "resource-window.js",
+      "protected-resources.js",
+      "activation-store.js",
+      "edu-native.js",
+      "security-policy.js",
+      "platform-probes.js",
+      "config.json",
+      "renderer/**/*",
+      "assets/**/*",
+      "EULA.txt",
+      "package.json"
+    ],
+    "protocols": [
+      {
+        "name": "Edulock Systems Player",
+        "schemes": [
+          "cdp"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.ico",
+      "signtoolOptions": {
+        "publisherName": "Edulock Systems"
+      }
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Edulock Systems Player",
+      "menuCategory": "Edulock Systems",
+      "license": "EULA.txt",
+      "artifactName": "EdulockSystems-Player-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "EdulockSystems-Player-Portable-${version}.${ext}"
+    }
+  }
+}

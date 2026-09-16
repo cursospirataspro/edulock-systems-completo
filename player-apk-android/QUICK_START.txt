@@ -1,0 +1,133 @@
+⚡ QUICK START - 5 MINUTOS
+═════════════════════════════════════════════════════════════════════════════
+
+OBJETIVO: Compilar y ejecutar EDULOCK Player en Android Studio
+
+═════════════════════════════════════════════════════════════════════════════
+⏱️ OPCIÓN 1: SUPER RÁPIDO (Recomendado)
+═════════════════════════════════════════════════════════════════════════════
+
+1. Abre Android Studio
+   
+2. File → Open → Selecciona carpeta "player-apk-android"
+   
+3. ⏳ ESPERA (Gradle sync, ~2-5 minutos)
+   
+4. Conecta tu teléfono Android (USB + USB Debugging ON)
+   
+5. Presiona: Shift + F10
+   
+6. ¡Listo! La app se compila e instala automáticamente
+
+═════════════════════════════════════════════════════════════════════════════
+⏱️ OPCIÓN 2: CON SCRIPT (Windows)
+═════════════════════════════════════════════════════════════════════════════
+
+1. Haz doble click en: setup-windows.bat
+
+2. ⏳ ESPERA (Build automático, ~3-5 minutos)
+
+3. El script genera: app/build/outputs/apk/debug/app-debug.apk
+
+4. Instala con: adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+═════════════════════════════════════════════════════════════════════════════
+⏱️ OPCIÓN 3: CON SCRIPT (Linux/Mac)
+═════════════════════════════════════════════════════════════════════════════
+
+1. Abre terminal en la carpeta del proyecto
+
+2. Ejecuta:
+   chmod +x setup-linux-mac.sh
+   ./setup-linux-mac.sh
+
+3. ⏳ ESPERA (Build automático)
+
+4. El script genera el APK
+
+═════════════════════════════════════════════════════════════════════════════
+🎮 PRUEBA LA APLICACIÓN
+═════════════════════════════════════════════════════════════════════════════
+
+1. SPLASH (3 segundos)
+   └─ Logo de EDULOCK
+   
+2. LOGIN
+   Email: tu-email@dominio.com
+   Contraseña: tu-contraseña
+   Click: "Iniciar Sesión"
+   
+3. CATÁLOGO
+   └─ Lista de cursos disponibles
+   └─ Click en un curso para reproducir
+   
+4. REPRODUCTOR
+   └─ Video con marca de agua
+   └─ Prueba: No puedes hacer screenshot (FLAG_SECURE ✔️)
+
+═════════════════════════════════════════════════════════════════════════════
+⚙️ CONFIGURAR SERVIDOR (SI NECESARIO)
+═════════════════════════════════════════════════════════════════════════════
+
+Si tu servidor está en otra URL:
+
+1. Abre: app.properties
+
+2. Cambia:
+   API_BASE_URL=http://localhost:3000/
+   
+   Por tu URL:
+   API_BASE_URL=https://tu-servidor.com/
+
+3. Recompila: Shift + F10
+
+═════════════════════════════════════════════════════════════════════════════
+🚨 PROBLEMAS COMUNES
+═════════════════════════════════════════════════════════════════════════════
+
+❌ "Gradle sync failed"
+   → Cierra Android Studio
+   → Borra: .gradle/
+   → Abre Android Studio nuevamente
+
+❌ "Device not found"
+   → Verifica: adb devices
+   → Intenta: adb kill-server && adb start-server
+   → Enchufa USB-C bien en el teléfono
+
+❌ "No se puede compilar"
+   → Verifica que tienes SDK Android 13+ instalado
+   → Build → Clean Project
+   → Build → Rebuild Project
+
+❌ "Video no se reproduce"
+   → Verifica que el servidor Node.js está corriendo
+   → Verifica URL en app.properties
+   → Intenta con credenciales válidas
+
+═════════════════════════════════════════════════════════════════════════════
+📱 CARACTERÍSTICAS QUE VERÁS
+═════════════════════════════════════════════════════════════════════════════
+
+✅ Login seguro con email/password
+✅ Catálogo de cursos disponibles
+✅ Reproductor de video HLS
+✅ Marca de agua forense en video
+✅ Anti-screenshot (no puedes capturar pantalla)
+✅ Anti-grabación de pantalla
+✅ Logout seguro
+✅ Almacenamiento cifrado de token
+
+═════════════════════════════════════════════════════════════════════════════
+📚 MÁS INFORMACIÓN
+═════════════════════════════════════════════════════════════════════════════
+
+Para documentación completa: Ver README.md
+Para guía paso a paso: Ver GUIA_RAPIDA.txt
+Para índice de archivos: Ver INDICE.txt
+
+═════════════════════════════════════════════════════════════════════════════
+
+¡Disfruta del reproductor seguro! 🎉
+
+═════════════════════════════════════════════════════════════════════════════

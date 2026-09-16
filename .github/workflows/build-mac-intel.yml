@@ -1,0 +1,50 @@
+name: Build EDULOCK Player (macOS Intel)
+
+# Solo build de macOS Intel (x64). Se dispara manualmente para no
+# recompilar las otras plataformas.
+on:
+  workflow_dispatch:
+
+jobs:
+  build-mac-intel:
+    runs-on: macos-13   # Runner Intel (x64) → build nativo, sin emulación
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: player-app/package-lock.json
+
+      - name: Instalar dependencias
+        working-directory: player-app
+        run: npm ci
+
+      - name: Descargar binario de Electron (castlabs Widevine)
+        working-directory: player-app
+        run: |
+          node node_modules/electron/install.js
+          if [ ! -d "node_modules/electron/dist/Electron.app" ]; then
+            echo "ERROR: el binario de Electron (castlabs) no se descargó."; exit 1
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_GET_USE_PROXY: 'true'
+
+      - name: Compilar para macOS Intel (x64)
+        working-directory: player-app
+        run: npx electron-builder --mac dmg --x64
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false   # Sin firma de código (no tenemos certificado Apple)
+          ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
+
+      - name: Subir artefacto macOS Intel
+        uses: actions/upload-artifact@v4
+        with:
+          name: EDULOCK-Player-macOS-Intel
+          path: |
+            player-app/dist/*.dmg
+          retention-days: 30

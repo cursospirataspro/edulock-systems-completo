@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Abrir Reproductor – Edulock Systems</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Roboto, sans-serif;
+    background: #0a0a0a;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    background: #161616;
+    border: 1px solid #2a2a2a;
+    border-radius: 16px;
+    padding: 48px 40px;
+    max-width: 440px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 8px 40px rgba(0,0,0,.6);
+  }
+  .icon {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 24px;
+    background: linear-gradient(135deg, #e53935 0%, #b71c1c 100%);
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    box-shadow: 0 4px 20px rgba(229,57,53,.35);
+  }
+  h1 { font-size: 1.35rem; font-weight: 600; margin-bottom: 10px; color: #fff; }
+  .sub { font-size: .9rem; color: #888; margin-bottom: 32px; line-height: 1.5; }
+
+  /* Estado: abriendo */
+  #state-opening { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+  .spinner {
+    width: 44px; height: 44px;
+    border: 3px solid #2a2a2a;
+    border-top-color: #e53935;
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .opening-msg { font-size: .95rem; color: #aaa; }
+
+  /* Estado: instalar */
+  #state-install { display: none; flex-direction: column; align-items: center; gap: 16px; }
+  .warn-icon { font-size: 40px; }
+  .warn-msg { font-size: .9rem; color: #aaa; line-height: 1.6; }
+  .btn-install {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: #e53935;
+    color: #fff;
+    font-size: .95rem;
+    font-weight: 600;
+    padding: 13px 28px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background .18s, transform .12s;
+    margin-top: 4px;
+  }
+  .btn-install:hover { background: #c62828; transform: translateY(-1px); }
+  .btn-retry {
+    background: transparent;
+    color: #777;
+    font-size: .82rem;
+    border: 1px solid #333;
+    padding: 8px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
+  }
+  .btn-retry:hover { color: #ccc; border-color: #555; }
+
+  /* Estado: error token */
+  #state-error { display: none; flex-direction: column; align-items: center; gap: 12px; }
+  .err-icon { font-size: 40px; }
+  .err-msg { font-size: .9rem; color: #f66; }
+
+  footer { margin-top: 32px; font-size: .76rem; color: #444; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="icon">▶</div>
+  <h1>Edulock Systems</h1>
+  <p class="sub">Accediendo a tu contenido de forma segura…</p>
+
+  <!-- Abriendo reproductor -->
+  <div id="state-opening">
+    <div class="spinner"></div>
+    <p class="opening-msg">Abriendo el Reproductor…</p>
+  </div>
+
+  <!-- App no instalada -->
+  <div id="state-install">
+    <div class="warn-icon">📦</div>
+    <p class="warn-msg">
+      No se detectó el <strong>Reproductor Edulock Systems</strong> en tu equipo.<br>
+      Instálalo para poder acceder al contenido.
+    </p>
+    <a id="btn-download" class="btn-install" href="#" target="_blank">
+      ⬇ Descargar Reproductor
+    </a>
+    <button class="btn-retry" onclick="retryLaunch()">Ya lo instalé — intentar de nuevo</button>
+  </div>
+
+  <!-- Token inválido / expirado -->
+  <div id="state-error">
+    <div class="err-icon">🔒</div>
+    <p class="err-msg" id="err-text">El enlace de acceso no es válido o ha expirado.</p>
+  </div>
+</div>
+<footer>Edulock Systems · Contenido protegido</footer>
+
+<script>
+(function () {
+  // Token inyectado por el servidor
+  const TOKEN   = document.currentScript ? null : null; // se llena abajo via data-attr
+  const params  = new URLSearchParams(window.location.search);
+  const token   = params.get('t') || '';
+  // URL de descarga: placeholder hasta que el admin la configure
+  const DOWNLOAD_URL = params.get('dl') || window.__DOWNLOAD_URL__ || '#';
+
+  document.getElementById('btn-download').href = DOWNLOAD_URL;
+
+  if (!token) {
+    showError('No se proporcionó un enlace de acceso válido.');
+    return;
+  }
+
+  const cdpUrl = 'cdp://play?t=' + encodeURIComponent(token);
+  let appOpened = false;
+
+  // Detectar si el usuario dejó la página (app se abrió)
+  function onVisibilityChange() { if (document.hidden) appOpened = true; }
+  function onBlur()             { appOpened = true; }
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('blur', onBlur);
+
+  // Lanzar el protocolo
+  function launchCdp() {
+    window.location.href = cdpUrl;
+  }
+  launchCdp();
+
+  // Si después de 3 segundos el usuario sigue en la página → app no instalada
+  setTimeout(function () {
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('blur', onBlur);
+    if (!appOpened) {
+      showState('install');
+    }
+  }, 3000);
+
+  function retryLaunch() {
+    appOpened = false;
+    showState('opening');
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('blur', onBlur);
+    launchCdp();
+    setTimeout(function () {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('blur', onBlur);
+      if (!appOpened) showState('install');
+    }, 3000);
+  }
+  window.retryLaunch = retryLaunch;
+
+  function showState(s) {
+    ['opening','install','error'].forEach(function(id) {
+      var el = document.getElementById('state-' + id);
+      el.style.display = (id === s) ? 'flex' : 'none';
+    });
+  }
+  function showError(msg) {
+    document.getElementById('err-text').textContent = msg;
+    showState('error');
+  }
+})();
+</script>
+</body>
+</html>

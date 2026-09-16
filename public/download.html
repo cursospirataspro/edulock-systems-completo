@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Descargar Edulock Systems Player</title>
+<link rel="icon" type="image/png" href="/logo.png">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:      #0d0d0d;
+    --card:    #171717;
+    --border:  #333333;
+    --accent:  #c72b24;
+    --accent2: #7b2fd1;
+    --text:    #f5f5f5;
+    --muted:   #9ca3af;
+    --green:   #22c55e;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px 60px;
+  }
+
+  /* Brand */
+  .brand {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 48px;
+  }
+  .brand-icon {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 0 18px rgba(199,43,36,.5);
+  }
+  .brand-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .brand-text h1 { font-size: 20px; font-weight: 800; letter-spacing: .5px; }
+  .brand-text p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* Hero */
+  .hero {
+    text-align: center;
+    max-width: 560px;
+    margin-bottom: 48px;
+  }
+  .hero h2 {
+    font-size: 28px;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 14px;
+  }
+  .hero h2 span { color: var(--accent); }
+  .hero p { font-size: 15px; color: var(--muted); line-height: 1.7; }
+
+  /* Platform cards */
+  .platforms {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    max-width: 720px;
+    width: 100%;
+    margin-bottom: 48px;
+  }
+  .platform-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    transition: border-color .2s;
+    cursor: pointer;
+    text-decoration: none;
+    color: var(--text);
+  }
+  .platform-card:hover { border-color: var(--accent); }
+  .platform-card.primary { border-color: var(--accent); background: rgba(199,43,36,.10); }
+  .platform-icon { font-size: 36px; }
+  .platform-name { font-size: 15px; font-weight: 700; }
+  .platform-sub  { font-size: 12px; color: var(--muted); }
+  .platform-badge {
+    background: var(--accent); color: #000;
+    font-size: 10px; font-weight: 800;
+    padding: 2px 8px; border-radius: 20px;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+  }
+  .platform-badge.soon { background: var(--border); color: var(--muted); }
+  .platform-card.soon { opacity: .65; cursor: default; }
+  .platform-card.soon:hover { border-color: var(--border); }
+
+  /* Steps */
+  .steps-section {
+    max-width: 560px;
+    width: 100%;
+    margin-bottom: 40px;
+  }
+  .steps-section h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+  .steps { display: flex; flex-direction: column; gap: 14px; }
+  .step {
+    display: flex; align-items: flex-start; gap: 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .step-num {
+    min-width: 32px; height: 32px;
+    background: var(--accent);
+    color: #000;
+    font-weight: 800;
+    font-size: 14px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step-text h4 { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
+  .step-text p  { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+  /* "Ya lo instalé" button */
+  .already-installed {
+    max-width: 560px;
+    width: 100%;
+    background: rgba(34, 197, 94, .08);
+    border: 1px solid rgba(34, 197, 94, .25);
+    border-radius: 14px;
+    padding: 20px 24px;
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+  .already-installed.show { display: flex; }
+  .already-installed h4 {
+    font-size: 15px; font-weight: 700; color: var(--green);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .already-installed p { font-size: 13px; color: var(--muted); }
+  .btn-open {
+    background: var(--green);
+    color: #000;
+    font-weight: 700;
+    font-size: 14px;
+    border: none;
+    border-radius: 8px;
+    padding: 11px 20px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: opacity .2s;
+    width: fit-content;
+  }
+  .btn-open:hover { opacity: .85; }
+
+  /* Download main button */
+  .btn-download-main {
+    background: var(--accent);
+    color: #000;
+    font-weight: 800;
+    font-size: 15px;
+    border: none;
+    border-radius: 10px;
+    padding: 14px 28px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 10px;
+    transition: background .2s;
+    text-decoration: none;
+    margin-top: 4px;
+  }
+  .btn-download-main:hover { background: var(--accent2); }
+
+  /* Footer */
+  .footer {
+    margin-top: 48px;
+    font-size: 12px;
+    color: var(--muted);
+    opacity: .45;
+    text-align: center;
+  }
+
+  /* Platform cell wrapper (card + instructions button) */
+  .platform-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .platform-cell .platform-card { flex: 1; }
+
+  /* Secondary "instructions" button below each card */
+  .btn-instructions {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 12.5px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: center;
+    line-height: 1.3;
+    transition: border-color .2s, background .2s, color .2s;
+  }
+  .btn-instructions:hover {
+    border-color: var(--accent);
+    background: rgba(199,43,36,.12);
+    color: var(--text);
+  }
+
+  /* ===== Instruction modals ===== */
+  .instr-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(8, 4, 16, .78);
+    backdrop-filter: blur(3px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 1000;
+  }
+  .instr-overlay.show { display: flex; }
+
+  .instr-modal {
+    display: none;
+    flex-direction: column;
+    width: 100%;
+    max-width: 620px;
+    max-height: 85vh;
+    background: var(--card);
+    border: 1px solid var(--accent);
+    border-radius: 16px;
+    box-shadow: 0 0 40px rgba(199,43,36,.35);
+    overflow: hidden;
+  }
+  .instr-modal.show { display: flex; }
+
+  .instr-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .instr-modal-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  .instr-close {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 28px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+    transition: color .2s;
+  }
+  .instr-close:hover { color: var(--accent); }
+
+  .instr-modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .instr-modal-body:empty::before {
+    content: "";
+    display: block;
+    min-height: 40px;
+  }
+  /* Tipografía del contenido de instrucciones */
+  .instr-modal-body h4 {
+    color: var(--accent);
+    font-size: 15px;
+    font-weight: 800;
+    margin: 20px 0 8px;
+    line-height: 1.4;
+  }
+  .instr-modal-body h4:first-child { margin-top: 0; }
+  .instr-modal-body p { margin: 0 0 12px; color: var(--text); }
+  .instr-modal-body ul,
+  .instr-modal-body ol { margin: 0 0 14px; padding-left: 22px; }
+  .instr-modal-body li { margin: 0 0 6px; }
+  .instr-modal-body strong { color: var(--text); font-weight: 700; }
+  .instr-modal-body .instr-note {
+    background: rgba(199,43,36,.10);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 0 0 14px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  @media (max-width: 600px) {
+    .instr-modal-title { font-size: 16px; }
+    .instr-modal-head { padding: 16px 18px; }
+    .instr-modal-body { padding: 18px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="brand">
+  <div class="brand-icon"><img src="/logo.png" alt="Edulock Systems"></div>
+  <div class="brand-text">
+    <h1>Edulock Systems Player</h1>
+    <p>Reproductor protegido · Protección avanzada</p>
+  </div>
+</div>
+
+<div class="hero">
+  <h2>Descarga <span>Edulock Systems Player</span><br>para ver el contenido</h2>
+  <p>Los videos de este sitio están protegidos contra descarga y copia. Para reproducirlos, debes instalar nuestro reproductor oficial en tu dispositivo.</p>
+</div>
+
+<!-- Tarjetas de plataformas -->
+<div class="platforms">
+  <div class="platform-cell">
+  <a class="platform-card" id="card-windows" data-platform="windows" href="#">
+    <div class="platform-icon">🪟</div>
+    <div class="platform-name">Windows</div>
+    <div class="platform-sub">Windows 10 / 11 (64-bit)</div>
+    <div class="platform-badge soon">Próximamente</div>
+  </a>
+  <button type="button" class="btn-instructions" data-os="windows">Instrucciones de instalación Windows</button>
+  </div>
+  <div class="platform-cell">
+  <a class="platform-card" id="card-android" data-platform="android" href="#">
+    <div class="platform-icon">🤖</div>
+    <div class="platform-name">Android</div>
+    <div class="platform-sub">Android 8.0+</div>
+    <div class="platform-badge soon">Próximamente</div>
+  </a>
+  <button type="button" class="btn-instructions" data-os="android">Instrucciones de instalación Android</button>
+  </div>
+  <div class="platform-cell">
+  <a class="platform-card" id="card-macos" data-platform="macos" href="#">
+    <div class="platform-icon"></div>
+    <div class="platform-name">macOS</div>
+    <div class="platform-sub">macOS 12+</div>
+    <div class="platform-badge soon">Próximamente</div>
+  </a>
+  <button type="button" class="btn-instructions" data-os="macos">Instrucciones de instalación macOS</button>
+  </div>
+  <div class="platform-cell">
+  <a class="platform-card" id="card-linux" data-platform="linux" href="#">
+    <div class="platform-icon">🐧</div>
+    <div class="platform-name">Linux</div>
+    <div class="platform-sub">Debian / Ubuntu / AppImage</div>
+    <div class="platform-badge soon">Próximamente</div>
+  </a>
+  <button type="button" class="btn-instructions" data-os="linux">Instrucciones de instalación Linux</button>
+  </div>
+  <div class="platform-cell">
+  <a class="platform-card" id="card-ios" data-platform="ios" href="#">
+    <div class="platform-icon">📱</div>
+    <div class="platform-name">iPhone</div>
+    <div class="platform-sub">iOS 15+</div>
+    <div class="platform-badge soon">Próximamente</div>
+  </a>
+  <button type="button" class="btn-instructions" data-os="ios">Instrucciones de instalación iPhone</button>
+  </div>
+</div>
+
+<!-- ============ MODALES DE INSTRUCCIONES DE INSTALACIÓN ============ -->
+<!-- Overlay único; el contenido de cada SO se muestra según el botón pulsado -->
+<div class="instr-overlay" id="instrOverlay" role="dialog" aria-modal="true" aria-hidden="true">
+
+  <!-- Modal Windows -->
+  <div class="instr-modal" id="modal-windows" data-os="windows">
+    <div class="instr-modal-head">
+      <h3 class="instr-modal-title">Instrucciones de instalación en Windows</h3>
+      <button type="button" class="instr-close" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="instr-modal-body">
+      <!-- PEGAR AQUÍ las instrucciones completas de Windows -->
+      <p>Para ver los videos protegidos desde tu computadora, debes instalar el reproductor oficial para Windows.</p>
+
+      <h4>Requisitos</h4>
+      <ul>
+        <li>Windows 10 o Windows 11 (64 bits).</li>
+        <li>Conexión estable a internet.</li>
+        <li>Espacio disponible para la instalación.</li>
+        <li>Usar el correo autorizado con el que compraste o te registraste.</li>
+        <li>Descargar el reproductor únicamente desde el enlace oficial.</li>
+      </ul>
+
+      <h4>Pasos de instalación</h4>
+      <ol>
+        <li>Presiona el botón de descarga para Windows.</li>
+        <li>Espera a que termine la descarga del instalador.</li>
+        <li>Abre el archivo descargado.</li>
+        <li>Si Windows solicita permisos, presiona <strong>Sí</strong>.</li>
+        <li>Sigue los pasos del asistente de instalación.</li>
+        <li>Espera a que finalice el proceso.</li>
+        <li>Una vez instalado, abre <strong>Edulock Systems Player</strong> desde el escritorio o desde el menú Inicio.</li>
+        <li>Inicia sesión con tu correo autorizado.</li>
+        <li>Una vez validado tu acceso, podrás reproducir tus clases desde el reproductor.</li>
+      </ol>
+
+      <h4>Si Windows muestra una advertencia de seguridad</h4>
+      <p>En algunos equipos Windows puede mostrar una advertencia al ejecutar una aplicación descargada de internet. Si aparece una ventana indicando que Windows protegió tu equipo:</p>
+      <ol>
+        <li>Presiona <strong>Más información</strong>.</li>
+        <li>Selecciona <strong>Ejecutar de todas formas</strong>.</li>
+        <li>Continúa con la instalación normalmente.</li>
+      </ol>
+      <p class="instr-note">Este aviso puede aparecer en algunos equipos y no significa que exista un problema con el reproductor.</p>
+
+      <h4>Si el navegador bloquea la descarga</h4>
+      <p>Algunos navegadores pueden mostrar advertencias al descargar archivos ejecutables. Si ocurre:</p>
+      <ol>
+        <li>Verifica que estés descargando desde el enlace oficial.</li>
+        <li>Busca la opción <strong>Conservar archivo</strong>, <strong>Mantener</strong> o <strong>Descargar de todos modos</strong>.</li>
+        <li>Espera a que finalice la descarga.</li>
+        <li>Ejecuta el instalador normalmente.</li>
+      </ol>
+
+      <h4>Si el antivirus muestra una advertencia</h4>
+      <p>Algunos antivirus pueden solicitar una confirmación adicional porque el reproductor fue descargado desde internet. Si aparece una advertencia:</p>
+      <ol>
+        <li>Verifica que descargaste el archivo desde el sitio oficial.</li>
+        <li>Permite la ejecución o instalación si tu antivirus solicita confirmación.</li>
+        <li>Continúa con la instalación.</li>
+      </ol>
+      <p>Si no estás seguro de cómo hacerlo, comunícate con soporte.</p>
+
+      <h4>Si la aplicación no abre correctamente</h4>
+      <p>Si el reproductor se instaló pero no abre:</p>
+      <ol>
+        <li>Reinicia la computadora.</li>
+        <li>Verifica tu conexión a internet.</li>
+        <li>Intenta ejecutar nuevamente la aplicación.</li>
+        <li>Asegúrate de tener Windows 10 o Windows 11 actualizado.</li>
+        <li>Si el problema continúa, comunícate con soporte indicando el mensaje de error que aparece.</li>
+      </ol>
+
+      <h4>Importante</h4>
+      <ul>
+        <li>No compartas tu cuenta.</li>
+        <li>Usa únicamente el correo autorizado.</li>
+        <li>El acceso está vinculado a tus dispositivos autorizados.</li>
+        <li>Si cambias de computadora o tienes problemas para ingresar, comunícate con soporte.</li>
+        <li>El reproductor está diseñado para proteger el contenido del curso.</li>
+      </ul>
+
+      <h4>Lo que no está permitido</h4>
+      <ul>
+        <li>No se permite descargar los videos.</li>
+        <li>No se permite grabar la pantalla.</li>
+        <li>No se permite tomar capturas del contenido.</li>
+        <li>No se permite utilizar herramientas externas para copiar o extraer el video.</li>
+      </ul>
+      <p>Si el sistema detecta un uso no permitido, el reproductor puede pausar, cerrar la sesión o bloquear la reproducción.</p>
+    </div>
+  </div>
+
+  <!-- Modal Android -->
+  <div class="instr-modal" id="modal-android" data-os="android">
+    <div class="instr-modal-head">
+      <h3 class="instr-modal-title">Instrucciones de instalación en Android</h3>
+      <button type="button" class="instr-close" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="instr-modal-body">
+      <!-- PEGAR AQUÍ las instrucciones completas de Android -->
+      <p>Para ver los videos protegidos desde tu celular Android, debes instalar el reproductor oficial.</p>
+
+      <h4>Requisitos</h4>
+      <ul>
+        <li>Tener un celular Android compatible.</li>
+        <li>Contar con conexión a internet estable.</li>
+        <li>Tener espacio disponible en el dispositivo.</li>
+        <li>Usar el correo autorizado con el que compraste o te registraste.</li>
+        <li>Descargar el aplicativo únicamente desde el enlace oficial que te proporcionamos.</li>
+      </ul>
+
+      <h4>Pasos de instalación</h4>
+      <ol>
+        <li>Presiona el botón de descarga del reproductor para Android.</li>
+        <li>Espera a que termine la descarga del archivo.</li>
+        <li>Cuando finalice, abre el archivo descargado desde tu navegador o desde la carpeta <strong>Descargas</strong>.</li>
+        <li>Si Android muestra un aviso de seguridad, presiona <strong>Configuración</strong> o <strong>Ajustes</strong>.</li>
+        <li>Activa la opción <strong>Permitir instalar aplicaciones de esta fuente</strong>.</li>
+        <li>Regresa al archivo descargado.</li>
+        <li>Presiona <strong>Instalar</strong>.</li>
+        <li>Espera a que la instalación termine.</li>
+        <li>Cuando aparezca la opción, presiona <strong>Abrir</strong>.</li>
+        <li>Inicia sesión con tu correo autorizado.</li>
+        <li>Una vez validado tu acceso, podrás reproducir tus clases desde el reproductor.</li>
+      </ol>
+
+      <h4>Si Android bloquea la instalación</h4>
+      <p>En algunos celulares Android puede aparecer un aviso porque la aplicación no fue instalada desde Google Play. Si aparece ese aviso, realiza lo siguiente:</p>
+      <ol>
+        <li>Presiona <strong>Configuración</strong>, <strong>Ajustes</strong> o <strong>Permitir desde esta fuente</strong>.</li>
+        <li>Busca la opción <strong>Instalar aplicaciones desconocidas</strong>.</li>
+        <li>Selecciona el navegador o la app desde donde descargaste el archivo, por ejemplo <strong>Chrome</strong>, <strong>Files</strong> o <strong>Administrador de archivos</strong>.</li>
+        <li>Activa <strong>Permitir desde esta fuente</strong>.</li>
+        <li>Vuelve al archivo descargado.</li>
+        <li>Presiona nuevamente <strong>Instalar</strong>.</li>
+      </ol>
+      <p class="instr-note">Este aviso es normal cuando se instala una aplicación externa. Solo debes instalar el reproductor desde el enlace oficial que te entregamos.</p>
+
+      <h4>Si Android muestra “archivo puede ser dañino”</h4>
+      <p>Si el navegador muestra un aviso indicando que el archivo puede ser dañino:</p>
+      <ol>
+        <li>Verifica que estés descargando desde el enlace oficial.</li>
+        <li>Presiona <strong>Descargar de todos modos</strong> o <strong>Conservar archivo</strong>, si aparece esa opción.</li>
+        <li>Cuando termine la descarga, abre el archivo.</li>
+        <li>Continúa con la instalación.</li>
+      </ol>
+
+      <h4>Si Play Protect muestra una advertencia</h4>
+      <p>En algunos dispositivos puede aparecer una advertencia de Play Protect porque la app no proviene de Google Play. Si aparece esa advertencia:</p>
+      <ol>
+        <li>Verifica que descargaste el reproductor desde el enlace oficial.</li>
+        <li>Presiona <strong>Más detalles</strong> si aparece esa opción.</li>
+        <li>Selecciona <strong>Instalar de todos modos</strong> o <strong>Abrir de todos modos</strong>, si el dispositivo lo permite.</li>
+        <li>Si el celular no permite continuar, comunícate con soporte para recibir ayuda.</li>
+      </ol>
+
+      <h4>Si la app no abre después de instalar</h4>
+      <p>Si el reproductor se instala, pero no abre correctamente:</p>
+      <ol>
+        <li>Verifica tu conexión a internet.</li>
+        <li>Cierra la aplicación y vuelve a abrirla.</li>
+        <li>Reinicia tu celular.</li>
+        <li>Confirma que tu Android sea compatible.</li>
+        <li>Si el problema continúa, comunícate con soporte indicando el modelo de tu celular y una captura del mensaje que aparece.</li>
+      </ol>
+
+      <h4>Importante</h4>
+      <ul>
+        <li>No compartas tu cuenta.</li>
+        <li>Usa únicamente el correo autorizado.</li>
+        <li>El acceso está vinculado a tus dispositivos autorizados.</li>
+        <li>Si cambias de celular o tienes problemas para ingresar, comunícate con soporte.</li>
+        <li>El reproductor está diseñado para proteger el contenido del curso.</li>
+      </ul>
+
+      <h4>Lo que no está permitido</h4>
+      <ul>
+        <li>No se permite descargar los videos.</li>
+        <li>No se permite grabar la pantalla.</li>
+        <li>No se permite tomar capturas del contenido.</li>
+        <li>No se permite usar herramientas externas para copiar o extraer el video.</li>
+      </ul>
+      <p>Si el sistema detecta un uso no permitido, el reproductor puede pausar, cerrar la sesión o bloquear la reproducción.</p>
+    </div>
+  </div>
+
+  <!-- Modal macOS -->
+  <div class="instr-modal" id="modal-macos" data-os="macos">
+    <div class="instr-modal-head">
+      <h3 class="instr-modal-title">Instrucciones de instalación en macOS</h3>
+      <button type="button" class="instr-close" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="instr-modal-body">
+      <!-- PEGAR AQUÍ las instrucciones completas de macOS -->
+      <p>Para ver los videos protegidos desde tu Mac, debes instalar el reproductor oficial.</p>
+
+      <h4>Requisitos</h4>
+      <ul>
+        <li>Tener una Mac compatible.</li>
+        <li>Contar con conexión a internet estable.</li>
+        <li>Usar el correo autorizado con el que compraste o te registraste.</li>
+        <li>Instalar el reproductor desde el archivo oficial que te proporcionamos.</li>
+      </ul>
+
+      <h4>Pasos de instalación</h4>
+      <ol>
+        <li>Descarga el archivo del reproductor para macOS.</li>
+        <li>Cuando termine la descarga, abre el archivo <strong>.dmg</strong>.</li>
+        <li>Se abrirá una ventana de instalación.</li>
+        <li>Arrastra <strong>Edulock Systems Player</strong> hacia la carpeta <strong>Aplicaciones</strong>.</li>
+        <li>Abre la carpeta <strong>Aplicaciones</strong>.</li>
+        <li>Busca <strong>Edulock Systems Player</strong>.</li>
+        <li>La primera vez, haz clic derecho sobre la aplicación y selecciona <strong>Abrir</strong>.</li>
+        <li>Si aparece un aviso de seguridad de macOS, vuelve a presionar <strong>Abrir</strong>.</li>
+        <li>Después de aceptar una vez, la aplicación abrirá normalmente con doble clic.</li>
+        <li>Inicia sesión con tu correo autorizado.</li>
+        <li>Ingresa tu licencia si el sistema la solicita.</li>
+        <li>Una vez validado tu acceso, podrás reproducir tus clases desde el reproductor.</li>
+      </ol>
+
+      <h4>Si macOS bloquea la aplicación</h4>
+      <p>Si al abrir el reproductor aparece un mensaje indicando que la app fue bloqueada:</p>
+      <ol>
+        <li>Intenta abrir la aplicación una vez.</li>
+        <li>Ve a <strong>Ajustes del Sistema</strong>.</li>
+        <li>Entra en <strong>Privacidad y Seguridad</strong>.</li>
+        <li>Busca el mensaje relacionado con <strong>Edulock Systems Player</strong>.</li>
+        <li>Presiona <strong>Abrir de todos modos</strong>.</li>
+        <li>Confirma con tu contraseña o Touch ID.</li>
+        <li>Luego abre nuevamente la aplicación.</li>
+      </ol>
+
+      <h4>Importante</h4>
+      <ul>
+        <li>No compartas tu cuenta.</li>
+        <li>No compartas tu licencia.</li>
+        <li>El acceso está vinculado a tus dispositivos autorizados.</li>
+        <li>Si cambias de Mac o tienes problemas para ingresar, comunícate con soporte.</li>
+        <li>El reproductor está diseñado para proteger el contenido del curso.</li>
+      </ul>
+
+      <h4>Lo que no está permitido</h4>
+      <ul>
+        <li>No se permite descargar los videos.</li>
+        <li>No se permite grabar la pantalla.</li>
+        <li>No se permite tomar capturas del contenido.</li>
+        <li>No se permite usar herramientas externas para copiar o extraer el video.</li>
+      </ul>
+      <p>Si el sistema detecta un uso no permitido, el reproductor puede pausar, cerrar la sesión o bloquear la reproducción.</p>
+    </div>
+  </div>
+
+  <!-- Modal Linux -->
+  <div class="instr-modal" id="modal-linux" data-os="linux">
+    <div class="instr-modal-head">
+      <h3 class="instr-modal-title">Instrucciones de instalación en Linux</h3>
+      <button type="button" class="instr-close" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="instr-modal-body">
+      <!-- PEGAR AQUÍ las instrucciones completas de Linux -->
+      <p>Para ver los videos protegidos desde tu computadora con Linux, debes instalar o ejecutar el reproductor oficial.</p>
+
+      <h4>Requisitos</h4>
+      <ul>
+        <li>Usar una distribución compatible, como Ubuntu, Debian o similares.</li>
+        <li>Tener conexión estable a internet.</li>
+        <li>Tener espacio disponible en el dispositivo.</li>
+        <li>Usar el correo autorizado con el que compraste o te registraste.</li>
+        <li>Descargar el reproductor únicamente desde el enlace oficial.</li>
+      </ul>
+
+      <h4>Pasos de instalación</h4>
+      <ol>
+        <li>Presiona el botón de descarga para Linux.</li>
+        <li>Espera a que termine la descarga del archivo.</li>
+        <li>Busca el archivo descargado en la carpeta <strong>Descargas</strong>.</li>
+        <li>Haz clic derecho sobre el archivo.</li>
+        <li>Entra en <strong>Propiedades</strong>.</li>
+        <li>Busca la sección de <strong>Permisos</strong>.</li>
+        <li>Activa la opción <strong>Permitir ejecutar el archivo como un programa</strong>.</li>
+        <li>Cierra la ventana de propiedades.</li>
+        <li>Haz doble clic sobre el archivo para abrir el reproductor.</li>
+        <li>Inicia sesión con tu correo autorizado.</li>
+        <li>Una vez validado tu acceso, podrás reproducir tus clases desde el reproductor.</li>
+      </ol>
+
+      <h4>Si Linux no permite abrir el archivo</h4>
+      <p>En algunas distribuciones Linux, el sistema puede bloquear la ejecución del archivo descargado por seguridad. Si ocurre esto:</p>
+      <ol>
+        <li>Haz clic derecho sobre el archivo descargado.</li>
+        <li>Selecciona <strong>Propiedades</strong>.</li>
+        <li>Entra en <strong>Permisos</strong>.</li>
+        <li>Activa <strong>Permitir ejecutar el archivo como un programa</strong>.</li>
+        <li>Guarda los cambios.</li>
+        <li>Intenta abrir nuevamente el reproductor.</li>
+      </ol>
+      <p class="instr-note">Este aviso es normal cuando se descarga una aplicación desde internet.</p>
+
+      <h4>Si aparece un aviso de seguridad</h4>
+      <p>Si Linux muestra un aviso indicando que el archivo proviene de una fuente externa:</p>
+      <ol>
+        <li>Verifica que descargaste el reproductor desde el enlace oficial.</li>
+        <li>Confirma que deseas abrir o ejecutar el archivo.</li>
+        <li>Continúa con la instalación o apertura del reproductor.</li>
+      </ol>
+
+      <h4>Si el reproductor no abre correctamente</h4>
+      <p>Si el reproductor no abre después de seguir los pasos:</p>
+      <ol>
+        <li>Verifica tu conexión a internet.</li>
+        <li>Cierra cualquier ventana abierta del reproductor.</li>
+        <li>Reinicia tu computadora.</li>
+        <li>Intenta abrir nuevamente el archivo.</li>
+        <li>Confirma que estás usando una distribución compatible.</li>
+        <li>Si el problema continúa, comunícate con soporte indicando tu distribución de Linux y el mensaje que aparece.</li>
+      </ol>
+
+      <h4>Importante</h4>
+      <ul>
+        <li>No compartas tu cuenta.</li>
+        <li>Usa únicamente el correo autorizado.</li>
+        <li>El acceso está vinculado a tus dispositivos autorizados.</li>
+        <li>Si cambias de computadora o tienes problemas para ingresar, comunícate con soporte.</li>
+        <li>El reproductor está diseñado para proteger el contenido del curso.</li>
+      </ul>
+
+      <h4>Lo que no está permitido</h4>
+      <ul>
+        <li>No se permite descargar los videos.</li>
+        <li>No se permite grabar la pantalla.</li>
+        <li>No se permite tomar capturas del contenido.</li>
+        <li>No se permite utilizar herramientas externas para copiar o extraer el video.</li>
+      </ul>
+      <p>Si el sistema detecta un uso no permitido, el reproductor puede pausar, cerrar la sesión o bloquear la reproducción.</p>
+    </div>
+  </div>
+
+  <!-- Modal iPhone -->
+  <div class="instr-modal" id="modal-ios" data-os="ios">
+    <div class="instr-modal-head">
+      <h3 class="instr-modal-title">Instrucciones de instalación en iPhone</h3>
+      <button type="button" class="instr-close" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="instr-modal-body">
+      <!-- PEGAR AQUÍ las instrucciones completas de iPhone -->
+      <p>El reproductor para iPhone estará disponible próximamente. Cuando se habilite, podrás instalarlo desde el enlace oficial que te proporcionaremos.</p>
+
+      <h4>Requisitos</h4>
+      <ul>
+        <li>Tener un iPhone compatible.</li>
+        <li>Contar con conexión estable a internet.</li>
+        <li>Tener espacio disponible en el dispositivo.</li>
+        <li>Usar el correo autorizado con el que compraste o te registraste.</li>
+        <li>Instalar el reproductor únicamente desde el enlace oficial.</li>
+      </ul>
+
+      <h4>Importante antes de instalar</h4>
+      <p>En iPhone no se instala igual que en Android, Windows o Mac. No debes intentar instalar archivos de Android, Windows, macOS o Linux en iPhone, ya que no son compatibles.</p>
+      <p>Cuando la versión para iPhone esté disponible, se entregará mediante uno de estos métodos:</p>
+      <ul>
+        <li>App Store.</li>
+        <li>TestFlight.</li>
+        <li>Enlace oficial autorizado.</li>
+      </ul>
+
+      <h4>Pasos de instalación cuando esté disponible</h4>
+      <ol>
+        <li>Presiona el botón oficial de instalación para iPhone.</li>
+        <li>Abre el enlace desde tu iPhone.</li>
+        <li>Si el enlace te lleva a App Store, presiona <strong>Obtener</strong> o <strong>Instalar</strong>.</li>
+        <li>Si el enlace te lleva a TestFlight, instala primero la app <strong>TestFlight</strong> desde App Store.</li>
+        <li>Abre la invitación oficial del reproductor en TestFlight.</li>
+        <li>Presiona <strong>Instalar</strong>.</li>
+        <li>Espera a que termine la instalación.</li>
+        <li>Abre el reproductor desde la pantalla principal de tu iPhone.</li>
+        <li>Inicia sesión con tu correo autorizado.</li>
+        <li>Una vez validado tu acceso, podrás reproducir tus clases desde el reproductor.</li>
+      </ol>
+
+      <h4>Si iPhone no permite instalar la app</h4>
+      <p>Si el iPhone no permite instalar el reproductor, revisa lo siguiente:</p>
+      <ol>
+        <li>Verifica que estás usando el enlace oficial.</li>
+        <li>Confirma que tienes conexión a internet.</li>
+        <li>Asegúrate de tener espacio disponible.</li>
+        <li>Revisa que tu iPhone tenga una versión de iOS compatible.</li>
+        <li>Si estás usando TestFlight, confirma que la invitación siga activa.</li>
+        <li>Si el problema continúa, comunícate con soporte.</li>
+      </ol>
+
+      <h4>Si el enlace de TestFlight no funciona</h4>
+      <p>Si el enlace de TestFlight aparece como vencido, lleno o no disponible:</p>
+      <ol>
+        <li>Verifica que abriste el enlace desde tu iPhone.</li>
+        <li>Confirma que tienes instalada la app <strong>TestFlight</strong>.</li>
+        <li>Intenta abrir nuevamente la invitación oficial.</li>
+        <li>Si sigue sin funcionar, comunícate con soporte para solicitar un nuevo acceso.</li>
+      </ol>
+
+      <h4>Si la app no abre correctamente</h4>
+      <p>Si el reproductor se instala pero no abre:</p>
+      <ol>
+        <li>Cierra la aplicación completamente.</li>
+        <li>Verifica tu conexión a internet.</li>
+        <li>Reinicia tu iPhone.</li>
+        <li>Intenta abrir nuevamente la app.</li>
+        <li>Si el problema continúa, comunícate con soporte indicando el modelo de tu iPhone y el mensaje que aparece.</li>
+      </ol>
+
+      <h4>Importante</h4>
+      <ul>
+        <li>No compartas tu cuenta.</li>
+        <li>Usa únicamente el correo autorizado.</li>
+        <li>El acceso está vinculado a tus dispositivos autorizados.</li>
+        <li>Si cambias de iPhone o tienes problemas para ingresar, comunícate con soporte.</li>
+        <li>El reproductor está diseñado para proteger el contenido del curso.</li>
+      </ul>
+
+      <h4>Lo que no está permitido</h4>
+      <ul>
+        <li>No se permite descargar los videos.</li>
+        <li>No se permite grabar la pantalla.</li>
+        <li>No se permite tomar capturas del contenido.</li>
+        <li>No se permite utilizar herramientas externas para copiar o extraer el video.</li>
+      </ul>
+      <p>Si el sistema detecta un uso no permitido, el reproductor puede pausar, cerrar la sesión o bloquear la reproducción.</p>
+    </div>
+  </div>
+
+</div>
+<!-- ============ FIN MODALES ============ -->
+
+<!-- "Ya lo instalé" — se muestra si viene ?video= -->
+<div class="already-installed" id="alreadyInstalled">
+  <h4>✓ ¿Ya tienes el reproductor instalado?</h4>
+  <p>Haz clic en el botón para abrir directamente el video en Edulock Systems Player.</p>
+  <button class="btn-open" onclick="tryOpenVideo()">
+    ▶ Abrir video en el reproductor
+  </button>
+</div>
+
+<div class="footer">Edulock Systems Player © 2026 — Contenido protegido · Todos los derechos reservados</div>
+
+<script>
+(function() {
+  // Detectar si viene video= en la URL
+  const params  = new URLSearchParams(location.search);
+  const videoCode = params.get('video');
+
+  if (videoCode) {
+    const box = document.getElementById('alreadyInstalled');
+    box.classList.add('show');
+  }
+
+  window.tryOpenVideo = function() {
+    if (!videoCode) return;
+    // Pedir launch token y abrir cdp://
+    fetch('/api/public/video/' + videoCode + '/launch', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.deepLink) {
+          window.location.href = d.deepLink;
+        }
+      })
+      .catch(() => {});
+  };
+
+  // Cargar disponibilidad de descargas por plataforma dinámicamente.
+  // Si hay link configurado => DISPONIBLE (clickable). Si no => PRÓXIMAMENTE.
+  fetch('/api/public/downloads')
+    .then(r => r.json())
+    .then(d => {
+      const dls = (d && d.downloads) || {};
+      ['windows', 'android', 'macos', 'linux', 'ios'].forEach(function(p) {
+        const card  = document.getElementById('card-' + p);
+        if (!card) return;
+        const badge = card.querySelector('.platform-badge');
+        const link  = (dls[p] || '').trim();
+        if (link) {
+          card.href = link;
+          card.setAttribute('target', '_blank');
+          card.setAttribute('rel', 'noopener');
+          card.classList.remove('soon');
+          if (p === 'windows') card.classList.add('primary');
+          if (badge) { badge.textContent = 'Disponible'; badge.classList.remove('soon'); }
+        } else {
+          card.classList.add('soon');
+          card.removeAttribute('href');
+          if (badge) { badge.textContent = 'Próximamente'; badge.classList.add('soon'); }
+          card.addEventListener('click', function(e) { e.preventDefault(); });
+        }
+      });
+    })
+    .catch(() => {});
+
+  // ===== Modales de instrucciones de instalación =====
+  const instrOverlay = document.getElementById('instrOverlay');
+  const instrModals  = instrOverlay ? instrOverlay.querySelectorAll('.instr-modal') : [];
+
+  function openInstr(os) {
+    if (!instrOverlay) return;
+    instrModals.forEach(function(m) {
+      m.classList.toggle('show', m.getAttribute('data-os') === os);
+    });
+    instrOverlay.classList.add('show');
+    instrOverlay.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeInstr() {
+    if (!instrOverlay) return;
+    instrOverlay.classList.remove('show');
+    instrOverlay.setAttribute('aria-hidden', 'true');
+    instrModals.forEach(function(m) { m.classList.remove('show'); });
+    document.body.style.overflow = '';
+  }
+
+  document.querySelectorAll('.btn-instructions').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      openInstr(btn.getAttribute('data-os'));
+    });
+  });
+
+  document.querySelectorAll('.instr-close').forEach(function(btn) {
+    btn.addEventListener('click', closeInstr);
+  });
+
+  // Cerrar al hacer clic fuera del modal (sobre el overlay)
+  if (instrOverlay) {
+    instrOverlay.addEventListener('click', function(e) {
+      if (e.target === instrOverlay) closeInstr();
+    });
+  }
+
+  // Cerrar con tecla Escape
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeInstr();
+  });
+})();
+</script>
+</body>
+</html>

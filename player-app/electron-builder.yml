@@ -1,0 +1,104 @@
+appId: com.edulock.player
+productName: Edulock Systems Player
+copyright: "Copyright © 2026 Edulock Systems. Todos los derechos reservados."
+
+# ─── Protocolo cdp:// ──────────────────────────────────────────────────────────
+protocols:
+  - name: Edulock Systems Player
+    schemes:
+      - cdp
+
+# ─── Directorios ───────────────────────────────────────────────────────────────
+directories:
+  buildResources: assets
+  output: dist
+
+# ─── Archivos a incluir en el ejecutable ───────────────────────────────────────
+files:
+  - main.js
+  - preload.js
+  - activation-store.js
+  - edu-native.js
+  - security-policy.js
+  - platform-probes.js
+  - EULA.txt
+  - config.json
+  - renderer/**/*
+  - assets/icon.*
+  - "!assets/icon-*.png"
+  - "!scripts/**"
+  - "!*.{bat,sh}"
+  - "!*.md"
+  - "!node_modules/electron-builder/**"
+  - "!node_modules/png-to-ico/**"
+
+# Sin auto-update por defecto
+publish: null
+
+# ─── Windows ───────────────────────────────────────────────────────────────────
+win:
+  icon: assets/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  artifactName: "EdulockSystems-Player-${version}.${ext}"
+  legalTrademarks: "Edulock Systems. Todos los derechos reservados."
+  publisherName: "Edulock Systems"
+  requestedExecutionLevel: asInvoker
+
+# Instalador NSIS profesional
+nsis:
+  license: EULA.txt
+  oneClick: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
+  installerHeaderIcon: assets/icon.ico
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Edulock Systems Player
+  menuCategory: Edulock Systems
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+  language: 3082
+
+# Portable (sin instalación — único .exe, copia donde quieras)
+portable:
+  artifactName: "EdulockSystems-Player-${version}-Portable.${ext}"
+
+# ─── macOS ─────────────────────────────────────────────────────────────────────
+mac:
+  icon: assets/icon.png
+  category: public.app-category.education
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  extendInfo:
+    CFBundleURLTypes:
+      - CFBundleURLName: Edulock Systems Player
+        CFBundleURLSchemes:
+          - cdp
+
+# ─── Linux ─────────────────────────────────────────────────────────────────────
+linux:
+  icon: assets/icon.png
+  category: Education
+  mimeTypes:
+    - x-scheme-handler/cdp
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  artifactName: "EdulockSystems-Player-${version}.${ext}"
+
+# CastLabs runtime and packaged executable hardening.
+electronDist: node_modules/electron/dist
+electronVersion: 42.0.0+wvcus
+afterPack: scripts/setup-fuses.js

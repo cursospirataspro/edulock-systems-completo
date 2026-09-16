@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/black">
+
+    <!-- Título del video -->
+    <TextView
+        android:id="@+id/video_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="Cargando..."
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:layout_gravity="top"
+        android:padding="16dp"
+        android:background="#4d000000" />
+
+    <!-- Reproductor -->
+    <com.google.android.exoplayer2.ui.StyledPlayerView
+        android:id="@+id/player_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center" />
+
+    <!-- Indicador de carga -->
+    <ProgressBar
+        android:id="@+id/loading_spinner"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="center"
+        android:visibility="gone" />
+
+    <!-- Botón selector de calidad -->
+    <ImageButton
+        android:id="@+id/quality_button"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
+        android:background="#66000000"
+        android:padding="8dp"
+        android:src="@android:drawable/ic_menu_manage"
+        android:contentDescription="Calidad"
+        android:visibility="gone" />
+
+    <!-- Marca de agua forense (posición dinámica, igual que PC) -->
+    <TextView
+        android:id="@+id/watermark_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="#FFFFFF"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:alpha="0.35"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp"
+        android:background="#33000000"
+        android:layout_gravity="top|start"
+        android:layout_margin="0dp" />
+
+</FrameLayout>

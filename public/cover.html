@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Edulock Systems Player</title>
+<link rel="icon" type="image/png" href="/logo.png">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:      #0d0d0d;
+    --card:    #171717;
+    --border:  #333333;
+    --accent:  #c72b24;
+    --accent2: #7b2fd1;
+    --text:    #f5f5f5;
+    --muted:   #9ca3af;
+    --red:     #ef4444;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  /* Header branding */
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 32px;
+    opacity: .85;
+  }
+  .brand-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 0 14px rgba(199,43,36,.45);
+  }
+  .brand-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .brand-name { font-size: 15px; font-weight: 600; letter-spacing: .5px; color: var(--muted); }
+
+  /* Card */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    max-width: 580px;
+    width: 100%;
+    box-shadow: 0 24px 64px rgba(0,0,0,.6);
+  }
+
+  /* Thumbnail */
+  .thumb-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: #080810;
+    cursor: pointer;
+    overflow: hidden;
+  }
+  /* Overlay degradado solo cuando hay imagen real */
+  .thumb-wrap.has-thumb::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(to bottom, rgba(0,0,0,.15) 0%, rgba(0,0,0,.55) 100%);
+    pointer-events: none;
+    z-index: 1;
+  }
+  .thumb-img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform .4s ease, filter .3s;
+  }
+  .thumb-wrap:hover .thumb-img { transform: scale(1.03); filter: brightness(.9); }
+
+  /* Thumbnail placeholder */
+  .thumb-placeholder {
+    width: 100%; height: 100%;
+    background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #0f0f1a 100%);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .thumb-placeholder svg { opacity: .15; }
+
+  /* Play button */
+  .play-btn {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    cursor: pointer;
+    transition: transform .15s;
+  }
+  .play-btn:hover { transform: scale(1.06); }
+  .play-circle {
+    width: 72px; height: 72px;
+    background: rgba(245, 158, 11, .92);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 40px rgba(245,158,11,.4);
+    transition: background .2s, box-shadow .2s;
+  }
+  .play-btn:hover .play-circle {
+    background: var(--accent2);
+    box-shadow: 0 0 60px rgba(245,158,11,.6);
+  }
+  .play-circle svg { margin-left: 5px; }
+
+  /* Loading spinner on play */
+  .play-spinner {
+    display: none;
+    width: 72px; height: 72px;
+    border: 4px solid rgba(245,158,11,.3);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Duration badge */
+  .duration-badge {
+    position: absolute;
+    bottom: 12px; right: 12px;
+    z-index: 3;
+    background: rgba(0,0,0,.75);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 5px;
+  }
+
+  /* Info section */
+  .info {
+    padding: 20px 24px;
+  }
+  .video-title {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 10px;
+    color: var(--text);
+  }
+  .protection-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(245,158,11,.1);
+    border: 1px solid rgba(245,158,11,.25);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 20px;
+    margin-bottom: 16px;
+    letter-spacing: .3px;
+  }
+  .protection-msg {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.6;
+    margin-bottom: 20px;
+  }
+
+  /* CTA buttons */
+  .actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .btn-play {
+    flex: 1;
+    min-width: 160px;
+    background: var(--accent);
+    color: #000;
+    font-weight: 700;
+    font-size: 14px;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 20px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: background .2s, transform .1s;
+  }
+  .btn-play:hover { background: var(--accent2); }
+  .btn-play:active { transform: scale(.97); }
+  .btn-play:disabled { opacity: .6; cursor: default; }
+
+  .btn-download {
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color .2s, border-color .2s;
+    text-decoration: none;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .btn-download:hover { color: var(--text); border-color: var(--muted); }
+
+  /* Status messages */
+  .status-msg {
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--muted);
+    display: none;
+    line-height: 1.5;
+  }
+  .status-msg.show { display: block; }
+  .status-msg.error { color: var(--red); }
+  .status-msg.success { color: #22c55e; }
+
+  /* Footer */
+  .footer {
+    margin-top: 24px;
+    font-size: 12px;
+    color: var(--muted);
+    opacity: .5;
+    text-align: center;
+  }
+
+  /* Skeleton shimmer */
+  .skeleton {
+    background: linear-gradient(90deg, var(--border) 25%, #1e1e30 50%, var(--border) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s infinite;
+    border-radius: 6px;
+    height: 1em;
+  }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+</style>
+</head>
+<body>
+
+<div class="brand">
+  <div class="brand-icon"><img src="/logo.png" alt="Edulock Systems"></div>
+  <span class="brand-name">EDULOCK SYSTEMS PLAYER</span>
+</div>
+
+<div class="card">
+  <div class="thumb-wrap" id="thumbWrap" onclick="onPlayClick()">
+    <div class="thumb-placeholder" id="thumbPlaceholder">
+      <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+        <rect width="80" height="80" rx="16" fill="#1e1e2e"/>
+        <path d="M30 22l28 18-28 18V22z" fill="#c72b24"/>
+      </svg>
+    </div>
+    <img id="thumbImg" class="thumb-img" src="" alt="" style="display:none" onload="this.style.display='block';document.getElementById('thumbPlaceholder').style.display='none'" onerror="this.style.display='none'"/>
+    <div class="play-btn" id="playBtn" style="z-index:2">
+      <div class="play-circle" id="playCircle">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="white">
+          <path d="M8 5l18 9-18 9V5z"/>
+        </svg>
+      </div>
+      <div class="play-spinner" id="playSpinner"></div>
+    </div>
+    <div class="duration-badge" id="durationBadge" style="display:none;z-index:3;"></div>
+  </div>
+
+  <div class="info">
+    <div class="video-title" id="videoTitle">
+      <div class="skeleton" style="width:70%; height:18px;"></div>
+    </div>
+    <div class="protection-badge">
+      🛡️ Video Protegido
+    </div>
+    <p class="protection-msg" id="protectionMsg">
+      Este video está protegido contra copia. Para verlo, debe instalar <strong>Edulock Systems Player</strong>.
+    </p>
+    <div class="actions">
+      <button class="btn-play" id="btnPlay" onclick="onPlayClick()" disabled>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3 2l12 6-12 6V2z"/></svg>
+        Reproducir
+      </button>
+      <a class="btn-download" id="btnDownload" href="/download">
+        ⬇ Instalar Player
+      </a>
+    </div>
+    <div class="status-msg" id="statusMsg"></div>
+  </div>
+</div>
+
+<div class="footer">Edulock Systems Player © 2026 — Contenido protegido · Protección avanzada</div>
+
+<script>
+(function() {
+  const publicCode = location.pathname.split('/cover/')[1]?.trim();
+  if (!publicCode) { showError('Código de video no encontrado.'); return; }
+
+  let downloadUrl = '/download';
+
+  // Cargar metadata pública
+  fetch('/api/public/video/' + publicCode)
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { showError(d.error); return; }
+      document.title = d.title + ' — Edulock Systems Player';
+      document.getElementById('videoTitle').textContent = d.title;
+      if (d.theme === 'light') {
+        const style = document.documentElement.style;
+        style.setProperty('--bg', '#f4f4f5'); style.setProperty('--card', '#ffffff');
+        style.setProperty('--border', '#d4d4d8'); style.setProperty('--text', '#18181b'); style.setProperty('--muted', '#52525b');
+      }
+      if (d.description) {
+        const description = document.createElement('p');
+        description.textContent = d.description;
+        description.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);line-height:1.5;margin:12px 0';
+        document.getElementById('videoTitle').after(description);
+      }
+
+      // Thumbnail real del video
+      if (d.thumbnailUrl) {
+        const wrap = document.getElementById('thumbWrap');
+        const img  = document.getElementById('thumbImg');
+        const placeholder = document.getElementById('thumbPlaceholder');
+        img.src = d.thumbnailUrl;
+        img.alt = d.title;
+        img.onload = () => {
+          placeholder.style.display = 'none';
+          img.style.display = 'block';
+          wrap.classList.add('has-thumb');
+        };
+        img.onerror = () => { img.style.display = 'none'; };
+      }
+
+      // Badge de duración
+      if (d.duration) {
+        const badge = document.getElementById('durationBadge');
+        badge.textContent = d.duration;
+        badge.style.display = 'block';
+      }
+
+      if (d.downloadUrl) downloadUrl = d.downloadUrl;
+      document.getElementById('btnDownload').href = d.downloadUrl || '/download';
+      document.getElementById('btnPlay').disabled = false;
+    })
+    .catch(() => showError('No se pudo cargar la información del video.'));
+
+  function onPlayClick() {
+    const btn = document.getElementById('btnPlay');
+    const playCircle = document.getElementById('playCircle');
+    const spinner = document.getElementById('playSpinner');
+
+    btn.disabled = true;
+    playCircle.style.display = 'none';
+    spinner.style.display = 'block';
+    setStatus('Iniciando reproductor...', '');
+
+    fetch('/api/public/video/' + publicCode + '/launch', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) { resetBtn(); showError(d.error); return; }
+
+        const { deepLink, downloadUrl: dlUrl, launchToken } = d;
+        downloadUrl = dlUrl || downloadUrl;
+        document.getElementById('btnDownload').href = downloadUrl;
+
+        setStatus('Abriendo Edulock Systems Player…', 'loading');
+
+        // Intentar abrir el protocolo cdp://
+        const iframe = document.createElement('iframe');
+        iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';
+        document.body.appendChild(iframe);
+        iframe.src = deepLink;
+
+        // ── DETECCIÓN PRECISA ──────────────────────────────────────────────
+        // Señal REAL: el reproductor hace "check-in" al servidor apenas abre el
+        // enlace (POST /api/public/launch/checkin). Consultamos ese estado por
+        // el launchToken. Como respaldo (reproductores antiguos que aún no
+        // reportan), detectamos si el navegador perdió el foco (indicio de que
+        // una app nativa se abrió).
+        let done = false, sawBlur = false;
+        const markBlur = () => { sawBlur = true; };
+        const onVis = () => { if (document.hidden) sawBlur = true; };
+        window.addEventListener('blur', markBlur);
+        window.addEventListener('pagehide', markBlur);
+        document.addEventListener('visibilitychange', onVis);
+
+        const startedAt = Date.now();
+        const MAX_WAIT = 12000;   // 12s: cubre arranque en frío del reproductor
+
+        const cleanup = () => {
+          window.removeEventListener('blur', markBlur);
+          window.removeEventListener('pagehide', markBlur);
+          document.removeEventListener('visibilitychange', onVis);
+          try { document.body.removeChild(iframe); } catch (_) {}
+        };
+
+        const finish = (state) => {
+          if (done) return; done = true;
+          clearInterval(poller);
+          cleanup();
+          resetBtn();
+          if (state === 'opened') {
+            setStatus('✓ Reproductor abierto. Si no ves el video, revisa la ventana del reproductor.', 'success');
+          } else if (state === 'maybe') {
+            // El navegador perdió el foco pero no llegó el check-in (reproductor antiguo).
+            setStatus('El reproductor se está abriendo. Si no ves el video en unos segundos, revisa su ventana o inícialo manualmente.', 'success');
+          } else {
+            // Ni check-in ni cambio de foco → casi seguro no está instalado.
+            setStatus('No se detectó el reproductor instalado. Descárgalo con el botón de abajo; si ya lo tienes, ábrelo manualmente e inicia sesión.', 'error');
+            const dl = document.getElementById('btnDownload');
+            dl.style.outline = '2px solid var(--accent)';
+            dl.style.borderColor = 'var(--accent)';
+          }
+        };
+
+        const poller = setInterval(() => {
+          if (done) return;
+          if (Date.now() - startedAt > MAX_WAIT) {
+            finish(sawBlur ? 'maybe' : 'not_installed');
+            return;
+          }
+          if (!launchToken) return; // sin token no hay check-in; esperamos al timeout
+          fetch('/api/public/launch/status?lt=' + encodeURIComponent(launchToken))
+            .then(r => r.json())
+            .then(s => {
+              if (s && s.opened) finish('opened');
+              else if (s && s.expired) finish(sawBlur ? 'maybe' : 'not_installed');
+            })
+            .catch(() => {});
+        }, 800);
+      })
+      .catch(() => { resetBtn(); showError('Error al iniciar. Intenta de nuevo.'); });
+  }
+
+  function resetBtn() {
+    const btn = document.getElementById('btnPlay');
+    const playCircle = document.getElementById('playCircle');
+    const spinner = document.getElementById('playSpinner');
+    btn.disabled = false;
+    playCircle.style.display = 'flex';
+    spinner.style.display = 'none';
+  }
+
+  function setStatus(msg, type) {
+    const el = document.getElementById('statusMsg');
+    el.textContent = msg;
+    el.className = 'status-msg show' + (type ? ' ' + type : '');
+  }
+
+  function showError(msg) {
+    document.getElementById('videoTitle').textContent = 'Video no disponible';
+    setStatus(msg, 'error');
+    document.getElementById('btnPlay').disabled = true;
+  }
+
+  // Hacer onPlayClick global para el onclick del thumb
+  window.onPlayClick = onPlayClick;
+})();
+</script>
+</body>
+</html>

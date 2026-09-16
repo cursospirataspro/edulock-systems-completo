@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iniciar sesión</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: radial-gradient(ellipse at center, #1a0a2e 0%, #0d0118 100%);
+    color: #e8e0ff;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    padding: 16px;
+  }
+  .container {
+    width: min(400px, 100%);
+    padding: 32px;
+    background: linear-gradient(145deg, #1e0d35 0%, #150b28 100%);
+    border-radius: 20px;
+    border: 1px solid #4c2a8a;
+    box-shadow: 0 0 40px rgba(139, 92, 246, 0.15), 0 4px 24px rgba(0,0,0,0.6);
+  }
+  .logo {
+    text-align: center;
+    margin-bottom: 24px;
+  }
+  .logo img { width: 64px; height: 64px; border-radius: 14px; margin-bottom: 8px; display: block; margin-left: auto; margin-right: auto; }
+  .logo h1 { font-size: 1.2rem; color: #c4b5fd; white-space: nowrap; font-weight: 700; letter-spacing: 0.5px; }
+  .logo p  { font-size: 0.75rem; color: #7c6fa0; margin-top: 4px; }
+
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid #3b1f6b;
+    margin-bottom: 20px;
+  }
+  .tab {
+    flex: 1;
+    padding: 10px;
+    background: none;
+    border: none;
+    color: #7c6fa0;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color .2s, border-color .2s;
+  }
+  .tab.active { color: #c4b5fd; border-bottom-color: #c72b24; }
+
+  .form { display: none; flex-direction: column; gap: 12px; }
+  .form.active { display: flex; }
+
+  label { font-size: 0.75rem; color: #9ca3af; margin-bottom: 2px; display: block; }
+  input[type=text], input[type=email], input[type=password] {
+    width: 100%;
+    padding: 10px 12px;
+    background: #0f0820;
+    border: 1px solid #3b1f6b;
+    border-radius: 10px;
+    color: #e8e0ff;
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  input:focus { border-color: #c72b24; box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15); }
+
+  .btn {
+    padding: 11px;
+    background: linear-gradient(135deg, #c72b24 0%, #5b21b6 100%);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 4px;
+    transition: all .2s;
+    width: 100%;
+    box-shadow: 0 2px 12px rgba(124, 58, 237, 0.4);
+  }
+  .btn:hover { background: linear-gradient(135deg, #c72b24 0%, #a01f19 100%); box-shadow: 0 4px 20px rgba(139, 92, 246, 0.5); transform: translateY(-1px); }
+  .btn:disabled { background: #2d1f4a; cursor: not-allowed; box-shadow: none; transform: none; }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #3b2d5a;
+    font-size: 0.8rem;
+  }
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    border-top: 1px solid #2d1f4a;
+  }
+
+  .status {
+    font-size: 0.8rem;
+    padding: 8px 12px;
+    border-radius: 8px;
+    text-align: center;
+    display: none;
+  }
+  .status.error   { background: #2d0f1a; color: #fca5a5; display: block; border: 1px solid #7f1d2e; }
+  .status.success { background: #0f2d1a; color: #86efac; display: block; border: 1px solid #14532d; }
+  .status.pending { background: #1a0d2e; color: #c4b5fd; display: block; border: 1px solid #4c2a8a; }
+  .status.info    { background: #0f1d2d; color: #93c5fd; display: block; border: 1px solid #1e3a5f; }
+
+  .device-info {
+    font-size: 0.7rem;
+    color: #4a3a6a;
+    text-align: center;
+    margin-top: 12px;
+  }
+  .forgot-link {
+    background: none;
+    border: 0;
+    font-size: 0.75rem;
+    color: #7c6fa0;
+    text-align: right;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  .forgot-link:hover { color: #c4b5fd; }
+
+  /* --- License activation form --- */
+  #form-license {
+    display: none;
+    flex-direction: column;
+    gap: 14px;
+  }
+  #form-license.active { display: flex; }
+  .license-title {
+    font-size: 1rem;
+    color: #c4b5fd;
+    font-weight: 600;
+    text-align: center;
+  }
+  .license-hint {
+    font-size: 0.75rem;
+    color: #9ca3af;
+    text-align: center;
+    line-height: 1.5;
+  }
+  .license-key-input {
+    font-family: 'Courier New', monospace;
+    font-size: 1.05rem;
+    letter-spacing: 4px;
+    text-align: center;
+    text-transform: uppercase;
+  }
+  .btn-secondary {
+    padding: 9px;
+    background: transparent;
+    color: #7c6fa0;
+    border: 1px solid #3b1f6b;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    width: 100%;
+    transition: background .2s, color .2s, border-color .2s;
+  }
+  .btn-secondary:hover { background: #1a0d2e; color: #c4b5fd; border-color: #a01f19; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="logo">
+    <img src="../assets/logo.png" alt="Edulock Systems">
+    <h1>Edulock Systems Player</h1>
+    <p>Plataforma de Cursos</p>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="login">Iniciar sesión</button>
+    <button class="tab" data-tab="register">Registrarse</button>
+  </div>
+
+  <!-- Login form -->
+  <form class="form active" id="form-login" novalidate>
+    <div>
+      <label for="login-email">Correo electrónico</label>
+      <input type="email" id="login-email" placeholder="tu@correo.com" autocomplete="email">
+    </div>
+    <div>
+      <label for="login-pass">Contraseña</label>
+      <input type="password" id="login-pass" placeholder="Tu contraseña" autocomplete="current-password">
+    </div>
+    <button type="button" class="forgot-link" id="btn-forgot">¿Olvidaste tu contraseña?</button>
+    <div id="login-status" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
+    <button type="button" class="btn-secondary" id="btn-cancel-register" hidden>Cancelar</button>
+    <button type="button" class="btn-secondary" id="btn-complete-register" hidden>Completar registro</button>
+    <button type="button" class="btn-secondary" id="btn-retry-auth" hidden>Reintentar conexión</button>
+    <button type="submit" class="btn" id="btn-login">Entrar</button>
+  </form>
+
+  <!-- Register form -->
+  <form class="form" id="form-register" novalidate>
+    <div>
+      <label for="reg-name">Nombre completo</label>
+      <input type="text" id="reg-name" placeholder="Tu nombre" autocomplete="name">
+    </div>
+    <div>
+      <label for="reg-email">Correo electrónico</label>
+      <input type="email" id="reg-email" placeholder="tu@correo.com" autocomplete="email">
+    </div>
+    <div>
+      <label for="reg-pass">Contraseña</label>
+      <input type="password" id="reg-pass" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+    </div>
+    <div>
+      <label for="reg-pass2">Confirmar contraseña</label>
+      <input type="password" id="reg-pass2" placeholder="Repite la contraseña" autocomplete="new-password">
+    </div>
+    <div id="reg-status" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
+    <button type="submit" class="btn" id="btn-register">Solicitar acceso</button>
+  </form>
+
+  <!-- License activation form (shown after login when no local activation is found) -->
+  <div id="form-license">
+    <p class="license-title">🔐 Activación de licencia</p>
+    <p class="license-hint">Tu cuenta está aprobada, pero este dispositivo aún no está activado.<br>Ingresa la clave de licencia que te proporcionó el administrador.</p>
+    <div>
+      <label for="license-key">Clave de licencia</label>
+      <input type="text" id="license-key" class="license-key-input"
+        placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="19" autocomplete="off"
+        autocorrect="off" spellcheck="false">
+    </div>
+    <div id="license-status" class="status"></div>
+    <button class="btn" id="btn-activate-license">Activar licencia</button>
+    <button class="btn-secondary" id="btn-license-logout">Cerrar sesión</button>
+  </div>
+
+  <div class="device-info" id="device-info"></div>
+</div>
+
+<!-- Firebase Web SDK (compat) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script>
+'use strict';
+(async () => {
+  // â”€â”€ Firebase init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const firebaseConfig = {
+    apiKey: "AIzaSyASI4Qa_GVmylE4QjkkzTdSNxLt1NgXSu4",
+    authDomain: "edulock-systems-oficial.firebaseapp.com",
+    projectId: "edulock-systems-oficial",
+    storageBucket: "edulock-systems-oficial.firebasestorage.app",
+    messagingSenderId: "61528672386",
+    appId: "1:61528672386:web:742bd1ab09f2d47c900c9b",
+    measurementId: "G-FT3MV0RN1Y"
+  };
+  let auth = null;
+  try {
+    if (typeof firebase !== 'undefined') {
+      firebase.initializeApp(firebaseConfig);
+      auth = firebase.auth();
+    }
+  } catch (_) { /* Report SDK initialization failures in the form below. */ }
+
+  const $ = id => document.getElementById(id);
+  let registrationTimer = null;
+  let pendingRegistrationUser = null;
+  let incompleteRegistrationUser = null;
+
+  // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  function showStatus(id, type, msg) {
+    const el = $(id);
+    el.className = 'status' + (type ? ' ' + type : '');
+    el.textContent = msg;
+  }
+
+  function setFormBusy(form, busy) {
+    form.dataset.busy = busy ? 'true' : 'false';
+    form.querySelectorAll('button, input').forEach(el => el.disabled = busy);
+    document.querySelectorAll('.tab').forEach(el => el.disabled = busy);
+    form.setAttribute('aria-busy', String(busy));
+  }
+
+  function switchTab(tab) {
+    cancelRegistrationCountdown();
+    $('btn-complete-register').hidden = true;
+    incompleteRegistrationUser = null;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.form').forEach(f => f.classList.remove('active'));
+    document.querySelector(`.tab[data-tab="${tab}"]`).classList.add('active');
+    $('form-' + tab).classList.add('active');
+    showStatus('login-status', '', '');
+    showStatus('reg-status', '', '');
+    if (tab === 'login') prepareRegistration(null);
+    $(tab === 'login' ? 'login-email' : 'reg-name').focus();
+  }
+
+  function cancelRegistrationCountdown() {
+    if (registrationTimer !== null) clearInterval(registrationTimer);
+    registrationTimer = null;
+    $('btn-cancel-register').hidden = true;
+  }
+
+  function prepareRegistration(user, email = '') {
+    pendingRegistrationUser = user || null;
+    $('reg-email').readOnly = Boolean(user);
+    $('reg-pass').closest('div').style.display = user ? 'none' : '';
+    $('reg-pass2').closest('div').style.display = user ? 'none' : '';
+    if (user?.email || email) $('reg-email').value = user?.email || email;
+    if (user?.displayName) $('reg-name').value = user.displayName;
+    if (user) { $('reg-pass').value = ''; $('reg-pass2').value = ''; }
+  }
+
+  function startRegistrationCountdown(result, email, user = null) {
+    // Only an authoritative response may assert that an account is absent.
+    // Firebase invalid-credential deliberately does not distinguish absence.
+    if (result?.status !== 'not_registered' || result.code !== 'ACCOUNT_NOT_REGISTERED' || result.registrationAllowed !== true) return false;
+    cancelRegistrationCountdown();
+    $('btn-complete-register').hidden = true;
+    let seconds = 3;
+    const render = () => showStatus('login-status', 'info', `Usuario no registrado. Abriremos el registro en ${seconds} ${seconds === 1 ? 'segundo' : 'segundos'}. Puedes cancelar.`);
+    render();
+    $('btn-cancel-register').hidden = false;
+    registrationTimer = setInterval(() => {
+      seconds--;
+      if (seconds > 0) { render(); return; }
+      cancelRegistrationCountdown();
+      switchTab('register');
+      prepareRegistration(user, email);
+      showStatus('reg-status', 'info', 'Completa tus datos para solicitar acceso.');
+    }, 1000);
+    return true;
+  }
+
+  function offerRegistrationCompletion(user, statusElId) {
+    const message = 'Tu cuenta existe, pero falta completar tu registro en Edulock.';
+    showStatus(statusElId, 'info', message);
+    if (statusElId === 'reg-status') {
+      prepareRegistration(user);
+      return;
+    }
+    incompleteRegistrationUser = user;
+    $('btn-complete-register').hidden = false;
+  }
+
+  $('btn-cancel-register').addEventListener('click', () => {
+    cancelRegistrationCountdown();
+    showStatus('login-status', 'info', 'Registro automático cancelado. Puedes corregir tu correo o abrir Registrarse.');
+    $('login-email').focus();
+  });
+  $('btn-complete-register').addEventListener('click', () => {
+    const user = incompleteRegistrationUser;
+    if (!user) return;
+    switchTab('register');
+    prepareRegistration(user);
+    showStatus('reg-status', 'info', 'Tu identidad ya está verificada. Confirma tu nombre y solicita acceso.');
+  });
+  ['login-email', 'login-pass'].forEach(id => $(id).addEventListener('input', () => {
+    cancelRegistrationCountdown();
+    $('btn-complete-register').hidden = true;
+    incompleteRegistrationUser = null;
+    showStatus('login-status', '', '');
+  }));
+  window.addEventListener('beforeunload', cancelRegistrationCountdown);
+  $('btn-retry-auth').addEventListener('click', () => location.reload());
+
+  // â”€â”€ Tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+
+  // â”€â”€ Device info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const devInfo = await window.vcbPlayer.getDeviceInfo().catch(() => ({}));
+  const deviceId    = typeof devInfo.deviceId === 'string' ? devInfo.deviceId.trim() : '';
+  const deviceModel = devInfo.deviceModel || devInfo.hostname || '';
+  const deviceName  = devInfo.hostname    || '';
+  const platform    = devInfo.platform    || '';
+  const osRelease   = devInfo.osRelease   || '';
+  const appVersion  = devInfo.appVersion  || '';
+  $('device-info').textContent = deviceModel ? `Dispositivo: ${deviceModel}` : '';
+
+  async function handlePasswordLoginError(error, email) {
+    const mayNeedAccountCheck = error?.code === 'auth/user-not-found' || error?.code === 'auth/invalid-credential';
+    if (mayNeedAccountCheck && typeof window.vcbPlayer.checkAccountStatus === 'function') {
+      showStatus('login-status', 'info', 'Comprobando el estado de tu cuenta...');
+      try {
+        const result = await window.vcbPlayer.checkAccountStatus({ email });
+        if (startRegistrationCountdown(result, email)) return;
+        if (result?.code === 'ACCOUNT_SYNC_REQUIRED' || result?.status === 'account_sync_required') {
+          showStatus('login-status', 'error', 'Tu cuenta está registrada, pero no se pudo validar su acceso. Contacta al administrador; no necesitas volver a registrarte.');
+          return;
+        }
+        if (result?.code === 'REGISTRATION_REQUIRED' || result?.status === 'registration_required') {
+          showStatus('login-status', 'error', 'Tu cuenta ya existe. Comprueba tu contraseña o utiliza el método con el que creaste la cuenta.');
+          return;
+        }
+        if (!result || result.status === 'error' || result.code === 'ACCOUNT_LOOKUP_UNAVAILABLE') {
+          showStatus('login-status', 'error', 'No se pudo comprobar tu cuenta en este momento. Intenta nuevamente; no es necesario registrarte otra vez.');
+          return;
+        }
+      } catch (_) {
+        showStatus('login-status', 'error', 'No se pudo comprobar tu cuenta. Revisa la conexión e intenta nuevamente.');
+        return;
+      }
+    }
+    showStatus('login-status', 'error', firebaseErrorMsg(error?.code));
+  }
+
+  // â”€â”€ Post-Firebase-auth: call server and handle result â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  async function handleFirebaseUser(user, statusElId) {
+    try {
+      const idToken = await user.getIdToken(true);
+      const result = await window.vcbPlayer.firebaseLogin({
+        idToken,
+        uid: user.uid,
+        email: user.email,
+        deviceId,
+        deviceModel,
+        deviceName,
+        platform,
+        osRelease,
+        appVersion,
+      });
+
+      if (!result) {
+        showStatus(statusElId, 'error', 'No se pudo conectar al servidor. Intenta nuevamente.');
+        return;
+      }
+
+      if (result.status === 'approved') {
+        if (typeof result.token !== 'string' || !result.token.trim()) {
+          showStatus(statusElId, 'error', 'El servidor no entregó una sesión válida. Intenta de nuevo.');
+          return;
+        }
+        const isAdmin = result.role === 'admin';
+        const welcome = isAdmin
+          ? '\u2705 \u00a1Bienvenido, Administrador! Acceso total concedido.'
+          : `\u2705 \u00a1Bienvenido${result.name ? ', ' + result.name : ''}!`;
+        // Guardar sesión en disco para sobrevivir reinicios
+        const saved = await window.vcbPlayer.saveSession({
+          token: result.token || '',
+          email: result.email || user.email || '',
+          role:  result.role  || 'student',
+          name:  result.name  || '',
+        });
+        if (saved !== true) {
+          showStatus(statusElId, 'error', 'No se pudo guardar la sesión en este equipo. Revisa el espacio y los permisos e intenta de nuevo.');
+          return;
+        }
+        showStatus(statusElId, 'success', welcome);
+
+        // Admin: no necesita licencia DRM
+        if (isAdmin) {
+          setTimeout(() => window.vcbPlayer.authSuccess(), 1000);
+          return;
+        }
+
+        // Verificar activación DRM local
+        await checkActivationAndProceed(result, user, statusElId);
+        return;
+      }
+      if (result.status === 'device_taken' || result.status === 'wrong_device') {
+        showStatus(statusElId, 'error', result.error || 'Este dispositivo no puede usar esta cuenta.');
+        return;
+      }
+      if (result.status === 'pending') {
+        showStatus(statusElId, 'pending', 'Tu solicitud está pendiente de aprobación. El administrador revisará tu acceso.');
+        return;
+      }
+      if (result.status === 'suspended') {
+        showStatus(statusElId, 'error', '🚫 Tu cuenta está suspendida. Contacta al administrador.');
+        return;
+      }
+      if (result.status === 'rejected') {
+        showStatus(statusElId, 'error', 'Tu solicitud fue rechazada. Contacta al administrador.');
+        return;
+      }
+      if (result.status === 'not_registered') {
+        if (statusElId === 'login-status' && startRegistrationCountdown(result, user.email, user)) return;
+        // A verified Firebase identity already exists. Legacy responses never
+        // authorize an automatic redirect or silently create an application user.
+        offerRegistrationCompletion(user, statusElId);
+        return;
+      }
+      if (result.status === 'registration_required' && result.code === 'REGISTRATION_REQUIRED') {
+        offerRegistrationCompletion(user, statusElId);
+        return;
+      }
+      showStatus(statusElId, 'error', result.error || 'Error desconocido del servidor.');
+    } catch (err) {
+      console.error('handleFirebaseUser error:', err);
+      showStatus(statusElId, 'error', 'Error de conexión: ' + (err.message || 'desconocido'));
+    }
+  }
+
+  // ── Activation check ─────────────────────────────────────────────────────────
+  // Called after a successful "approved" login for non-admin users.
+  // Checks if this device has a valid local activation; if not, shows the
+  // license entry form instead of calling authSuccess().
+  let _pendingAuthResult = null;
+  let _pendingAuthUser   = null;
+  // true cuando el admin regeneró/revocó la licencia y el usuario fue expulsado
+  let _licenseWasRegenerated = false;
+  window.vcbPlayer.onLicenseRequired?.(async () => {
+    _pendingAuthResult = await window.vcbPlayer.getSession();
+    _pendingAuthUser = auth.currentUser;
+    showLicenseForm(_pendingAuthResult?.email || '');
+    showStatus('license-status', 'info', 'Ingresa una licencia válida para este curso. Tu sesión se conserva.');
+  });
+
+  // Aviso desde el proceso principal: la licencia fue regenerada/revocada.
+  if (window.vcbPlayer && window.vcbPlayer.onLicenseRegenerated) {
+    window.vcbPlayer.onLicenseRegenerated(() => {
+      _licenseWasRegenerated = true;
+      try {
+        if ($('form-license') && $('form-license').classList.contains('active')) {
+          showStatus('license-status', 'error',
+            'Tu licencia fue actualizada por el administrador. Ingresa la nueva licencia para continuar.');
+        }
+      } catch (e) { /* ignore */ }
+    });
+  }
+
+  async function checkActivationAndProceed(result, user, statusElId) {
+    try {
+      const hasLocal = await window.vcbPlayer.activationHasLocal(deviceId);
+      if (hasLocal) {
+        // Validate the stored activation is still active on the server
+        const validation = await window.vcbPlayer.activationValidate(deviceId)
+          .catch(() => ({ valid: false, code: 'NETWORK_ERROR' }));
+        if (validation.valid) {
+          setTimeout(() => window.vcbPlayer.authSuccess(), 500);
+          return;
+        }
+        // Sin conexión: permitir entrar con la activación local existente.
+        // (La reproducción de cada video se valida online de todos modos.)
+        if (validation.code === 'NETWORK_ERROR') {
+          setTimeout(() => window.vcbPlayer.authSuccess(), 500);
+          return;
+        }
+        // El servidor revocó/expiró la activación (el proceso main ya la borró
+        // localmente para los códigos de revocación) → se necesita re-activar.
+      }
+      // No valid activation — show license form
+      _pendingAuthResult = result;
+      _pendingAuthUser   = user;
+      showLicenseForm(result.email || (user && user.email) || '');
+    } catch (err) {
+      _pendingAuthResult = result;
+      _pendingAuthUser = user;
+      showLicenseForm(result.email || user?.email || '');
+      showStatus('license-status', 'error', 'No se pudo verificar la activación. Intenta de nuevo.');
+    }
+  }
+
+  function showLicenseForm(email) {
+    // Hide login/register tabs and forms
+    document.querySelector('.tabs').style.display = 'none';
+    document.querySelectorAll('.form').forEach(f => f.classList.remove('active'));
+    $('form-license').style.display = 'flex';
+    $('form-license').classList.add('active');
+    if (email) {
+      $('license-hint-email') && ($('license-hint-email').textContent = email);
+    }
+    if (_licenseWasRegenerated) {
+      showStatus('license-status', 'error',
+        'Tu licencia fue actualizada por el administrador. Ingresa la nueva licencia para continuar.');
+    }
+    $('license-key').focus();
+  }
+
+  // Auto-format license key as XXXX-XXXX-XXXX-XXXX
+  $('license-key').addEventListener('input', e => {
+    let v = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 16);
+    if (v.length > 12) v = v.slice(0,4) + '-' + v.slice(4,8) + '-' + v.slice(8,12) + '-' + v.slice(12);
+    else if (v.length > 8) v = v.slice(0,4) + '-' + v.slice(4,8) + '-' + v.slice(8);
+    else if (v.length > 4) v = v.slice(0,4) + '-' + v.slice(4);
+    e.target.value = v;
+  });
+
+  $('btn-activate-license').addEventListener('click', async () => {
+    const key = $('license-key').value.trim();
+    if (!key || !/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(key)) {
+      showStatus('license-status', 'error', 'Ingresa una clave con formato XXXX-XXXX-XXXX-XXXX.');
+      return;
+    }
+    $('btn-activate-license').disabled = true;
+    showStatus('license-status', 'info', 'Activando licencia...');
+    try {
+      const email = (_pendingAuthResult && _pendingAuthResult.email) ||
+                    (_pendingAuthUser && _pendingAuthUser.email) || '';
+      const res = await window.vcbPlayer.activationActivateLicense({
+        licenseKey: key,
+        deviceId,
+        email,
+      });
+      if (res && res.ok) {
+        showStatus('license-status', 'success', '✅ ¡Licencia activada! Ingresando...');
+        setTimeout(() => window.vcbPlayer.authSuccess(), 1200);
+      } else {
+        const msg = (res && res.error) || 'No se pudo activar la licencia.';
+        showStatus('license-status', 'error', msg);
+        $('btn-activate-license').disabled = false;
+      }
+    } catch (err) {
+      showStatus('license-status', 'error', 'Error: ' + (err.message || 'Sin conexión'));
+      $('btn-activate-license').disabled = false;
+    }
+  });
+
+  $('btn-license-logout').addEventListener('click', async () => {
+    try {
+      await auth.signOut();
+      await window.vcbPlayer.clearSession();
+      await window.vcbPlayer.activationClear();
+      location.reload();
+    } catch (_) {
+      showStatus('license-status', 'error', 'No se pudo cerrar la sesión por completo. Intenta nuevamente.');
+    }
+  });
+
+  // ── Handle registration with Firebase account ─────────────────────────────
+  async function submitRegisterRequest(user, name) {
+    let result;
+    try {
+      result = await window.vcbPlayer.registerRequest({
+        idToken: await user.getIdToken(true),
+        email: user.email,
+        name,
+        deviceId,
+        deviceModel,
+        deviceName,
+        firebaseUid: user.uid,
+      });
+    } catch (_) {
+      showStatus('reg-status', 'error', 'No se pudo enviar la solicitud. Tu cuenta se conserva; intenta nuevamente.');
+      return;
+    }
+    if (!result || typeof result !== 'object') {
+      showStatus('reg-status', 'error', 'El servidor no confirmó la solicitud. Tu cuenta se conserva; intenta nuevamente.');
+      return;
+    }
+
+    if (result.status === 'approved') {
+      await handleFirebaseUser(user, 'reg-status');
+      return;
+    }
+    if (result.status === 'pending') {
+      showStatus('reg-status', 'pending', 'Solicitud enviada. El administrador revisará tu acceso.');
+      $('btn-register').disabled = true;
+      return;
+    }
+    if (result.status === 'rejected') {
+      showStatus('reg-status', 'error', 'Tu solicitud fue rechazada. Contacta al administrador.');
+      return;
+    }
+    showStatus('reg-status', 'error', `Error: ${result.error || 'No se pudo conectar al servidor'}`);
+  }
+
+  // â”€â”€ Login form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  $('form-login').addEventListener('submit', async event => {
+    event.preventDefault();
+    if ($('form-login').dataset.busy === 'true') return;
+    cancelRegistrationCountdown();
+    $('btn-complete-register').hidden = true;
+    incompleteRegistrationUser = null;
+    const email = $('login-email').value.trim();
+    const pass  = $('login-pass').value;
+    if (!email || !pass) { showStatus('login-status', 'error', 'Ingresa tu correo y contraseña.'); return; }
+    showStatus('login-status', 'info', 'Verificando...');
+    setFormBusy($('form-login'), true);
+    try {
+      const { user } = await auth.signInWithEmailAndPassword(email, pass);
+      await handleFirebaseUser(user, 'login-status');
+    } catch (err) {
+      await handlePasswordLoginError(err, email);
+    } finally {
+      setFormBusy($('form-login'), false);
+    }
+  });
+
+  // ── Forgot password â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  $('btn-forgot').addEventListener('click', async () => {
+    cancelRegistrationCountdown();
+    const email = $('login-email').value.trim();
+    if (!email) { showStatus('login-status', 'error', 'Ingresa tu correo primero.'); return; }
+    try {
+      await auth.sendPasswordResetEmail(email);
+      showStatus('login-status', 'success', 'Si ese correo tiene recuperación de acceso habilitada, recibirás las instrucciones. Revisa también la carpeta de spam.');
+    } catch (err) {
+      if (err.code === 'auth/user-not-found') {
+        showStatus('login-status', 'error', 'No se pudo recuperar el acceso con ese correo. Compruébalo o contacta al administrador.');
+      } else {
+        showStatus('login-status', 'error', firebaseErrorMsg(err.code));
+      }
+    }
+  });
+
+  // â”€â”€ Register form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  $('form-register').addEventListener('submit', async event => {
+    event.preventDefault();
+    if ($('form-register').dataset.busy === 'true') return;
+    const name  = $('reg-name').value.trim();
+    const email = $('reg-email').value.trim();
+    const pass  = $('reg-pass').value;
+    const pass2 = $('reg-pass2').value;
+
+    if (!name) { showStatus('reg-status', 'error', 'Ingresa tu nombre completo.'); return; }
+    if (!email) { showStatus('reg-status', 'error', 'Ingresa tu correo electrónico.'); return; }
+
+    // Retain the verified identity across a failed application registration.
+    if (pendingRegistrationUser) {
+      showStatus('reg-status', 'info', 'Enviando solicitud...');
+      setFormBusy($('form-register'), true);
+      try {
+        await submitRegisterRequest(pendingRegistrationUser, name);
+      } finally {
+        setFormBusy($('form-register'), false);
+      }
+      return;
+    }
+
+    if (!pass || pass.length < 6) { showStatus('reg-status', 'error', 'La contraseña debe tener al menos 6 caracteres.'); return; }
+    if (pass !== pass2) { showStatus('reg-status', 'error', 'Las contraseñas no coinciden.'); return; }
+
+    showStatus('reg-status', 'info', 'Creando cuenta...');
+    setFormBusy($('form-register'), true);
+    try {
+      const { user } = await auth.createUserWithEmailAndPassword(email, pass);
+      prepareRegistration(user);
+      await user.updateProfile({ displayName: name });
+      await submitRegisterRequest(user, name);
+    } catch (err) {
+      showStatus('reg-status', 'error', firebaseErrorMsg(err.code));
+    } finally {
+      setFormBusy($('form-register'), false);
+    }
+  });
+
+  // ── Firebase error messages in Spanish
+  function firebaseErrorMsg(code) {
+    const map = {
+      'auth/invalid-email':           'Correo electrónico inválido.',
+      'auth/user-not-found':          'No se pudo iniciar sesión con ese correo y contraseña.',
+      'auth/wrong-password':          'Contraseña incorrecta.',
+      'auth/invalid-credential':      'Correo o contraseña incorrectos.',
+      'auth/invalid-login-credentials': 'Correo o contraseña incorrectos.',
+      'auth/user-disabled':          'Tu cuenta está deshabilitada. Contacta al administrador.',
+      'auth/email-already-in-use':    'Ese correo ya tiene una cuenta registrada. Intenta iniciar sesión.',
+      'auth/weak-password':           'La contraseña es muy débil. Usa al menos 6 caracteres.',
+      'auth/network-request-failed':  'Error de red. Verifica tu conexión a internet.',
+      'auth/too-many-requests':       'Demasiados intentos. Espera un momento e intenta nuevamente.',
+      'auth/popup-blocked':           'El popup fue bloqueado. Permite ventanas emergentes e intenta de nuevo.',
+      'auth/account-exists-with-different-credential': 'Ya existe una cuenta con ese correo usando otro método de inicio de sesión.',
+    };
+    return map[code] || 'No se pudo completar la autenticación. Intenta nuevamente.';
+  }
+
+  if (!auth || !deviceId) {
+    setFormBusy($('form-login'), true);
+    setFormBusy($('form-register'), true);
+    showStatus('login-status', 'error', !auth
+      ? 'No se pudo cargar el servicio de acceso. Revisa tu conexión y vuelve a intentarlo.'
+      : 'No se pudo identificar este dispositivo. Vuelve a intentarlo antes de iniciar sesión o activar una licencia.');
+    $('btn-retry-auth').textContent = !auth ? 'Reintentar conexión' : 'Reintentar';
+    $('btn-retry-auth').hidden = false;
+    $('btn-retry-auth').disabled = false;
+  } else {
+    $('login-email').focus();
+  }
+})();
+</script>
+</body>
+</html>

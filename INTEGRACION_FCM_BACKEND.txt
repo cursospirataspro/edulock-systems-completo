@@ -1,0 +1,377 @@
+📱 INTEGRACIÓN DE FIREBASE CLOUD MESSAGING (FCM) EN BACKEND
+═══════════════════════════════════════════════════════════════════════════
+
+RESUMEN:
+Este documento explica cómo integrar notificaciones push en el backend Render 
+para que la APK reciba notificaciones cuando el usuario es aprobado, rechazado 
+o suspendido.
+
+═══════════════════════════════════════════════════════════════════════════
+✅ ARCHIVOS CREADOS
+═══════════════════════════════════════════════════════════════════════════
+
+1. firebase-notification.js
+   - Módulo que envía notificaciones push via Firebase Cloud Messaging
+   - Funciones:
+     * sendApprovalNotification(fcmToken, email, courseIds)
+     * sendRejectionNotification(fcmToken, email, reason)
+     * sendSuspensionNotification(fcmToken, email, reason)
+     * sendTopicNotification(topic, title, body, data)
+
+2. firebase-service-account.json
+   - Credenciales de Firebase (DESCARGAR DEL CONSOLE DE GOOGLE)
+
+═══════════════════════════════════════════════════════════════════════════
+📝 PASOS PARA INTEGRAR EN BACKEND (server.js)
+═══════════════════════════════════════════════════════════════════════════
+
+PASO 1: Agregar require del módulo de notificaciones
+───────────────────────────────────────────────────
+Agregar al inicio de server.js (cerca de otros requires):
+
+    const notificationService = require('./firebase-notification');
+
+PASO 2: Actualizar endpoint POST /api/auth/register-request
+──────────────────────────────────────────────────────────
+
+ANTES:
+    app.post('/api/auth/register-request', async (req, res) => {
+        const { email, name, deviceId } = req.body;
+        // ... código existente ...
+        await db.createRegistrationRequest({ email, name, deviceId, status: 'pending' });
+        res.json({ ok: true });
+    });
+
+DESPUÉS (AGREGAR fcmToken):
+    app.post('/api/auth/register-request', async (req, res) => {
+        const { email, name, deviceId, fcmToken } = req.body;  // ← AGREGAR fcmToken
+        // ... código existente ...
+        
+        // Guardar token FCM
+        await db.createRegistrationRequest({
+            email,
+            name,
+            deviceId,
+            fcmToken,  // ← NUEVO
+            status: 'pending'
+        });
+        
+        res.json({ ok: true });
+    });
+
+PASO 3: Actualizar endpoint POST /api/auth/login
+────────────────────────────────────────────────
+
+ANTES:
+    app.post('/api/auth/login', async (req, res) => {
+        const { email, password, deviceId } = req.body;
+        // ... validación ...
+        const token = jwt.sign(...);
+        res.json({ token });
+    });
+
+DESPUÉS (AGREGAR fcmToken):
+    app.post('/api/auth/login', async (req, res) => {
+        const { email, password, deviceId, fcmToken } = req.body;  // ← AGREGAR
+        
+        // ... validación existente ...
+        
+        // Guardar/actualizar FCM token en estudiante
+        if (fcmToken && student && student.id) {
+            await db.updateStudentFcmToken(student.id, fcmToken);  // ← NUEVO
+        }
+        
+        const token = jwt.sign(...);
+        res.json({ token });
+    });
+
+PASO 4: Actualizar endpoint POST /api/admin/registrations/:id/approve
+──────────────────────────────────────────────────────────────────
+
+ANTES:
+    app.post('/api/admin/registrations/:id/approve', requireAdmin, async (req, res) => {
+        // ... código existente ...
+        await db.updateRegistrationRequest(id, { status: 'approved' });
+        res.json({ ok: true, studentId: student.id });
+    });
+
+DESPUÉS (AGREGAR notificación):
+    app.post('/api/admin/registrations/:id/approve', requireAdmin, async (req, res) => {
+        // ... código existente ...
+        
+        // Obtener token FCM de la solicitud
+        const fcmToken = reg.fcm_token;  // ← DEL REGISTRO
+        
+        // Actualizar BD
+        await db.updateRegistrationRequest(id, { status: 'approved' });
+        await db.updateStudentApprovalStatus(student.id, 'approved');
+        
+        // NUEVO: Enviar notificación push
+        if (fcmToken) {
+            const courseIds = courseIds || [];
+            await notificationService.sendApprovalNotification(
+                fcmToken,
+                reg.email,
+                courseIds
+            );
+            console.log(`✅ Notificación de aprobación enviada a ${reg.email}`);
+        }
+        
+        res.json({ ok: true, studentId: student.id });
+    });
+
+PASO 5: Actualizar endpoint POST /api/admin/registrations/:id/reject
+───────────────────────────────────────────────────────────────────
+
+ANTES:
+    app.post('/api/admin/registrations/:id/reject', requireAdmin, async (req, res) => {
+        const { notes } = req.body;
+        await db.updateRegistrationRequest(id, { status: 'rejected', notes });
+        res.json({ ok: true });
+    });
+
+DESPUÉS (AGREGAR notificación):
+    app.post('/api/admin/registrations/:id/reject', requireAdmin, async (req, res) => {
+        const { notes } = req.body;
+        
+        // Obtener info de la solicitud
+        const regReqs = await db.getRegistrationRequests(null);
+        const reg = regReqs.find(r => r.id === id);
+        
+        if (!reg) return res.status(404).json({ error: 'Solicitud no encontrada' });
+        
+        // Actualizar BD
+        await db.updateRegistrationRequest(id, { status: 'rejected', notes });
+        
+        // NUEVO: Enviar notificación push
+        if (reg.fcm_token) {
+            await notificationService.sendRejectionNotification(
+                reg.fcm_token,
+                reg.email,
+                notes || 'Información insuficiente'
+            );
+            console.log(`✅ Notificación de rechazo enviada a ${reg.email}`);
+        }
+        
+        res.json({ ok: true });
+    });
+
+═══════════════════════════════════════════════════════════════════════════
+🗄️ CAMBIOS EN DATABASE (database-pg.js)
+═══════════════════════════════════════════════════════════════════════════
+
+CAMBIO 1: Agregar columna fcm_token en tabla registration_requests
+──────────────────────────────────────────────────────────────────
+
+Agregar en la creación de la tabla:
+
+    CREATE TABLE IF NOT EXISTS registration_requests (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        name TEXT,
+        deviceId TEXT NOT NULL,
+        fcm_token TEXT,  // ← NUEVA COLUMNA
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+        // ... resto de columnas ...
+    );
+
+CAMBIO 2: Agregar función para actualizar FCM token
+───────────────────────────────────────────────────
+
+Agregar función en database-pg.js:
+
+    async function updateStudentFcmToken(studentId, fcmToken) {
+        const q = `
+            UPDATE students 
+            SET fcm_token = $1, updated_at = NOW() 
+            WHERE id = $2
+        `;
+        const result = await pool.query(q, [fcmToken, studentId]);
+        return result.rows[0];
+    }
+
+    // Exportar
+    module.exports.updateStudentFcmToken = updateStudentFcmToken;
+
+CAMBIO 3: Actualizar función de registro para guardar FCM
+─────────────────────────────────────────────────────────
+
+ANTES:
+    async function createRegistrationRequest(data) {
+        const { email, name, deviceId, status = 'pending' } = data;
+        const q = `
+            INSERT INTO registration_requests (id, email, name, deviceId, status)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING *
+        `;
+        // ...
+    }
+
+DESPUÉS:
+    async function createRegistrationRequest(data) {
+        const { email, name, deviceId, fcmToken, status = 'pending' } = data;
+        const q = `
+            INSERT INTO registration_requests (id, email, name, deviceId, fcm_token, status)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING *
+        `;
+        // Agregar fcmToken en los valores
+        const result = await pool.query(q, [
+            require('crypto').randomUUID(),
+            email,
+            name,
+            deviceId,
+            fcmToken,  // ← NUEVO
+            status
+        ]);
+        return result.rows[0];
+    }
+
+═══════════════════════════════════════════════════════════════════════════
+🔐 CONFIGURACIÓN DE FIREBASE
+═══════════════════════════════════════════════════════════════════════════
+
+PASO 1: Crear proyecto en Firebase Console
+───────────────────────────────────────────
+1. Ir a https://console.firebase.google.com/
+2. Crear nuevo proyecto: "edulock-player-android"
+3. Activar "Cloud Messaging"
+4. Ir a Configuración del Proyecto → Cuentas de Servicio
+5. Generar nueva clave privada (JSON)
+6. Descargar el JSON
+
+PASO 2: Configurar archivo .env
+───────────────────────────────
+Agregar en .env:
+
+    FIREBASE_KEY_PATH=./firebase-service-account.json
+
+PASO 3: Guardar archivo de credenciales
+──────────────────────────────────────
+1. Renombrar el JSON descargado a: firebase-service-account.json
+2. Guardarlo en la raíz del proyecto Render
+3. Agregar a .gitignore:
+   
+   firebase-service-account.json
+
+PASO 4: Instalar dependencia de Firebase Admin
+──────────────────────────────────────────────
+Ejecutar:
+
+    npm install firebase-admin --save
+
+PASO 5: Configurar APK
+──────────────────────
+1. En Firebase Console → Project Settings
+2. Copiar "Package Name": com.edulock.player
+3. Generar Signing Certificate (SHA-1)
+   - Android Studio: Build → Generate Signed APK
+   - O usar keytool: keytool -list -v -keystore ~/.android/debug.keystore
+
+4. Agregar la app Android en Firebase Console
+   - Usar el SHA-1 del paso anterior
+   - Descargar google-services.json
+   - Copiar al directorio: app/google-services.json (ya hecho)
+
+═══════════════════════════════════════════════════════════════════════════
+📲 FLUJO COMPLETO DE NOTIFICACIONES
+═══════════════════════════════════════════════════════════════════════════
+
+1. USUARIO INSTALA APK
+   └─ APK genera token FCM y lo guarda localmente
+
+2. USUARIO INTENTA REGISTRARSE
+   └─ Envía: email, name, deviceId, fcmToken a POST /api/auth/register-request
+   └─ Backend guarda todo en registration_requests table
+   └─ APK muestra: "⏳ Solicitud pendiente..."
+
+3. USUARIO ESPERA (APK CONSULTA CADA 10s)
+   └─ GET /api/auth/check-device?deviceId=...
+   └─ Render responde: status=pending
+   └─ APK muestra: esperando...
+
+4. TÚ (ADMIN) APRUEBAS EN DASHBOARD
+   └─ Haces clic: [✓ APROBAR]
+   └─ POST /api/admin/registrations/:id/approve
+   └─ Backend:
+      ✓ Actualiza BD: status=approved
+      ✓ Obtiene fcmToken de registration_requests
+      ✓ Llama: sendApprovalNotification(fcmToken, email, courseIds)
+      ✓ Firebase envía push a APK
+
+5. APK RECIBE NOTIFICACIÓN
+   └─ EdulockNotificationService recibe mensaje
+   └─ Muestra notificación visual al usuario
+   └─ Guarda estado en SharedPreferences
+   └─ Próximo polling detecta el cambio
+   └─ Muestra: "✅ ¡APROBADO!"
+   └─ Usuario puede acceder a cursos
+
+═══════════════════════════════════════════════════════════════════════════
+🧪 TESTING LOCAL
+═══════════════════════════════════════════════════════════════════════════
+
+OPCIÓN 1: Usar Firebase Console
+───────────────────────────────
+1. Firebase Console → Cloud Messaging
+2. Send your first message
+3. Select device por FCM token
+4. Escribir título y body
+5. Click "Publish"
+6. APK recibe notificación
+
+OPCIÓN 2: Testing via curl (para testing de backend)
+──────────────────────────────────────────────────
+    # Instalar firebase-cli
+    npm install -g firebase-tools
+    
+    # Autenticarse
+    firebase login
+    
+    # Enviar mensajevia script
+
+OPCIÓN 3: Script de test en Node.js
+───────────────────────────────────
+Crear archivo: _test_fcm.js
+
+    const notif = require('./firebase-notification');
+    
+    async function test() {
+        const result = await notif.sendApprovalNotification(
+            'fcm_token_aqui',
+            'test@ejemplo.com',
+            ['course_python', 'course_react']
+        );
+        console.log('Resultado:', result);
+    }
+    
+    test();
+
+    Ejecutar: node _test_fcm.js
+
+═══════════════════════════════════════════════════════════════════════════
+🔍 DEBUGGING
+═══════════════════════════════════════════════════════════════════════════
+
+Si las notificaciones no llegan:
+
+1. Verificar que firebase-service-account.json existe
+2. Verificar que el FCM token es válido
+3. Ver logs de Firebase:
+   └─ Firebase Console → Cloud Messaging → Logs
+4. Ver logs del servidor:
+   └─ Debería ver: "✅ Notificación de aprobación enviada a ..."
+5. En APK, verificar que el servicio recibe el mensaje:
+   └─ EdulockNotificationService.onMessageReceived()
+6. Verificar permisos en AndroidManifest.xml
+7. Verificar que APK está en primer plano o background (FCM funciona en ambos)
+
+═══════════════════════════════════════════════════════════════════════════
+📚 REFERENCIAS
+═══════════════════════════════════════════════════════════════════════════
+
+- Firebase Cloud Messaging: https://firebase.google.com/docs/cloud-messaging
+- Firebase Admin SDK: https://firebase.google.com/docs/reference/admin
+- Android FCM Integration: https://developer.android.com/training/cloud-messaging
+
+═══════════════════════════════════════════════════════════════════════════

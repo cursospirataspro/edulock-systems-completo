@@ -1,0 +1,1408 @@
+'use strict';
+/**
+ * database.js — Base de datos SQLite embebida (better-sqlite3)
+ *
+ * SQLite con WAL mode maneja cientos de lecturas simultáneas sin bloqueos.
+ * Todas las escrituras son atómicas y serializadas por SQLite internamente.
+ * No necesita servidor separado — es un solo archivo: data/app.db
+ *
+ * Tablas:
+ *   students       — alumnos registrados
+ *   audit_log      — cada reproducción entregada (fingerprint forense)
+ *   catalog        — videos procesados y su estado
+ */
+
+const path = require('path');
+const fs   = require('fs');
+
+// En producción (Render/Railway) el único directorio escribible es /tmp
+const DATA_DIR = process.env.NODE_ENV === 'production'
+    ? '/tmp/data'
+    : path.resolve('./data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const Database = require('better-sqlite3');
+const db = new Database(path.join(DATA_DIR, 'app.db'));
+
+// WAL mode: lecturas concurrentes sin bloquear escrituras
+db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
+db.pragma('foreign_keys = ON');
+
+// Migraciones no destructivas (columnas nuevas en tablas existentes)
+try { db.exec("ALTER TABLE catalog ADD COLUMN source_type TEXT NOT NULL DEFAULT 'local'"); } catch {}
+try { db.exec('ALTER TABLE catalog ADD COLUMN bunny_url TEXT'); } catch {}
+try { db.exec('ALTER TABLE catalog ADD COLUMN course_id TEXT'); } catch {}
+try { db.exec('ALTER TABLE catalog ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0'); } catch {}
+try { db.exec('ALTER TABLE catalog ADD COLUMN module_id TEXT'); } catch {}
+try { db.exec("ALTER TABLE audit_log ADD COLUMN student_email TEXT NOT NULL DEFAULT ''"); } catch {}
+// ================================================================
+//  ESQUEMA
+// ================================================================
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS students (
+    id             TEXT PRIMARY KEY,
+    email          TEXT NOT NULL UNIQUE,
+    student_id     TEXT NOT NULL,
+    name           TEXT NOT NULL DEFAULT '',
+    active         INTEGER NOT NULL DEFAULT 1,
+    allowed_videos TEXT NOT NULL DEFAULT '*',
+    device_id      TEXT,
+    created_at     TEXT NOT NULL,
+    last_login     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_students_email ON students(email);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    fingerprint   TEXT NOT NULL,
+    user_id       TEXT NOT NULL,
+    video_id      TEXT NOT NULL,
+    device_id     TEXT NOT NULL DEFAULT 'desconocido',
+    student_email TEXT NOT NULL DEFAULT '',
+    ip            TEXT NOT NULL DEFAULT 'desconocida',
+    user_agent    TEXT NOT NULL DEFAULT 'desconocido',
+    delivered_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_user    ON audit_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_video   ON audit_log(video_id);
+CREATE INDEX IF NOT EXISTS idx_audit_fp      ON audit_log(fingerprint);
+
+CREATE TABLE IF NOT EXISTS catalog (
+    video_id      TEXT PRIMARY KEY,
+    title         TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'processing',
+    segment_count INTEGER NOT NULL DEFAULT 0,
+    key_id        TEXT,
+    error         TEXT,
+    uploaded_at   TEXT NOT NULL,
+    source_type   TEXT NOT NULL DEFAULT 'local',
+    bunny_url     TEXT,
+    course_id     TEXT,
+    sort_order    INTEGER NOT NULL DEFAULT 0,
+    module_id     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS deleted_videos (
+    video_id   TEXT PRIMARY KEY,
+    deleted_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS active_sessions (
+    session_id   TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL,
+    video_id     TEXT NOT NULL,
+    started_at   INTEGER NOT NULL,
+    last_seen    INTEGER NOT NULL,
+    current_time INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON active_sessions(user_id);
+
+CREATE TABLE IF NOT EXISTS allowed_domains (
+    domain TEXT PRIMARY KEY
+);
+
+CREATE TABLE IF NOT EXISTS courses (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    author     TEXT NOT NULL DEFAULT '',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_catalog_course ON catalog(course_id);
+
+CREATE TABLE IF NOT EXISTS modules (
+    id         TEXT PRIMARY KEY,
+    course_id  TEXT NOT NULL,
+    parent_id  TEXT,
+    name       TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_modules_course ON modules(course_id);
+CREATE INDEX IF NOT EXISTS idx_modules_parent ON modules(parent_id);
+
+CREATE TABLE IF NOT EXISTS app_config (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+);
+`);
+
+// Migraciones para DBs existentes (en BD nueva ya vienen en el CREATE TABLE)
+try { db.exec('ALTER TABLE active_sessions ADD COLUMN current_time INTEGER NOT NULL DEFAULT 0'); } catch {}
+try { db.exec('ALTER TABLE devices ADD COLUMN city TEXT'); } catch {}
+try { db.exec('ALTER TABLE students ADD COLUMN max_devices INTEGER NOT NULL DEFAULT 1'); } catch {}
+
+// ================================================================
+//  STATEMENTS PREPARADOS (más rápidos que queries ad-hoc)
+// ================================================================
+
+// --- Students ---
+const stmts = {
+    getStudentByEmail:    db.prepare('SELECT * FROM students WHERE email = ?'),
+    getStudentById:       db.prepare('SELECT * FROM students WHERE id = ?'),
+    getAllStudents:        db.prepare('SELECT * FROM students ORDER BY created_at DESC'),
+    insertStudent:        db.prepare(`
+        INSERT INTO students (id, email, student_id, name, active, allowed_videos, device_id, created_at, last_login)
+        VALUES (@id, @email, @student_id, @name, @active, @allowed_videos, @device_id, @created_at, @last_login)
+    `),
+    updateStudentDevice:  db.prepare('UPDATE students SET device_id = ?, last_login = ? WHERE id = ?'),
+    updateStudent:        db.prepare(`
+        UPDATE students SET name=@name, active=@active, allowed_videos=@allowed_videos,
+        student_id=@student_id, device_id=@device_id WHERE id=@id
+    `),
+    deleteStudent:        db.prepare('DELETE FROM students WHERE id = ?'),
+
+    // --- Audit log ---
+    insertAudit:          db.prepare(`
+        INSERT INTO audit_log (fingerprint, user_id, video_id, device_id, student_email, ip, user_agent, delivered_at)
+        VALUES (@fingerprint, @user_id, @video_id, @device_id, @student_email, @ip, @user_agent, @delivered_at)
+    `),
+    getAuditByFp:         db.prepare('SELECT * FROM audit_log WHERE fingerprint = ? LIMIT 1'),
+    getAuditAll:          db.prepare('SELECT * FROM audit_log ORDER BY delivered_at DESC LIMIT ?'),
+    getAuditByUser:       db.prepare('SELECT * FROM audit_log WHERE user_id = ? ORDER BY delivered_at DESC LIMIT ?'),
+    getAuditByVideo:      db.prepare('SELECT * FROM audit_log WHERE video_id = ? ORDER BY delivered_at DESC LIMIT ?'),
+    getAuditByUserVideo:  db.prepare('SELECT * FROM audit_log WHERE user_id = ? AND video_id = ? ORDER BY delivered_at DESC LIMIT ?'),
+    countAudit:           db.prepare('SELECT COUNT(*) as n FROM audit_log'),
+    countAuditUser:       db.prepare('SELECT COUNT(*) as n FROM audit_log WHERE user_id = ?'),
+    countAuditVideo:      db.prepare('SELECT COUNT(*) as n FROM audit_log WHERE video_id = ?'),
+    countAuditUserVideo:  db.prepare('SELECT COUNT(*) as n FROM audit_log WHERE user_id = ? AND video_id = ?'),
+
+    // --- Catalog ---
+    getCatalogAll:        db.prepare('SELECT * FROM catalog ORDER BY uploaded_at DESC'),
+    getCatalogById:       db.prepare('SELECT * FROM catalog WHERE video_id = ?'),
+    getCatalogByCourse:   db.prepare('SELECT * FROM catalog WHERE course_id = ? ORDER BY sort_order ASC, uploaded_at DESC'),
+    getCatalogUnassigned: db.prepare('SELECT * FROM catalog WHERE course_id IS NULL ORDER BY uploaded_at DESC'),
+    insertCatalog:        db.prepare(`
+        INSERT OR REPLACE INTO catalog (video_id, title, status, segment_count, key_id, error, uploaded_at, source_type, bunny_url, course_id, sort_order)
+        VALUES (@video_id, @title, @status, @segment_count, @key_id, @error, @uploaded_at, @source_type, @bunny_url, @course_id, @sort_order)
+    `),
+    updateCatalogStatus:  db.prepare(`
+        UPDATE catalog SET status=@status, segment_count=@segment_count, key_id=@key_id, error=@error WHERE video_id=@video_id
+    `),
+    updateCatalogCourse:  db.prepare('UPDATE catalog SET course_id = ?, sort_order = ? WHERE video_id = ?'),
+    updateCatalogSort:    db.prepare('UPDATE catalog SET sort_order = ? WHERE video_id = ?'),
+    deleteCatalog:        db.prepare('DELETE FROM catalog WHERE video_id = ?'),
+    // Tombstones de videos eliminados (para que el seed no los recree)
+    insertDeletedVideo:   db.prepare('INSERT OR IGNORE INTO deleted_videos (video_id, deleted_at) VALUES (?, ?)'),
+    deleteDeletedVideo:   db.prepare('DELETE FROM deleted_videos WHERE video_id = ?'),
+    isVideoDeleted:       db.prepare('SELECT 1 FROM deleted_videos WHERE video_id = ?'),
+
+    // --- Modules ---
+    getAllModulesByCourse:    db.prepare('SELECT * FROM modules WHERE course_id = ? ORDER BY sort_order ASC, created_at ASC'),
+    getModuleById:           db.prepare('SELECT * FROM modules WHERE id = ?'),
+    insertModule:            db.prepare('INSERT INTO modules (id, course_id, parent_id, name, sort_order, created_at) VALUES (@id, @course_id, @parent_id, @name, @sort_order, @created_at)'),
+    updateModule:            db.prepare('UPDATE modules SET name = @name, sort_order = @sort_order WHERE id = @id'),
+    deleteModule:            db.prepare('DELETE FROM modules WHERE id = ?'),
+    deleteModuleChildren:    db.prepare('DELETE FROM modules WHERE parent_id = ?'),
+    deleteModulesByCourse:   db.prepare('DELETE FROM modules WHERE course_id = ?'),
+    unassignModuleVideos:    db.prepare('UPDATE catalog SET module_id = NULL WHERE module_id = ?'),
+    updateCatalogModule:     db.prepare('UPDATE catalog SET module_id = ? WHERE video_id = ?'),
+
+    // --- Config ---
+    getConfig:  db.prepare('SELECT value FROM app_config WHERE key = ?'),
+    setConfig:  db.prepare('INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)'),
+
+    // --- Courses ---
+    getAllCourses:        db.prepare('SELECT * FROM courses ORDER BY sort_order ASC, created_at DESC'),
+    getCourseById:        db.prepare('SELECT * FROM courses WHERE id = ?'),
+    insertCourse:         db.prepare('INSERT INTO courses (id, name, author, sort_order, created_at) VALUES (@id, @name, @author, @sort_order, @created_at)'),
+    updateCourse:         db.prepare('UPDATE courses SET name = @name, author = @author WHERE id = @id'),
+    deleteCourse:         db.prepare('DELETE FROM courses WHERE id = ?'),
+    unassignCourseVideos: db.prepare('UPDATE catalog SET course_id = NULL WHERE course_id = ?'),
+
+    // --- Sessions ---
+    insertSession:        db.prepare('INSERT OR REPLACE INTO active_sessions (session_id, user_id, video_id, started_at, last_seen) VALUES (?, ?, ?, ?, ?)'),
+    insertSessionNew:    db.prepare('INSERT OR REPLACE INTO active_sessions (session_id, user_id, video_id, started_at, last_seen) VALUES (?, ?, ?, ?, ?)'),
+    heartbeatSession:     db.prepare('UPDATE active_sessions SET last_seen = ?, current_time = ? WHERE session_id = ?'),
+    getActiveByUser:      db.prepare('SELECT * FROM active_sessions WHERE user_id = ? AND last_seen > ?'),
+    deleteSession:        db.prepare('DELETE FROM active_sessions WHERE session_id = ?'),
+    countActiveSessions:  db.prepare('SELECT COUNT(*) as n FROM active_sessions WHERE user_id = ? AND last_seen > ?'),
+    cleanExpiredSessions: db.prepare('DELETE FROM active_sessions WHERE last_seen < ?'),
+};
+
+// ================================================================
+//  API — STUDENTS
+// ================================================================
+
+function parseAllowedVideos(raw) {
+    if (!raw || raw === '*') return ['*'];
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : ['*'];
+    } catch { return raw.split(',').map(v => v.trim()).filter(Boolean) || ['*']; }
+}
+
+function serializeAllowedVideos(arr) {
+    if (!Array.isArray(arr)) return '*';
+    if (arr.includes('*')) return '*';
+    return JSON.stringify(arr);
+}
+
+function rowToStudent(row) {
+    if (!row) return null;
+    return {
+        id:             row.id,
+        email:          row.email,
+        studentId:      row.student_id,
+        name:           row.name,
+        active:         row.active === 1,
+        allowedVideos:  parseAllowedVideos(row.allowed_videos),
+        deviceId:       row.device_id || null,
+        createdAt:      row.created_at,
+        lastLogin:      row.last_login || null,
+    };
+}
+
+module.exports.findStudentByEmail = (email) =>
+    rowToStudent(stmts.getStudentByEmail.get(email));
+
+module.exports.findStudentById = (id) =>
+    rowToStudent(stmts.getStudentById.get(id));
+
+module.exports.getAllStudents = () =>
+    stmts.getAllStudents.all().map(rowToStudent);
+
+module.exports.createStudent = ({ id, email, studentId, name, active, allowedVideos, createdAt }) => {
+    stmts.insertStudent.run({
+        id, email,
+        student_id: studentId,
+        name: name || '',
+        active: active !== false ? 1 : 0,
+        allowed_videos: serializeAllowedVideos(allowedVideos),
+        device_id: null,
+        created_at: createdAt || new Date().toISOString(),
+        last_login: null,
+    });
+    return rowToStudent(stmts.getStudentById.get(id));
+};
+
+module.exports.bindDevice = (id, deviceId, lastLogin) =>
+    stmts.updateStudentDevice.run(deviceId, lastLogin, id);
+
+module.exports.updateStudent = (id, { name, active, allowedVideos, studentId, resetDevice, deviceId }) => {
+    const row = stmts.getStudentById.get(id);
+    if (!row) return null;
+    stmts.updateStudent.run({
+        id,
+        name:           name !== undefined           ? String(name).slice(0, 100) : row.name,
+        active:         active !== undefined          ? (active ? 1 : 0)          : row.active,
+        allowed_videos: allowedVideos !== undefined   ? serializeAllowedVideos(allowedVideos) : row.allowed_videos,
+        student_id:     studentId !== undefined       ? String(studentId).trim()  : row.student_id,
+        device_id:      resetDevice                   ? null : (deviceId !== undefined ? deviceId : row.device_id),
+    });
+    return rowToStudent(stmts.getStudentById.get(id));
+};
+
+module.exports.deleteStudent = (id) =>
+    stmts.deleteStudent.run(id);
+
+module.exports.importStudents = (list) => {
+    const insert = db.transaction((students) => {
+        let added = 0, skipped = 0;
+        for (const s of students) {
+            try {
+                stmts.insertStudent.run({
+                    id: s.id, email: s.email,
+                    student_id: s.studentId,
+                    name: s.name || '',
+                    active: s.active !== false ? 1 : 0,
+                    allowed_videos: serializeAllowedVideos(s.allowedVideos || ['*']),
+                    device_id: null,
+                    created_at: s.createdAt || new Date().toISOString(),
+                    last_login: null,
+                });
+                added++;
+            } catch { skipped++; } // UNIQUE constraint → email duplicado
+        }
+        return { added, skipped };
+    });
+    return insert(list);
+};
+
+// ================================================================
+//  API — AUDIT LOG
+// ================================================================
+
+module.exports.logDelivery = ({ fingerprint, userId, videoId, deviceId, studentEmail, ip, userAgent }) => {
+    stmts.insertAudit.run({
+        fingerprint,
+        user_id: userId,
+        video_id: videoId,
+        device_id: deviceId || 'desconocido',
+        student_email: studentEmail || '',
+        ip: ip || 'desconocida',
+        user_agent: userAgent || 'desconocido',
+        delivered_at: new Date().toISOString(),
+    });
+};
+
+module.exports.detectLeak = (fingerprint) => {
+    const row = stmts.getAuditByFp.get(fingerprint);
+    if (!row) return null;
+    return {
+        fingerprint:  row.fingerprint,
+        userId:       row.user_id,
+        videoId:      row.video_id,
+        deviceId:     row.device_id,
+        ip:           row.ip,
+        userAgent:    row.user_agent,
+        deliveredAt:  row.delivered_at,
+    };
+};
+
+module.exports.getAuditLog = ({ userId, videoId, limit = 500 } = {}) => {
+    let rows, count;
+    if (userId && videoId) {
+        rows  = stmts.getAuditByUserVideo.all(userId, videoId, limit);
+        count = stmts.countAuditUserVideo.get(userId, videoId).n;
+    } else if (userId) {
+        rows  = stmts.getAuditByUser.all(userId, limit);
+        count = stmts.countAuditUser.get(userId).n;
+    } else if (videoId) {
+        rows  = stmts.getAuditByVideo.all(videoId, limit);
+        count = stmts.countAuditVideo.get(videoId).n;
+    } else {
+        rows  = stmts.getAuditAll.all(limit);
+        count = stmts.countAudit.get().n;
+    }
+    return {
+        entries: rows.map(r => {
+            const parsed = _deviceFromUserAgent(r.user_agent);
+            return {
+                fingerprint:  r.fingerprint,
+                userId:       r.user_id,
+                videoId:      r.video_id,
+                deviceId:     r.device_id,
+                deviceModel:  parsed.model,
+                deviceOs:     parsed.os,
+                studentEmail: r.student_email || '',
+                ip:           r.ip,
+                userAgent:    r.user_agent,
+                deliveredAt:  r.delivered_at,
+            };
+        }),
+        total: count,
+    };
+};
+
+// Deriva modelo/SO legible desde un user-agent (respaldo para la auditoría).
+function _deviceFromUserAgent(ua) {
+    if (!ua) return { model: '', os: '' };
+    const s = String(ua);
+    let browser = '';
+    if (/Edg\//i.test(s))                                  browser = 'Edge';
+    else if (/OPR\/|Opera/i.test(s))                       browser = 'Opera';
+    else if (/Chrome\//i.test(s) && !/Chromium/i.test(s))  browser = 'Chrome';
+    else if (/Firefox\//i.test(s))                         browser = 'Firefox';
+    else if (/Version\/[\d.]+ .*Safari/i.test(s))          browser = 'Safari';
+    let plat = '', os = '', m;
+    if (/iPhone/i.test(s))                  { plat = 'iPhone'; m = s.match(/iPhone OS (\d+[_\d]*)/i); os = 'iOS' + (m ? ' ' + m[1].replace(/_/g, '.') : ''); }
+    else if (/iPad/i.test(s))               { plat = 'iPad';   m = s.match(/OS (\d+[_\d]*)/i);        os = 'iPadOS' + (m ? ' ' + m[1].replace(/_/g, '.') : ''); }
+    else if (/Macintosh|Mac OS X/i.test(s)) { plat = 'Mac';    m = s.match(/Mac OS X (\d+[_\d]*)/i);  os = 'macOS' + (m ? ' ' + m[1].replace(/_/g, '.') : ''); }
+    else if (/Android/i.test(s))            { plat = 'Android'; m = s.match(/Android (\d+[.\d]*)/i);  os = 'Android' + (m ? ' ' + m[1] : ''); }
+    else if (/Windows NT/i.test(s))         { plat = 'Windows'; m = s.match(/Windows NT (\d+\.\d+)/i); const map = { '10.0': '10/11', '6.3': '8.1', '6.2': '8', '6.1': '7' }; os = 'Windows' + (m ? ' ' + (map[m[1]] || m[1]) : ''); }
+    else if (/Linux/i.test(s))              { plat = 'Linux';  os = 'Linux'; }
+    const model = (browser && plat) ? `${browser} en ${plat}` : (plat || browser || '');
+    return { model, os };
+}
+
+// ================================================================
+//  API — CATALOG
+// ================================================================
+
+function rowToCatalog(r) {
+    if (!r) return null;
+    return {
+        videoId:      r.video_id,
+        title:        r.title,
+        status:       r.status,
+        segmentCount: r.segment_count,
+        keyId:        r.key_id,
+        error:        r.error,
+        uploadedAt:   r.uploaded_at,
+        sourceType:   r.source_type || 'local',
+        bunnyUrl:     r.bunny_url || null,
+        courseId:     r.course_id || null,
+        sortOrder:    r.sort_order || 0,
+        moduleId:     r.module_id || null,
+    };
+}
+
+module.exports.loadCatalog = () =>
+    stmts.getCatalogAll.all().map(rowToCatalog);
+
+module.exports.getCatalogById = (videoId) =>
+    rowToCatalog(stmts.getCatalogById.get(videoId));
+
+module.exports.addToCatalog = ({ videoId, title, status, segmentCount, keyId, error, uploadedAt, sourceType, bunnyUrl, courseId, sortOrder }) => {
+    stmts.insertCatalog.run({
+        video_id:      videoId,
+        title:         title || videoId,
+        status:        status || 'processing',
+        segment_count: segmentCount || 0,
+        key_id:        keyId || null,
+        error:         error || null,
+        uploaded_at:   uploadedAt || new Date().toISOString(),
+        source_type:   sourceType || 'local',
+        bunny_url:     bunnyUrl || null,
+        course_id:     courseId || null,
+        sort_order:    sortOrder || 0,
+    });
+    // Si se re-agrega deliberadamente, quitar el tombstone
+    try { stmts.deleteDeletedVideo.run(videoId); } catch {}
+};
+
+module.exports.updateCatalogEntry = ({ videoId, status, segmentCount, keyId, error }) => {
+    stmts.updateCatalogStatus.run({
+        video_id:      videoId,
+        status:        status || 'error',
+        segment_count: segmentCount || 0,
+        key_id:        keyId || null,
+        error:         error || null,
+    });
+};
+
+module.exports.deleteCatalogEntry = (videoId) => {
+    stmts.deleteCatalog.run(videoId);
+    // Registrar tombstone para que el seed de arranque no lo vuelva a crear
+    try { stmts.insertDeletedVideo.run(videoId, new Date().toISOString()); } catch {}
+};
+
+// ================================================================
+//  SEED DE CURSOS DESDE ENV VAR
+//  Si COURSES_SEED=<JSON> está definido, inserta los cursos preservando IDs.
+// ================================================================
+(function seedCoursesFromEnv() {
+    const raw = process.env.COURSES_SEED;
+    if (!raw) return;
+    let entries;
+    try { entries = JSON.parse(raw); } catch { console.error('[db] COURSES_SEED JSON inválido'); return; }
+    if (!Array.isArray(entries)) return;
+    for (const c of entries) {
+        if (!c.id || !c.name) continue;
+        const existing = stmts.getCourseById.get(c.id);
+        if (!existing) {
+            try {
+                stmts.insertCourse.run({
+                    id:         c.id,
+                    name:       c.name,
+                    author:     c.author || '',
+                    sort_order: c.sortOrder || 0,
+                    created_at: c.createdAt || new Date().toISOString(),
+                });
+                console.log('[db] Curso seed:', c.id, c.name);
+            } catch (err) { console.error('[db] Error en curso seed:', err.message); }
+        }
+    }
+})();
+
+// ================================================================
+//  SEED DE CATÁLOGO DESDE ENV VAR
+//  Soporta CATALOG_SEED (array completo) o CATALOG_SEED_1 + CATALOG_SEED_2
+//  (partes divididas para evitar el límite de 128KB por variable del OS).
+// ================================================================
+(function seedCatalogFromEnv() {
+    let entries = [];
+    if (process.env.CATALOG_SEED) {
+        try { entries = JSON.parse(process.env.CATALOG_SEED); }
+        catch { console.error('[db] CATALOG_SEED JSON inválido'); return; }
+    } else {
+        const p1 = process.env.CATALOG_SEED_1;
+        const p2 = process.env.CATALOG_SEED_2;
+        const p3 = process.env.CATALOG_SEED_3;
+        if (!p1) return;
+        try {
+            if (p1) entries.push(...JSON.parse(p1));
+            if (p2) entries.push(...JSON.parse(p2));
+            if (p3) entries.push(...JSON.parse(p3));
+        } catch { console.error('[db] CATALOG_SEED_N JSON inválido'); return; }
+    }
+    if (!Array.isArray(entries)) return;
+    for (const e of entries) {
+        if (!e.videoId || !e.bunnyUrl) continue;
+        // No recrear videos que el admin eliminó (tombstone)
+        try { if (stmts.isVideoDeleted.get(e.videoId)) continue; } catch {}
+        const existing = stmts.getCatalogById.get(e.videoId);
+        if (!existing) {
+            try {
+                stmts.insertCatalog.run({
+                    video_id:      e.videoId,
+                    title:         e.title || e.videoId,
+                    status:        e.status || 'ready',
+                    segment_count: e.segmentCount || 0,
+                    key_id:        e.keyId || null,
+                    error:         null,
+                    uploaded_at:   e.uploadedAt || new Date().toISOString(),
+                    source_type:   e.sourceType || 'bunny',
+                    bunny_url:     e.bunnyUrl,
+                    course_id:     e.courseId || null,
+                    sort_order:    e.sortOrder || 0,
+                });
+            } catch (err) { console.error('[db] Error en seed:', err.message); }
+        }
+    }
+    console.log('[db] Catálogo seed completado');
+})();
+
+// Seed de dominios permitidos desde env var
+(function seedDomainsFromEnv() {
+    const raw = process.env.ALLOWED_DOMAINS_SEED;
+    if (!raw) return;
+    try {
+        const domains = JSON.parse(raw);
+        if (!Array.isArray(domains)) return;
+        for (const d of domains) {
+            if (typeof d === 'string' && d.trim()) {
+                db.prepare('INSERT OR IGNORE INTO allowed_domains (domain) VALUES (?)').run(d.trim());
+            }
+        }
+        console.log('[db] Dominios seed:', domains.length);
+    } catch { console.error('[db] ALLOWED_DOMAINS_SEED JSON inválido'); }
+})();
+
+// ================================================================
+//  API — SESIONES ACTIVAS
+// ================================================================
+
+/** Crea una sesión activa al iniciar reproducción */
+module.exports.createSession = (sessionId, userId, videoId) => {
+    const now = Date.now();
+    stmts.insertSession.run(sessionId, userId, videoId, now, now);
+};
+
+/** Actualiza el timestamp y posición actual de la sesión. Devuelve true si existía. */
+module.exports.heartbeatSession = (sessionId, currentTime) => {
+    const ct = Math.floor(Number(currentTime) || 0);
+    const result = stmts.heartbeatSession.run(Date.now(), ct, sessionId);
+    return result.changes > 0;
+};
+
+/** Obtiene sesiones activas de un usuario (inactivas >90s no cuentan) */
+module.exports.getActiveSessionsByUser = (userId) => {
+    const threshold = Date.now() - 90_000;
+    return stmts.getActiveByUser.all(userId, threshold);
+};
+
+/** Elimina una sesión (alumno cerró sesión o terminó el video) */
+module.exports.endSession = (sessionId) =>
+    stmts.deleteSession.run(sessionId);
+
+/** Cuenta sesiones activas de un usuario (inactivas >90s no cuentan) */
+module.exports.countActiveSessions = (userId) => {
+    const threshold = Date.now() - 90_000;
+    return stmts.countActiveSessions.get(userId, threshold).n;
+};
+
+/** Elimina todas las sesiones cuyo último heartbeat fue hace >90s */
+module.exports.cleanExpiredSessions = () => {
+    const threshold = Date.now() - 90_000;
+    stmts.cleanExpiredSessions.run(threshold);
+};
+
+// Exponer instancia para queries avanzadas si se necesitan
+module.exports.db = db;
+
+// ================================================================
+//  API — ALLOWED DOMAINS
+// ================================================================
+
+module.exports.getAllowedDomains = () =>
+    db.prepare('SELECT domain FROM allowed_domains ORDER BY domain').all().map(r => r.domain);
+
+module.exports.addAllowedDomain = (domain) =>
+    db.prepare('INSERT OR IGNORE INTO allowed_domains (domain) VALUES (?)').run(domain);
+
+module.exports.removeAllowedDomain = (domain) =>
+    db.prepare('DELETE FROM allowed_domains WHERE domain = ?').run(domain);
+
+// ================================================================
+//  API — COURSES
+// ================================================================
+
+function rowToCourse(r) {
+    if (!r) return null;
+    return { id: r.id, name: r.name, author: r.author, sortOrder: r.sort_order, createdAt: r.created_at };
+}
+
+module.exports.getAllCourses = () =>
+    stmts.getAllCourses.all().map(rowToCourse);
+
+module.exports.getCourseById = (id) =>
+    rowToCourse(stmts.getCourseById.get(id));
+
+module.exports.createCourse = ({ id, name, author, sortOrder }) => {
+    stmts.insertCourse.run({ id, name, author: author || '', sort_order: sortOrder || 0, created_at: new Date().toISOString() });
+    return rowToCourse(stmts.getCourseById.get(id));
+};
+
+module.exports.updateCourse = (id, { name, author }) => {
+    stmts.updateCourse.run({ id, name, author: author || '' });
+    return rowToCourse(stmts.getCourseById.get(id));
+};
+
+module.exports.deleteCourse = (id) => {
+    stmts.unassignCourseVideos.run(id);
+    stmts.deleteModulesByCourse.run(id);
+    stmts.deleteCourse.run(id);
+};
+
+module.exports.moveVideoToCourse = (videoId, courseId) => {
+    const maxSort = db.prepare('SELECT COALESCE(MAX(sort_order),0) as m FROM catalog WHERE course_id = ?').get(courseId || null);
+    stmts.updateCatalogCourse.run(courseId || null, (maxSort?.m || 0) + 1, videoId);
+};
+
+module.exports.reorderVideos = (videoOrders) => {
+    const tx = db.transaction((items) => {
+        for (const { videoId, sortOrder } of items) {
+            stmts.updateCatalogSort.run(sortOrder, videoId);
+        }
+    });
+    tx(videoOrders);
+};
+
+module.exports.getCatalogByCourse = (courseId) =>
+    stmts.getCatalogByCourse.all(courseId).map(rowToCatalog);
+
+module.exports.getCatalogUnassigned = () =>
+    stmts.getCatalogUnassigned.all().map(rowToCatalog);
+
+// ================================================================
+//  API — MODULES
+// ================================================================
+
+function rowToModule(r) {
+    if (!r) return null;
+    return { id: r.id, courseId: r.course_id, parentId: r.parent_id || null, name: r.name, sortOrder: r.sort_order, createdAt: r.created_at };
+}
+
+module.exports.getModulesByCourse = (courseId) =>
+    stmts.getAllModulesByCourse.all(courseId).map(rowToModule);
+
+module.exports.getModuleById = (id) =>
+    rowToModule(stmts.getModuleById.get(id));
+
+module.exports.createModule = ({ id, courseId, parentId, name, sortOrder }) => {
+    stmts.insertModule.run({
+        id, course_id: courseId, parent_id: parentId || null,
+        name: name.trim().slice(0, 120), sort_order: sortOrder || 0,
+        created_at: new Date().toISOString(),
+    });
+    return rowToModule(stmts.getModuleById.get(id));
+};
+
+module.exports.updateModule = (id, { name, sortOrder }) => {
+    const existing = stmts.getModuleById.get(id);
+    if (!existing) return null;
+    stmts.updateModule.run({ id, name: name.trim().slice(0, 120), sort_order: sortOrder !== undefined ? sortOrder : existing.sort_order });
+    return rowToModule(stmts.getModuleById.get(id));
+};
+
+/** Elimina un módulo, sus hijos, y desasigna los videos */
+module.exports.deleteModule = (id) => {
+    const tx = db.transaction(() => {
+        // Desasignar videos del módulo
+        stmts.unassignModuleVideos.run(id);
+        // Obtener hijos directos y limpiarlos recursivamente
+        const children = stmts.getAllModulesByCourse.all(
+            stmts.getModuleById.get(id)?.course_id || ''
+        ).filter(m => m.parent_id === id);
+        for (const child of children) {
+            stmts.unassignModuleVideos.run(child.id);
+            stmts.deleteModuleChildren.run(child.id);
+            stmts.deleteModule.run(child.id);
+        }
+        stmts.deleteModuleChildren.run(id);
+        stmts.deleteModule.run(id);
+    });
+    tx();
+};
+
+/** Elimina todos los módulos de un curso (al borrar el curso) */
+module.exports.deleteModulesByCourse = (courseId) => {
+    stmts.deleteModulesByCourse.run(courseId);
+};
+
+/** Asigna un video a un módulo (o lo desasigna si moduleId=null) */
+module.exports.moveVideoToModule = (videoId, moduleId) => {
+    stmts.updateCatalogModule.run(moduleId || null, videoId);
+};
+
+// ================================================================
+//  API — APP CONFIG
+// ================================================================
+
+module.exports.getConfig = (key) => {
+    const row = stmts.getConfig.get(key);
+    return row ? row.value : null;
+};
+
+module.exports.setConfig = (key, value) => {
+    stmts.setConfig.run(key, value);
+};
+
+// ================================================================
+//  PLAYBACK SESSIONS EXTERNAS
+//  Tabla para sesiones iniciadas desde reproductores externos.
+//  No toca ninguna tabla existente.
+// ================================================================
+
+// Migración no destructiva: añade event_type a audit_log si no existe
+try { db.exec('ALTER TABLE audit_log ADD COLUMN event_type TEXT'); } catch {}
+
+// Tabla nueva exclusiva para sesiones de reproducción externas
+db.exec(`
+CREATE TABLE IF NOT EXISTS playback_sessions (
+    session_id    TEXT PRIMARY KEY,
+    student_id    TEXT NOT NULL,
+    student_email TEXT NOT NULL,
+    course_id     TEXT NOT NULL,
+    lesson_id     TEXT NOT NULL,
+    device_id     TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    expires_at    TEXT NOT NULL
+);
+`);
+
+const pbStmts = {
+    insertSession:  db.prepare(`
+        INSERT INTO playback_sessions (session_id, student_id, student_email, course_id, lesson_id, device_id, created_at, expires_at)
+        VALUES (@session_id, @student_id, @student_email, @course_id, @lesson_id, @device_id, @created_at, @expires_at)
+    `),
+    getSession:     db.prepare('SELECT * FROM playback_sessions WHERE session_id = ?'),
+    deleteExpired:  db.prepare("DELETE FROM playback_sessions WHERE expires_at < ?"),
+    insertEvent:    db.prepare(`
+        INSERT INTO audit_log (fingerprint, user_id, video_id, device_id, ip, user_agent, delivered_at, event_type)
+        VALUES (@fingerprint, @user_id, @video_id, @device_id, @ip, @user_agent, @delivered_at, @event_type)
+    `),
+};
+
+/** Crea una sesión de reproducción externa. expires_at = ahora + ttlSeconds */
+module.exports.createPlaybackSession = ({ sessionId, studentId, studentEmail, courseId, lessonId, deviceId, ttlSeconds = 900 }) => {
+    const now = new Date();
+    const expires = new Date(now.getTime() + ttlSeconds * 1000);
+    pbStmts.insertSession.run({
+        session_id:    sessionId,
+        student_id:    studentId,
+        student_email: studentEmail,
+        course_id:     courseId,
+        lesson_id:     lessonId,
+        device_id:     deviceId,
+        created_at:    now.toISOString(),
+        expires_at:    expires.toISOString(),
+    });
+};
+
+/** Obtiene una sesión por sessionId. Devuelve null si no existe. */
+module.exports.getPlaybackSession = (sessionId) => {
+    const row = pbStmts.getSession.get(sessionId);
+    if (!row) return null;
+    return {
+        sessionId:    row.session_id,
+        studentId:    row.student_id,
+        studentEmail: row.student_email,
+        courseId:     row.course_id,
+        lessonId:     row.lesson_id,
+        deviceId:     row.device_id,
+        createdAt:    row.created_at,
+        expiresAt:    row.expires_at,
+    };
+};
+
+/** Registra un evento de reproducción en audit_log con su event_type */
+module.exports.logPlaybackEvent = ({ sessionId, studentId, lessonId, deviceId, ip, userAgent, eventType, extra }) => {
+    const fp = `pb:${sessionId}:${eventType}:${Date.now()}`;
+    pbStmts.insertEvent.run({
+        fingerprint:  fp,
+        user_id:      studentId,
+        video_id:     lessonId,
+        device_id:    deviceId || 'unknown',
+        ip:           ip || 'unknown',
+        user_agent:   userAgent || 'unknown',
+        delivered_at: new Date().toISOString(),
+        event_type:   eventType,
+    });
+};
+
+/** Limpia sesiones expiradas de la tabla playback_sessions */
+module.exports.cleanExpiredPlaybackSessions = () => {
+    pbStmts.deleteExpired.run(new Date().toISOString());
+};;
+
+// ================================================================
+//  NUEVAS TABLAS — Sistema de seguridad avanzado
+//  Todas son NO DESTRUCTIVAS: CREATE TABLE IF NOT EXISTS
+//  No tocan ninguna tabla existente.
+// ================================================================
+
+db.exec(`
+-- Tabla de dispositivos autorizados (máximo 3 por alumno)
+CREATE TABLE IF NOT EXISTS devices (
+    id          TEXT PRIMARY KEY,
+    student_id  TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    device_name TEXT,
+    browser     TEXT,
+    os          TEXT,
+    city        TEXT,
+    status      TEXT NOT NULL DEFAULT 'active',
+    first_seen  TEXT NOT NULL,
+    last_seen   TEXT NOT NULL,
+    UNIQUE(student_id, fingerprint)
+);
+CREATE INDEX IF NOT EXISTS idx_devices_student ON devices(student_id);
+
+-- Tabla de progreso de reproducción persistente
+CREATE TABLE IF NOT EXISTS playback_progress (
+    id               TEXT PRIMARY KEY,
+    student_id       TEXT NOT NULL,
+    video_id         TEXT NOT NULL,
+    course_id        TEXT,
+    progress_percent REAL NOT NULL DEFAULT 0,
+    last_position    INTEGER NOT NULL DEFAULT 0,
+    started_at       TEXT NOT NULL,
+    last_seen_at     TEXT NOT NULL,
+    completed        INTEGER NOT NULL DEFAULT 0,
+    device_id        TEXT,
+    UNIQUE(student_id, video_id)
+);
+CREATE INDEX IF NOT EXISTS idx_progress_student ON playback_progress(student_id);
+CREATE INDEX IF NOT EXISTS idx_progress_video   ON playback_progress(video_id);
+
+-- Tabla de eventos de reproducción (throttled)
+CREATE TABLE IF NOT EXISTS playback_events (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id       TEXT NOT NULL,
+    video_id         TEXT NOT NULL,
+    course_id        TEXT,
+    device_id        TEXT,
+    event_type       TEXT NOT NULL,
+    progress_percent REAL,
+    current_time     INTEGER,
+    metadata         TEXT,
+    created_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pb_events_student ON playback_events(student_id);
+CREATE INDEX IF NOT EXISTS idx_pb_events_video   ON playback_events(video_id);
+CREATE INDEX IF NOT EXISTS idx_pb_events_type    ON playback_events(event_type);
+
+-- Tabla de actividad sospechosa (solo registro, sin bloqueos automáticos)
+CREATE TABLE IF NOT EXISTS suspicious_activity (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id  TEXT NOT NULL,
+    device_id   TEXT,
+    type        TEXT NOT NULL,
+    severity    TEXT NOT NULL DEFAULT 'low',
+    description TEXT,
+    metadata    TEXT,
+    reviewed    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_suspicious_student  ON suspicious_activity(student_id);
+CREATE INDEX IF NOT EXISTS idx_suspicious_type     ON suspicious_activity(type);
+CREATE INDEX IF NOT EXISTS idx_suspicious_reviewed ON suspicious_activity(reviewed);
+
+-- Auditoría granular por segmento HLS (anti-descarga masiva)
+CREATE TABLE IF NOT EXISTS segment_requests (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id  TEXT,
+    video_id    TEXT NOT NULL,
+    session_id  TEXT,
+    device_id   TEXT,
+    seg_index   INTEGER,
+    ip          TEXT,
+    user_agent  TEXT,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_segreq_student ON segment_requests(student_id);
+CREATE INDEX IF NOT EXISTS idx_segreq_video   ON segment_requests(video_id);
+CREATE INDEX IF NOT EXISTS idx_segreq_created ON segment_requests(created_at);
+
+-- Tabla de códigos únicos de alumno (para watermark)
+CREATE TABLE IF NOT EXISTS student_codes (
+    student_id TEXT PRIMARY KEY,
+    code       TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+);
+
+-- Tabla de nonces usados (anti-replay para comandos cifrados)
+CREATE TABLE IF NOT EXISTS used_nonces (
+    nonce      TEXT PRIMARY KEY,
+    used_at    TEXT NOT NULL
+);
+
+-- Tabla de short-tokens para links cdp:// cortos (canjeados por el reproductor)
+CREATE TABLE IF NOT EXISTS pending_play_tokens (
+    token      TEXT PRIMARY KEY,
+    cmd        TEXT NOT NULL,
+    auth       TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    is_dev     INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Tabla de versiones requeridas del reproductor
+CREATE TABLE IF NOT EXISTS player_versions (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    min_version    TEXT NOT NULL DEFAULT '1.0.0',
+    latest_version TEXT NOT NULL DEFAULT '1.0.0',
+    download_url   TEXT,
+    message        TEXT,
+    updated_at     TEXT NOT NULL
+);
+`);
+
+// Limpieza de nonces viejos (>30 minutos) al iniciar
+try { db.exec("DELETE FROM used_nonces WHERE used_at < datetime('now', '-30 minutes')"); } catch {}
+
+// Limpieza de tokens cortos expirados al iniciar
+try { db.exec('DELETE FROM pending_play_tokens WHERE expires_at < ' + Date.now()); } catch {}
+
+// ================================================================
+//  API — DISPOSITIVOS (multi-device, máx 3 por alumno)
+// ================================================================
+
+const devStmts = {
+    getDevicesByStudent:  db.prepare('SELECT * FROM devices WHERE student_id = ? ORDER BY first_seen ASC'),
+    getActiveByStudent:   db.prepare("SELECT * FROM devices WHERE student_id = ? AND status = 'active' ORDER BY first_seen ASC"),
+    getDeviceByFp:        db.prepare('SELECT * FROM devices WHERE student_id = ? AND fingerprint = ?'),
+    insertDevice:         db.prepare(`
+        INSERT INTO devices (id, student_id, fingerprint, device_name, browser, os, city, status, first_seen, last_seen)
+        VALUES (@id, @student_id, @fingerprint, @device_name, @browser, @os, @city, @status, @first_seen, @last_seen)
+    `),
+    updateDeviceLastSeen: db.prepare('UPDATE devices SET last_seen = ? WHERE student_id = ? AND fingerprint = ?'),
+    countActiveDevices:   db.prepare("SELECT COUNT(*) as n FROM devices WHERE student_id = ? AND status = 'active'"),
+    deactivateDevice:     db.prepare("UPDATE devices SET status = 'blocked' WHERE id = ?"),
+    resetDevices:         db.prepare("DELETE FROM devices WHERE student_id = ?"),
+};
+
+/** Devuelve todos los dispositivos de un alumno */
+module.exports.getDevicesByStudent = (studentId) =>
+    devStmts.getDevicesByStudent.all(studentId);
+
+/** Devuelve dispositivos activos de un alumno */
+module.exports.getActiveDevicesByStudent = (studentId) =>
+    devStmts.getActiveByStudent.all(studentId);
+
+/** Cuenta dispositivos activos de un alumno */
+module.exports.countActiveDevices = (studentId) =>
+    devStmts.countActiveDevices.get(studentId).n;
+
+/**
+ * Intenta registrar o actualizar un dispositivo para el alumno.
+ * El límite real lo define students.max_devices (default 1). Estricto.
+ * @returns {{ ok: boolean, device: object|null, reason: string }}
+ */
+module.exports.registerOrValidateDevice = (studentId, fingerprint, meta = {}, maxDevicesFallback = 1) => {
+    const now = new Date().toISOString();
+
+    // Límite efectivo: el valor real del alumno manda (fuente única de verdad).
+    let effectiveLimit = maxDevicesFallback;
+    try {
+        const st = stmts.getStudentById.get(studentId);
+        if (st && st.max_devices != null) effectiveLimit = parseInt(st.max_devices, 10);
+    } catch { /* admin_* u otro id sin fila de alumno */ }
+    if (!Number.isFinite(effectiveLimit) || effectiveLimit < 1) effectiveLimit = 1;
+
+    // ¿Ya existe este dispositivo para este alumno?
+    const existing = devStmts.getDeviceByFp.get(studentId, fingerprint);
+    if (existing) {
+        if (existing.status === 'blocked') {
+            return { ok: false, device: existing, reason: 'device_blocked' };
+        }
+        devStmts.updateDeviceLastSeen.run(now, studentId, fingerprint);
+        return { ok: true, device: existing, reason: 'existing', limit: effectiveLimit };
+    }
+    // Dispositivo nuevo — verificar límite
+    const activeCount = devStmts.countActiveDevices.get(studentId).n;
+    if (activeCount >= effectiveLimit) {
+        return { ok: false, device: null, reason: 'device_limit_exceeded', limit: effectiveLimit, activeCount };
+    }
+    // Registrar nuevo dispositivo
+    const { v4: uuid4 } = require('uuid');
+    const id = uuid4();
+    devStmts.insertDevice.run({
+        id,
+        student_id:  studentId,
+        fingerprint,
+        device_name: (meta.deviceName || '').slice(0, 100),
+        browser:     (meta.browser    || '').slice(0, 100),
+        os:          (meta.os         || '').slice(0, 100),
+        city:        (meta.city       || '').slice(0, 100) || null,
+        status:      'active',
+        first_seen:  now,
+        last_seen:   now,
+    });
+    return { ok: true, device: devStmts.getDeviceByFp.get(studentId, fingerprint), reason: 'new', limit: effectiveLimit };
+};
+
+/** Elimina todos los dispositivos de un alumno (reset) */
+module.exports.resetStudentDevices = (studentId) =>
+    devStmts.resetDevices.run(studentId);
+
+// Devuelve el límite de dispositivos del alumno (default 1).
+module.exports.getStudentMaxDevices = (studentId) => {
+    try {
+        const st = stmts.getStudentById.get(studentId);
+        const v = st && st.max_devices != null ? parseInt(st.max_devices, 10) : 1;
+        return Number.isFinite(v) && v >= 1 ? v : 1;
+    } catch { return 1; }
+};
+
+// Establece el límite de dispositivos del alumno (mínimo 1).
+module.exports.setStudentMaxDevices = (studentId, n) => {
+    let val = parseInt(n, 10);
+    if (!Number.isFinite(val) || val < 1) val = 1;
+    if (val > 50) val = 50;
+    db.prepare('UPDATE students SET max_devices=? WHERE id=?').run(val, studentId);
+    return val;
+};
+
+// ================================================================
+//  API — PROGRESO DE REPRODUCCIÓN PERSISTENTE
+// ================================================================
+
+const progStmts = {
+    upsertProgress: db.prepare(`
+        INSERT INTO playback_progress (id, student_id, video_id, course_id, progress_percent, last_position, started_at, last_seen_at, completed, device_id)
+        VALUES (@id, @student_id, @video_id, @course_id, @progress_percent, @last_position, @started_at, @last_seen_at, @completed, @device_id)
+        ON CONFLICT(student_id, video_id) DO UPDATE SET
+            progress_percent = MAX(progress_percent, @progress_percent),
+            last_position    = @last_position,
+            last_seen_at     = @last_seen_at,
+            completed        = MAX(completed, @completed),
+            device_id        = @device_id
+    `),
+    getProgress:          db.prepare('SELECT * FROM playback_progress WHERE student_id = ? AND video_id = ?'),
+    getProgressByStudent: db.prepare('SELECT * FROM playback_progress WHERE student_id = ? ORDER BY last_seen_at DESC'),
+    getAllProgress:        db.prepare('SELECT * FROM playback_progress ORDER BY last_seen_at DESC LIMIT ?'),
+};
+
+/**
+ * Guarda o actualiza el progreso de reproducción.
+ * progress_percent solo puede aumentar (no regresa si el alumno rebobina).
+ */
+module.exports.saveProgress = ({ studentId, videoId, courseId, progressPercent, lastPosition, deviceId }) => {
+    const { v4: uuid4 } = require('uuid');
+    const now = new Date().toISOString();
+    const pct = Math.min(100, Math.max(0, Number(progressPercent) || 0));
+    const pos = Math.floor(Number(lastPosition) || 0);
+    const existing = progStmts.getProgress.get(studentId, videoId);
+    progStmts.upsertProgress.run({
+        id:               existing?.id || uuid4(),
+        student_id:       studentId,
+        video_id:         videoId,
+        course_id:        courseId || null,
+        progress_percent: pct,
+        last_position:    pos,
+        started_at:       existing?.started_at || now,
+        last_seen_at:     now,
+        completed:        pct >= 90 ? 1 : (existing?.completed || 0),
+        device_id:        deviceId || null,
+    });
+};
+
+module.exports.getProgress = (studentId, videoId) =>
+    progStmts.getProgress.get(studentId, videoId);
+
+module.exports.getProgressByStudent = (studentId) =>
+    progStmts.getProgressByStudent.all(studentId);
+
+module.exports.getAllProgress = (limit = 500) =>
+    progStmts.getAllProgress.all(limit);
+
+// ================================================================
+//  API — EVENTOS DE REPRODUCCIÓN
+// ================================================================
+
+const evtStmts = {
+    insertEvent: db.prepare(`
+        INSERT INTO playback_events (student_id, video_id, course_id, device_id, event_type, progress_percent, current_time, metadata, created_at)
+        VALUES (@student_id, @video_id, @course_id, @device_id, @event_type, @progress_percent, @current_time, @metadata, @created_at)
+    `),
+    getEventsByStudent: db.prepare('SELECT * FROM playback_events WHERE student_id = ? ORDER BY created_at DESC LIMIT ?'),
+    getEventsByVideo:   db.prepare('SELECT * FROM playback_events WHERE video_id = ? ORDER BY created_at DESC LIMIT ?'),
+    getRecentEvents:    db.prepare('SELECT * FROM playback_events ORDER BY created_at DESC LIMIT ?'),
+};
+
+const ALLOWED_PB_EVENTS = new Set([
+    'play', 'pause', 'ended', 'seek', 'error',
+    'devtools_open', 'screen_recording_detected', 'visibility_hidden',
+    'progress_save', 'session_start', 'session_end',
+    'device_blocked', 'token_expired', 'access_denied',
+]);
+
+module.exports.insertPlaybackEvent = ({ studentId, videoId, courseId, deviceId, eventType, progressPercent, currentTime, metadata }) => {
+    if (!ALLOWED_PB_EVENTS.has(eventType)) return;
+    evtStmts.insertEvent.run({
+        student_id:       studentId,
+        video_id:         videoId,
+        course_id:        courseId || null,
+        device_id:        deviceId || null,
+        event_type:       eventType,
+        progress_percent: progressPercent != null ? Number(progressPercent) : null,
+        current_time:     currentTime     != null ? Math.floor(Number(currentTime)) : null,
+        metadata:         metadata ? JSON.stringify(metadata).slice(0, 500) : null,
+        created_at:       new Date().toISOString(),
+    });
+};
+
+module.exports.getRecentEvents = (limit = 100) =>
+    evtStmts.getRecentEvents.all(limit);
+
+module.exports.getEventsByStudent = (studentId, limit = 200) =>
+    evtStmts.getEventsByStudent.all(studentId, limit);
+
+// ================================================================
+//  API — ACTIVIDAD SOSPECHOSA
+// ================================================================
+
+const suspStmts = {
+    insertSuspicious:  db.prepare(`
+        INSERT INTO suspicious_activity (student_id, device_id, type, severity, description, metadata, created_at)
+        VALUES (@student_id, @device_id, @type, @severity, @description, @metadata, @created_at)
+    `),
+    getSuspicious:     db.prepare('SELECT * FROM suspicious_activity ORDER BY created_at DESC LIMIT ?'),
+    getByStudent:      db.prepare('SELECT * FROM suspicious_activity WHERE student_id = ? ORDER BY created_at DESC LIMIT ?'),
+    getUnreviewed:     db.prepare('SELECT * FROM suspicious_activity WHERE reviewed = 0 ORDER BY created_at DESC LIMIT ?'),
+    markReviewed:      db.prepare('UPDATE suspicious_activity SET reviewed = 1 WHERE id = ?'),
+    countUnreviewed:   db.prepare('SELECT COUNT(*) as n FROM suspicious_activity WHERE reviewed = 0'),
+};
+
+module.exports.logSuspiciousActivity = ({ studentId, deviceId, type, severity = 'low', description, metadata }) => {
+    suspStmts.insertSuspicious.run({
+        student_id:  studentId,
+        device_id:   deviceId || null,
+        type,
+        severity,
+        description: description ? String(description).slice(0, 500) : null,
+        metadata:    metadata ? JSON.stringify(metadata).slice(0, 1000) : null,
+        created_at:  new Date().toISOString(),
+    });
+};
+
+module.exports.getSuspiciousActivity = (limit = 200) =>
+    suspStmts.getSuspicious.all(limit);
+
+module.exports.getUnreviewedSuspicious = (limit = 100) =>
+    suspStmts.getUnreviewed.all(limit);
+
+module.exports.getSuspiciousByStudent = (studentId, limit = 100) =>
+    suspStmts.getByStudent.all(studentId, limit);
+
+module.exports.markSuspiciousReviewed = (id) =>
+    suspStmts.markReviewed.run(id);
+
+module.exports.countUnreviewed = () =>
+    suspStmts.countUnreviewed.get().n;
+
+// ================================================================
+//  API — SEGMENT REQUESTS (auditoría granular HLS anti-descarga)
+// ================================================================
+
+const _segInsert = db.prepare(
+    `INSERT INTO segment_requests (student_id, video_id, session_id, device_id, seg_index, ip, user_agent, created_at)
+     VALUES (@student_id, @video_id, @session_id, @device_id, @seg_index, @ip, @user_agent, @created_at)`
+);
+
+module.exports.logSegmentRequest = ({ studentId, videoId, sessionId, deviceId, segIndex, ip, userAgent }) => {
+    _segInsert.run({
+        student_id: studentId || null,
+        video_id:   videoId,
+        session_id: sessionId || null,
+        device_id:  deviceId || null,
+        seg_index:  Number.isFinite(segIndex) ? segIndex : null,
+        ip:         ip ? String(ip).slice(0, 64) : null,
+        user_agent: userAgent ? String(userAgent).slice(0, 200) : null,
+        created_at: new Date().toISOString(),
+    });
+};
+
+module.exports.getSegmentAudit = ({ hours = 24, limit = 100 } = {}) => {
+    const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+    return db.prepare(
+        `SELECT student_id, video_id, device_id,
+                COUNT(*)                  AS total_requests,
+                COUNT(DISTINCT seg_index) AS distinct_segments,
+                MIN(created_at)           AS first_seen,
+                MAX(created_at)           AS last_seen
+           FROM segment_requests
+          WHERE created_at >= ?
+          GROUP BY student_id, video_id, device_id
+          ORDER BY total_requests DESC
+          LIMIT ?`
+    ).all(since, limit);
+};
+
+module.exports.getSecurityEvents = (limit = 200) =>
+    db.prepare(
+        `SELECT id, video_id AS event, device_id, ip, user_agent AS details, delivered_at AS created_at
+           FROM audit_log
+          WHERE event_type = 'security_warning'
+          ORDER BY delivered_at DESC
+          LIMIT ?`
+    ).all(limit);
+
+// ================================================================
+//  API — CÓDIGOS ÚNICOS DE ALUMNO (watermark)
+// ================================================================
+
+const codeStmts = {
+    getCode:    db.prepare('SELECT * FROM student_codes WHERE student_id = ?'),
+    insertCode: db.prepare('INSERT OR IGNORE INTO student_codes (student_id, code, created_at) VALUES (?, ?, ?)'),
+};
+
+/**
+ * Genera o recupera el código único de un alumno para el watermark.
+ * Formato: VCB-XXXXX (5 dígitos alfanuméricos)
+ */
+module.exports.getOrCreateStudentCode = (studentId) => {
+    const existing = codeStmts.getCode.get(studentId);
+    if (existing) return existing.code;
+    // Generar código único: VCB- + 5 chars alfanuméricos en mayúsculas
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code;
+    let attempts = 0;
+    do {
+        code = 'VCB-';
+        for (let i = 0; i < 5; i++) {
+            code += chars[Math.floor(Math.random() * chars.length)];
+        }
+        attempts++;
+        if (attempts > 50) { code = 'VCB-' + studentId.slice(0, 5).toUpperCase(); break; }
+    } while (codeStmts.getCode.get(code)); // re-intentar si colisión (rarísimo)
+    codeStmts.insertCode.run(studentId, code, new Date().toISOString());
+    return code;
+};
+
+// ================================================================
+//  API — NONCES ANTI-REPLAY (para comandos cifrados)
+// ================================================================
+
+const nonceStmts = {
+    checkAndInsert: db.prepare(`
+        INSERT OR IGNORE INTO used_nonces (nonce, used_at) VALUES (?, ?)
+    `),
+    getByNonce: db.prepare('SELECT nonce FROM used_nonces WHERE nonce = ?'),
+    cleanup:    db.prepare("DELETE FROM used_nonces WHERE used_at < ?"),
+};
+
+/**
+ * Verifica que un nonce no haya sido usado antes y lo registra.
+ * @returns {boolean} true si el nonce es fresco (no usado), false si es replay
+ */
+module.exports.consumeNonce = (nonce) => {
+    const now = new Date().toISOString();
+    const result = nonceStmts.checkAndInsert.run(nonce, now);
+    return result.changes > 0; // 0 cambios = INSERT ignorado = nonce ya existía
+};
+
+module.exports.cleanOldNonces = () => {
+    const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    nonceStmts.cleanup.run(cutoff);
+};
+
+// ================================================================
+//  API — HISTORIAL DIARIO DE REPRODUCCIÓN
+// ================================================================
+
+/**
+ * Devuelve registros de playback_progress filtrados por fecha y/o alumno.
+ * @param {object} opts - { limit, date (YYYY-MM-DD), student (id/email/code) }
+ * @returns {Array}
+ */
+module.exports.getPlaybackHistory = ({ limit = 200, date = null, student = null } = {}) => {
+    let sql = `
+        SELECT pp.*, sc.code AS student_code, d.city AS device_city
+        FROM   playback_progress pp
+        LEFT JOIN student_codes sc ON sc.student_id = pp.student_id
+        LEFT JOIN devices d ON d.id = pp.device_id
+        WHERE  1=1
+    `;
+    const params = [];
+
+    if (date) {
+        sql += " AND date(pp.last_seen_at) = ?";
+        params.push(date);
+    }
+    if (student) {
+        sql += " AND (pp.student_id LIKE ? OR sc.code LIKE ?)";
+        params.push('%' + student + '%', '%' + student + '%');
+    }
+
+    sql += " ORDER BY pp.last_seen_at DESC LIMIT ?";
+    params.push(limit);
+
+    return db.prepare(sql).all(...params);
+};
+
+// ================================================================
+//  API — SHORT-TOKENS (links cdp:// cortos)
+// ================================================================
+
+/**
+ * Guarda un short-token que el reproductor canjea por {cmd, auth}.
+ * @param {string}  token       - 22 chars base64url aleatorio
+ * @param {string}  cmd         - comando cdp:// completo (cifrado AES-GCM)
+ * @param {string}  auth        - JWT del player
+ * @param {number}  expiresAtMs - Unix timestamp ms de expiración
+ * @param {boolean} isDev       - si true: no se elimina al canjear (reutilizable)
+ */
+module.exports.storePendingToken = (token, cmd, auth, expiresAtMs, isDev = false) => {
+    db.prepare(`
+        INSERT OR REPLACE INTO pending_play_tokens (token, cmd, auth, expires_at, is_dev)
+        VALUES (?, ?, ?, ?, ?)
+    `).run(token, cmd, auth, expiresAtMs, isDev ? 1 : 0);
+};
+
+/**
+ * Canjea un short-token: devuelve {cmd, auth} o null si no existe/expiró.
+ * Los tokens normales se eliminan al canjear (un solo uso).
+ * Los tokens DEV se conservan para reutilización.
+ */
+module.exports.consumePendingToken = (token) => {
+    const row = db.prepare(
+        'SELECT * FROM pending_play_tokens WHERE token = ? AND expires_at > ?'
+    ).get(token, Date.now());
+    if (!row) return null;
+    if (!row.is_dev) {
+        db.prepare('DELETE FROM pending_play_tokens WHERE token = ?').run(token);
+    }
+    return { cmd: row.cmd, auth: row.auth };
+};
+
+// ================================================================
+//  API — VERSIÓN DEL REPRODUCTOR
+// ================================================================
+
+/**
+ * Devuelve la configuración de versiones del reproductor.
+ * Si no hay ningún registro, devuelve defaults.
+ */
+module.exports.getPlayerVersion = () => {
+    const row = db.prepare('SELECT * FROM player_versions ORDER BY id DESC LIMIT 1').get();
+    if (!row) return { minVersion: '1.0.0', latestVersion: '1.0.0', downloadUrl: null, message: null };
+    return {
+        minVersion:    row.min_version,
+        latestVersion: row.latest_version,
+        downloadUrl:   row.download_url || null,
+        message:       row.message || null,
+    };
+};
+
+/**
+ * Guarda (o reemplaza) la configuración de versiones del reproductor.
+ */
+module.exports.setPlayerVersion = ({ minVersion, latestVersion, downloadUrl, message }) => {
+    db.prepare(`
+        INSERT INTO player_versions (min_version, latest_version, download_url, message, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+    `).run(
+        (minVersion    || '1.0.0').slice(0, 20),
+        (latestVersion || '1.0.0').slice(0, 20),
+        downloadUrl ? String(downloadUrl).slice(0, 500) : null,
+        message     ? String(message).slice(0, 300)     : null,
+        new Date().toISOString()
+    );
+};

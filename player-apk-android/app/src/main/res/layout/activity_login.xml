@@ -1,0 +1,176 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/scrollView"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/primary_dark">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="28dp">
+
+        <ImageView
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:layout_marginBottom="12dp"
+            android:contentDescription="@string/app_name"
+            android:src="@mipmap/ic_launcher" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textColor="@color/accent_bright"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.05"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Plataforma de Cursos"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:layout_marginBottom="28dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#1e0d35"
+            android:padding="20dp">
+
+            <EditText
+                android:id="@+id/emailInput"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="@color/surface"
+                android:inputType="textEmailAddress"
+                android:autofillHints="emailAddress"
+                android:imeOptions="actionNext"
+                android:hint="Correo electrónico"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_secondary"
+                android:paddingHorizontal="16dp"
+                android:layout_marginBottom="12dp" />
+
+            <EditText
+                android:id="@+id/passwordInput"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="@color/surface"
+                android:inputType="textPassword"
+                android:autofillHints="password"
+                android:imeOptions="actionDone"
+                android:hint="Contraseña"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_secondary"
+                android:paddingHorizontal="16dp"
+                android:layout_marginBottom="12dp" />
+
+            <EditText
+                android:id="@+id/nameInput"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="@color/surface"
+                android:inputType="textPersonName"
+                android:hint="Nombre completo"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_secondary"
+                android:paddingHorizontal="16dp"
+                android:layout_marginBottom="12dp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/forgotPasswordButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Recuperar contraseña"
+                android:textColor="@color/accent_bright"
+                android:background="@android:color/transparent"
+                android:layout_marginBottom="8dp" />
+
+            <CheckBox
+                android:id="@+id/termsCheckbox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Acepto los términos y condiciones"
+                android:textColor="@color/text_secondary"
+                android:layout_marginBottom="12dp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/loginButton"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="@color/accent_violet"
+                android:text="INICIAR SESIÓN"
+                android:textColor="@color/white"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/registerButton"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="@color/accent_violet"
+                android:text="SOLICITAR ACCESO"
+                android:textColor="@color/white"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/cancelRegistrationButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Cancelar"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/completeRegistrationButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Completar registro"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/authStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:accessibilityLiveRegion="polite"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/toggleModeButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="¿No tienes cuenta? Regístrate"
+                android:textColor="@color/accent_bright"
+                android:background="@android:color/transparent"
+                android:layout_marginTop="8dp"
+                android:layout_gravity="center_horizontal" />
+
+        </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/progressBar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:visibility="gone"
+            android:indeterminate="true"
+            android:indeterminateTint="@color/accent_violet" />
+
+    </LinearLayout>
+</ScrollView>

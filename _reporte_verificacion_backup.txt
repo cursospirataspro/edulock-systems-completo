@@ -1,0 +1,53 @@
+﻿=== [1] TOTALES ===
+OK  Videos: 1281 servidor = 1281 backup
+OK  Cursos: 18 servidor = 18 backup
+
+=== [2] ORDEN Y DATOS DE CADA CURSO ===
+OK  [1] Will Street Academy (Futuros 2026) | autor: 'Guillem Bordas'
+OK  [2] JS Club Vip | autor: 'Joaquin Serrudo'
+OK  [3] Hard Scalping 2025 | autor: 'Gerard Garcia'
+OK  [4] Estrategia J (28-03-2026) | autor: ''
+OK  [5] FX PRO | autor: 'Santiago Edulock'
+OK  [6] My Best Investment Year (2026) - Yoel Sardiñas | autor: 'Yoel Sardiñas'
+OK  [7] Formacion Club 1% 2025 | autor: 'Santiago Amado'
+OK  [8] Six Traders | autor: 'Jose Román'
+OK  [9] ADRIANUS FLOW 2026 | autor: 'Adrian Moreno'
+OK  [10] Academia Penguin FX - Gustavo Guerra | autor: 'Gustavo Guerra'
+OK  [11] Trading Mastery (Edicion Actualizada) | autor: 'Alex Ruiz'
+OK  [12] Metodo VTR - Estefania Rozo | autor: ''
+OK  [13] Academia Profit4life - Emile Machado | autor: 'Emile Machado'
+OK  [14] hardscalping | autor: ''
+OK  [15] Pro Trader 3.0 | autor: 'Daniel Curto'
+OK  [16] Aless Futures | autor: 'Alejandro Colom'
+OK  [17] Order Book Trading | autor: 'Ferran Font'
+OK  [18] Metodo FTM | autor: 'Jennifer Gomez'
+
+=== [3] VIDEOS POR CURSO (cantidad + orden + titulo + links) ===
+OK  [Will Street Academy (Futuros 2026)] servidor:10 backup:10 errores:0
+OK  [JS Club Vip] servidor:9 backup:9 errores:0
+OK  [Hard Scalping 2025] servidor:60 backup:60 errores:0
+OK  [Estrategia J (28-03-2026)] servidor:1 backup:1 errores:0
+OK  [FX PRO] servidor:17 backup:17 errores:0
+OK  [My Best Investment Year (2026) - Yoel Sardiñas] servidor:8 backup:8 errores:0
+OK  [Formacion Club 1% 2025] servidor:94 backup:94 errores:0
+OK  [Six Traders] servidor:50 backup:50 errores:0
+OK  [ADRIANUS FLOW 2026] servidor:53 backup:53 errores:0
+OK  [Academia Penguin FX - Gustavo Guerra] servidor:202 backup:202 errores:0
+OK  [Trading Mastery (Edicion Actualizada)] servidor:140 backup:140 errores:0
+OK  [Metodo VTR - Estefania Rozo] servidor:37 backup:37 errores:0
+OK  [Academia Profit4life - Emile Machado] servidor:135 backup:135 errores:0
+OK  [hardscalping] servidor:92 backup:92 errores:0
+OK  [Pro Trader 3.0] servidor:66 backup:66 errores:0
+OK  [Aless Futures] servidor:100 backup:100 errores:0
+OK  [Order Book Trading] servidor:119 backup:119 errores:0
+OK  [Metodo FTM] servidor:88 backup:88 errores:0
+
+=== [4] TODOS LOS VIDEO-IDs DEL SERVIDOR PRESENTES EN BACKUP ===
+OK  Ningun video falta. Todos los 1281 videoIds del servidor estan en el backup.
+
+================================================
+RESULTADO: TODO CORRECTO - 0 ERRORES ENCONTRADOS
+El backup es una copia exacta del servidor.
+Cursos: 18 | Videos: 1281
+Fecha backup: 2026-05-13T15:39:21
+================================================

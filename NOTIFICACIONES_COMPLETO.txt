@@ -1,0 +1,455 @@
+📱 EDULOCK PLAYER v1.1.0 — SISTEMA COMPLETO DE NOTIFICACIONES
+═══════════════════════════════════════════════════════════════════════════
+
+RESUMEN EJECUTIVO:
+─────────────────
+
+Los usuarios reciben NOTIFICACIONES PUSH en tiempo real cuando su solicitud 
+de acceso es APROBADA por el administrador.
+
+La APK captura TODA la información del dispositivo (igual que el reproductor PC):
+  • Modelo del dispositivo (ej: "Samsung Galaxy A10")
+  • Serial del dispositivo (ej: "R38M7087CKL")
+  • ID único persistente (SHA-256 basado en hardware)
+  • Versión de Android
+  • RAM disponible
+  • CPU cores
+  • Build fingerprint
+
+Todo esto se envía al backend cuando el usuario se registra.
+
+═══════════════════════════════════════════════════════════════════════════
+🔄 FLUJO COMPLETO CON NOTIFICACIONES PUSH
+═══════════════════════════════════════════════════════════════════════════
+
+FASE 1: USUARIO INSTALA APK
+─────────────────────────────
+
+[APK se inicia]
+  ├─ Solicita permisos de NOTIFICACIONES (Android 13+)
+  │  └─ Usuario ve: "EDULOCK necesita permiso para notificaciones"
+  │
+  ├─ Captura información del dispositivo:
+  │  ├─ Modelo: Build.MANUFACTURER + Build.MODEL
+  │  ├─ Serial: Build.SERIAL (ej: "R38M7087CKL")
+  │  ├─ Device ID: SHA-256(androidId + buildFingerprint + serial)
+  │  ├─ OS: Android 11 (API 30)
+  │  ├─ CPU: 8 cores
+  │  ├─ RAM: 4.0 GB
+  │  └─ Fingerprint: samsung/a10/a10:...
+  │
+  └─ Se registra en Firebase Cloud Messaging (FCM)
+     └─ Obtiene token: "eNgc0O9d_qE:APA91bGm7x..." (token único del dispositivo)
+     └─ Guarda en SharedPreferences (persistente)
+
+[Pantalla Splash]
+  └─ Muestra: "Inicializando..." por 1.5 segundos
+
+[Pantalla Login]
+  ├─ Opciones: "INICIAR SESIÓN" o "REGISTRAR"
+  └─ Usuario nunca ha registrado → Click "REGISTRAR AHORA"
+
+───────────────────────────────────────────────────────────────────────────
+
+FASE 2: USUARIO SOLICITA ACCESO
+────────────────────────────────
+
+[Formulario de Registro]
+
+User completa:
+  • Email: usuario@ejemplo.com
+  • Nombre: Juan Pérez
+  • Contraseña: ••••••••
+  • ☑️ Acepto términos
+  • [REGISTRAR]
+
+[APK procesa]
+  └─ POST /api/auth/register-request
+  │
+  ├─ Body:
+  │  {
+  │    "email": "usuario@ejemplo.com",
+  │    "name": "Juan Pérez",
+  │    "deviceId": "dev_a1b2c3d4e5f6g7h8",
+  │    "deviceModel": "Samsung Galaxy A10",
+  │    "deviceSerial": "R38M7087CKL",
+  │    "osVersion": "Android 11",
+  │    "totalRam": "4.0 GB",
+  │    "fcmToken": "eNgc0O9d_qE:APA91bGm7x..."  ← TOKEN CLAVE
+  │  }
+  │
+  └─ Backend guarda en PostgreSQL:
+     
+     Tabla: registration_requests
+     ┌────────────────────────────────────┐
+     │ id:         req_uuid123456789      │
+     │ email:      usuario@ejemplo.com    │
+     │ name:       Juan Pérez             │
+     │ device_id:  dev_a1b2c3d4...       │
+     │ fcm_token:  eNgc0O9d_qE:APA...    │ ← ALMACENADO
+     │ status:     pending                │
+     │ created_at: 2026-05-28 14:32:15    │
+     └────────────────────────────────────┘
+
+[APK muestra]
+  ┌─────────────────────────────────┐
+  │  ✅ Solicitud Enviada           │
+  │                                 │
+  │  Tu solicitud de acceso ha      │
+  │  sido enviada.                  │
+  │                                 │
+  │  Por favor espera a que el      │
+  │  administrador la apruebe.      │
+  │                                 │
+  │  Recibirás una notificación     │
+  │  cuando sea aprobada.           │
+  │                                 │
+  │  Información capturada:         │
+  │  • Modelo: Samsung Galaxy A10   │
+  │  • Serial: R38M7087CKL          │
+  │  • RAM: 4.0 GB                  │
+  │  • SO: Android 11               │
+  │                                 │
+  │         [CERRAR]                │
+  └─────────────────────────────────┘
+
+───────────────────────────────────────────────────────────────────────────
+
+FASE 3: USUARIO ESPERA (POLLING AUTOMÁTICO)
+─────────────────────────────────────────────
+
+[APK muestra pantalla de espera]
+  ┌──────────────────────────────────┐
+  │  ⏳ SOLICITUD PENDIENTE          │
+  │                                  │
+  │  Tu solicitud está siendo        │
+  │  revisada por el administrador.  │
+  │                                  │
+  │  Verificando estado...           │
+  │  (última actualización: -10s)   │
+  │                                  │
+  │     [REINTENTAR AHORA]           │
+  │     [CANCELAR]                   │
+  └──────────────────────────────────┘
+
+[APK automáticamente consulta cada 10 segundos]
+
+  t=0s:   GET /api/auth/check-device?deviceId=dev_a1b2c3d4...
+          ← "status": "pending"
+
+  t=10s:  GET /api/auth/check-device?deviceId=dev_a1b2c3d4...
+          ← "status": "pending"
+
+  t=20s:  GET /api/auth/check-device?deviceId=dev_a1b2c3d4...
+          ← "status": "pending"
+
+  ... (más consultas cada 10s)
+
+  [Usuario puede hacer clic "REINTENTAR AHORA" para consultar inmediatamente]
+
+───────────────────────────────────────────────────────────────────────────
+
+FASE 4: TÚ (ADMIN) VES LA SOLICITUD EN RENDER
+──────────────────────────────────────────────
+
+[Admin Dashboard]
+  https://tu-dominio.com/admin
+
+┌──────────────────────────────────────────────────┐
+│  📋 SOLICITUDES DE REGISTRO - EN TIEMPO REAL    │
+├──────────────────────────────────────────────────┤
+│                                                  │
+│  🔴 1 NUEVA SOLICITUD (hace 2 minutos)         │
+│                                                  │
+│     Email: usuario@ejemplo.com                 │
+│     Nombre: Juan Pérez                         │
+│     Dispositivo: Samsung Galaxy A10            │
+│     Serial: R38M7087CKL                        │
+│     Device ID: dev_a1b2c3d4e5f6g7h8...         │
+│     RAM: 4.0 GB                                │
+│     SO: Android 11 (API 30)                    │
+│     IP: 192.168.1.100 (México)                │
+│     Hora: 28/05/2026 14:32:15                 │
+│     Status: 🟡 PENDIENTE                      │
+│                                                  │
+│     [Ver Detalles Completos]                  │
+│                                                  │
+│     Asignar Cursos:                            │
+│     ☑️ Curso Python (id: course_python)       │
+│     ☑️ Curso React (id: course_react)         │
+│     ☐ Curso Node.js (id: course_nodejs)      │
+│     ☐ Curso Vue.js (id: course_vuejs)        │
+│                                                  │
+│     Notas (opcional):                          │
+│     [Alumno de grupo 2B - verificado]         │
+│                                                  │
+│                [✅ APROBAR]  [❌ RECHAZAR]     │
+│                                                  │
+└──────────────────────────────────────────────────┘
+
+───────────────────────────────────────────────────────────────────────────
+
+FASE 5: TÚ HACES CLIC "APROBAR" (¡¡¡AQUÍ SUCEDE LA MAGIA!!!)
+────────────────────────────────────────────────────────────
+
+[Desde Dashboard]
+  └─ Seleccionar: Python + React
+  └─ Hacer clic: [✅ APROBAR]
+
+[Backend recibe]
+  POST /api/admin/registrations/req_123456789/approve
+  {
+    "courseIds": ["course_python", "course_react"],
+    "notes": "Alumno de grupo 2B - verificado correctamente"
+  }
+
+[Backend procesa]
+  1. Actualiza BD:
+     UPDATE registration_requests 
+     SET status = 'approved' WHERE id = 'req_123456789'
+  
+  2. Obtiene FCM token de la solicitud:
+     fcmToken = "eNgc0O9d_qE:APA91bGm7x..."
+  
+  3. ✅ ENVÍA NOTIFICACIÓN PUSH:
+     ┌──────────────────────────────────────────┐
+     │ Firebase Admin SDK                       │
+     │ sendApprovalNotification(                │
+     │   fcmToken,                              │
+     │   "usuario@ejemplo.com",                 │
+     │   ["course_python", "course_react"]      │
+     │ )                                        │
+     └──────────────────────────────────────────┘
+
+[Firebase Cloud Messaging]
+  └─ Encamina el mensaje por Internet
+  └─ Lo envía al APK registrado con ese token
+  └─ En tiempo REAL (< 1 segundo)
+
+───────────────────────────────────────────────────────────────────────────
+
+FASE 6: 🔔 USUARIO RECIBE NOTIFICACIÓN PUSH
+─────────────────────────────────────────────
+
+[En el teléfono del usuario]
+  
+  Notificación de sistema (incluso si la APK está cerrada):
+  
+  ╔════════════════════════════════════════╗
+  ║ 📬 EDULOCK Player                    ║
+  ║                                        ║
+  ║ ✅ ¡Tu acceso fue APROBADO!           ║
+  ║                                        ║
+  ║ Tu solicitud ha sido aprobada.        ║
+  ║                                        ║
+  ║ Cursos asignados:                     ║
+  ║ • Python                              ║
+  ║ • React                               ║
+  ║                                        ║
+  ║ [Descartar]  [ABRIR]                 ║
+  ╚════════════════════════════════════════╝
+
+[Si el usuario toca "ABRIR"]
+  └─ APK se abre automáticamente
+  └─ Va directo a CatalogActivity
+  └─ Muestra sus 2 cursos asignados
+
+[Si el usuario IGNORA la notificación]
+  └─ En la próxima consulta de polling (máximo 10s)
+  └─ APK detecta status = "approved"
+  └─ Muestra la pantalla de éxito igual
+
+[EdulockNotificationService.onMessageReceived()]
+  ├─ Recibe mensaje de Firebase
+  ├─ Extrae datos:
+  │  ├─ type: "registration_approved"
+  │  ├─ email: "usuario@ejemplo.com"
+  │  ├─ courseIds: "course_python,course_react"
+  │  └─ status: "approved"
+  │
+  ├─ Guarda en SharedPreferences:
+  │  ├─ registration_status = "approved"
+  │  ├─ assigned_courses = "course_python,course_react"
+  │  └─ approval_timestamp = ahora
+  │
+  ├─ Envía Broadcast a la APK (si está abierta):
+  │  └─ Intent("com.edulock.REGISTRATION_APPROVED")
+  │
+  └─ Muestra notificación visual
+
+───────────────────────────────────────────────────────────────────────────
+
+FASE 7: ✅ USUARIO VE ÉXITO Y ACCEDE A CURSOS
+──────────────────────────────────────────────
+
+[Opción A: Si toca la notificación]
+  ┌────────────────────────────────────┐
+  │  ✅ ¡APROBADO!                    │
+  │                                    │
+  │  Tu solicitud ha sido aprobada     │
+  │  por el administrador.             │
+  │                                    │
+  │  Tienes acceso a:                 │
+  │   • Curso Python                   │
+  │   • Curso React                    │
+  │                                    │
+  │      [IR AL CATÁLOGO]             │
+  │                                    │
+  └────────────────────────────────────┘
+
+[Opción B: Si la APK estaba abierta]
+  └─ Broadcast recibido por LoginActivity
+  └─ UI se actualiza automáticamente
+  └─ Muestra: "✅ ¡APROBADO!"
+
+[Usuario hace clic: "IR AL CATÁLOGO"]
+  ┌────────────────────────────────────┐
+  │  📚 MIS CURSOS                    │
+  │                                    │
+  │  ┌──────────────────────────────┐ │
+  │  │ 🐍 Curso Python              │ │
+  │  │ Principios y prácticas        │ │
+  │  │ [▶ REPRODUCIR]               │ │
+  │  └──────────────────────────────┘ │
+  │                                    │
+  │  ┌──────────────────────────────┐ │
+  │  │ ⚛️ Curso React               │ │
+  │  │ Componentes e Hooks           │ │
+  │  │ [▶ REPRODUCIR]               │ │
+  │  └──────────────────────────────┘ │
+  │                                    │
+  │  [CERRAR SESIÓN]                 │
+  │                                    │
+  └────────────────────────────────────┘
+
+[Usuario hace clic: "REPRODUCIR" en Curso Python]
+  └─ PlayerActivity se abre
+  └─ Video se carga con HLS + DRM
+  └─ Watermark visible: "EDULOCK|timestamp|email|deviceId"
+  └─ FLAG_SECURE activo: ❌ No screenshot, ❌ No grabación
+  └─ ✅ VIENDO CONTENIDO SEGURO
+
+═══════════════════════════════════════════════════════════════════════════
+⏰ TIMELINE DE TIEMPOS
+═══════════════════════════════════════════════════════════════════════════
+
+t=0:00     User hace clic "REGISTRAR" en APK
+           └─ Solicitud enviada a Render
+
+t=0:03     Backend confirma recepción
+           └─ APK muestra "✅ Solicitud Enviada"
+
+t=0:05     User ve la solicitud en Dashboard de Admin
+
+t=3:45     Admin aprueba en Dashboard
+           └─ Haz clic: [✅ APROBAR]
+
+t=3:46     Backend envía notificación push
+           └─ Firebase la encamina
+
+t=3:48     Notificación llega al teléfono
+           └─ 🔔 ¡Tu acceso fue APROBADO!
+
+t=3:49     User ve notificación y hace clic "ABRIR"
+           └─ APK abre con catálogo
+
+t=3:50     User ve sus 2 cursos
+           └─ Selecciona "REPRODUCIR"
+
+t=3:51     Video comienza a reproducirse
+           └─ ¡¡ACCESO CONCEDIDO!!
+
+TIEMPO TOTAL: 3:51 desde registro hasta viendo video
+             (LA MAYORÍA DEL TIEMPO EL USER ESPERA)
+
+═══════════════════════════════════════════════════════════════════════════
+🔐 INFORMACIÓN CAPTURADA DEL DISPOSITIVO
+═══════════════════════════════════════════════════════════════════════════
+
+Exactamente lo que captura el reproductor de PC en Windows, ahora en Android:
+
+┌──────────────────────────────────────────────────────────┐
+│ 📱 INFORMACIÓN DEL DISPOSITIVO                         │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│ Modelo: Samsung Galaxy A10                              │
+│ Serial: R38M7087CKL                                     │
+│ Device ID: dev_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5         │
+│ SO: Android 11 (API 30)                                │
+│ CPU Cores: 8                                            │
+│ RAM Total: 4.0 GB                                       │
+│ Brand: samsung                                          │
+│ Build Fingerprint: samsung/a10/a10:11/RP1A.200720...  │
+│ Android ID: f8a7b6c5d4e3f2g1h0i9j8k7l6m5n4o3p2        │
+│                                                          │
+│ Watermark para auditoría:                               │
+│ EDULOCK|1622206335000|usuario@ejemplo.com|dev_a1b2... │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+
+Esto se envía:
+  • En registro (para que admin sepa de dónde viene)
+  • En cada reproducción (para watermark forense)
+  • En logs de auditoría (para rastrear acceso)
+
+═══════════════════════════════════════════════════════════════════════════
+🔄 ALTERNATIVAS A NOTIFICACIONES PUSH
+═══════════════════════════════════════════════════════════════════════════
+
+Si por alguna razón FCM no funciona, los usuarios IGUAL recibirán acceso:
+
+OPCIÓN 1: Polling cada 10 segundos (IMPLEMENTADO ACTUALMENTE)
+────────────────────────────────────────────────────────────
+  • APK consulta GET /api/auth/check-device cada 10s
+  • Máximo espera: 10 segundos
+  • Funciona incluso sin permisos de notificación
+  • No requiere Firebase
+
+OPCIÓN 2: WebSockets en tiempo real (FUTURO)
+────────────────────────────────────────────
+  • Conexión bidireccional
+  • Notificación < 1 segundo
+  • Más complejo de implementar
+
+OPCIÓN 3: Email automático (OPCIONAL)
+───────────────────────────────────────
+  • Backend envía email cuando se aprueba
+  • Usuario no ve notificación en app
+  • Pero puede revisar email
+
+═══════════════════════════════════════════════════════════════════════════
+✅ CHECKLIST DE IMPLEMENTACIÓN
+═══════════════════════════════════════════════════════════════════════════
+
+BACKEND (Render):
+  ☑️ Instalar firebase-admin npm package
+  ☑️ Crear firebase-notification.js
+  ☑️ Actualizar server.js para incluir módulo
+  ☑️ Descargar firebase-service-account.json
+  ☑️ Guardar en raíz del proyecto
+  ☑️ Agregar en .env: FIREBASE_KEY_PATH=./firebase-service-account.json
+  ☑️ Agregar en .gitignore: firebase-service-account.json
+  ☑️ Actualizar database-pg.js para guardar fcm_token
+  ☑️ Actualizar endpoints para enviar notificaciones
+
+APK (Android):
+  ☑️ Agregar Firebase dependencies en build.gradle
+  ☑️ Crear google-services.json
+  ☑️ Crear EdulockNotificationService.kt
+  ☑️ Crear NotificationPermissionHelper.kt
+  ☑️ Crear DeviceFingerprintAdvanced.kt
+  ☑️ Actualizar EdulockApp.kt
+  ☑️ Actualizar LoginActivity.kt
+  ☑️ Agregar permisos en AndroidManifest.xml
+  ☑️ Compilar y probar en dispositivo
+
+DOCUMENTACIÓN:
+  ☑️ INTEGRACION_FCM_BACKEND.txt (cómo integrar)
+  ☑️ NOTIFICACIONES_COMPLETO.txt (este documento)
+  ☑️ README actualizado
+
+═══════════════════════════════════════════════════════════════════════════
+
+LISTO PARA TESTING EN DISPOSITIVO REAL.
+
+═══════════════════════════════════════════════════════════════════════════

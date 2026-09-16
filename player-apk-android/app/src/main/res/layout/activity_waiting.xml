@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/primary_dark">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:id="@+id/waiting_brand"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:letterSpacing="0.08"
+            android:text="@string/waiting_brand"
+            android:textColor="@color/accent_glow"
+            android:textSize="30sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/waiting_subtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="40dp"
+            android:text="@string/waiting_subtitle"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/waiting_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/waiting_hint"
+            android:textColor="@color/light_gray"
+            android:textSize="14sp" />
+
+        <ProgressBar
+            android:id="@+id/waiting_progress"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginTop="28dp"
+            android:indeterminate="true"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/waiting_catalog"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/resources_open_catalog" />
+
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/waiting_logout"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="24dp"
+        android:background="@android:color/transparent"
+        android:text="@string/btn_logout"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp" />
+
+</FrameLayout>

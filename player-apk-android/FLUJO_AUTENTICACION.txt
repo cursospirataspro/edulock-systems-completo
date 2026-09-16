@@ -1,0 +1,530 @@
+📱 FLUJO DE AUTENTICACIÓN Y ACCESO - APK + RENDER
+═════════════════════════════════════════════════════════════════════════════
+
+PREGUNTA: ¿Cómo se conecta la APK a Render? ¿Cómo llega el acceso al usuario?
+
+RESPUESTA: Es un proceso de 5 fases completamente automatizado.
+
+═════════════════════════════════════════════════════════════════════════════
+🌐 ARQUITECTURA COMPLETA
+═════════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────┐              ┌──────────────────────┐
+│   APK ANDROID       │              │  SERVIDOR RENDER     │
+│  del Estudiante     │◄────HTTP────►│  (Node.js)           │
+│                     │  HTTPS/JWT   │  PostgreSQL          │
+└─────────────────────┘              └──────────────────────┘
+         ▲                                      ▲
+         │                                      │
+    Conexión                            Sincronización
+   a Internet                          Automática
+    (WiFi/LTE)                         (Cron Jobs)
+         │                                      │
+         └──────────────────────────────────────┘
+                   Backend Conectado
+
+═════════════════════════════════════════════════════════════════════════════
+🔄 FASE 1: EL USUARIO DESCARGA E INSTALA LA APK
+═════════════════════════════════════════════════════════════════════════════
+
+[USUARIO]
+    │
+    ├─ Descarga APK desde tu link (o Google Play)
+    │  APK: EDULOCK Player v1.1.0
+    │
+    ├─ Instala en dispositivo Android
+    │
+    ├─ Abre la app por primera vez
+    │  └─ APP GENERA: ID único del dispositivo (fingerprint SHA-256)
+    │     Ej: "a1b2c3d4e5f6g7h8..."
+    │
+    └─ Ve SPLASH SCREEN → Luego LOGIN
+
+═════════════════════════════════════════════════════════════════════════════
+📝 FASE 2: EL USUARIO SOLICITA ACCESO DESDE LA APK
+═════════════════════════════════════════════════════════════════════════════
+
+[FLUJO EN LA APK]
+
+┌─ LOGIN SCREEN ─────────────────────────────────────────┐
+│                                                         │
+│  Email: usuario@ejemplo.com ________________          │
+│  Contraseña: ••••••• ____________________            │
+│                                                         │
+│         [INICIAR SESIÓN]                              │
+│                                                         │
+│ ¿Primera vez? ► REGISTRAR AHORA ◄ Te permite crear│
+│                  nueva cuenta (automatico)            │
+│                                                         │
+└────────────────────────────────────────────────────────┘
+
+Si hace clic en "REGISTRAR AHORA":
+
+APK ENVÍA A RENDER:
+   POST /api/auth/register-request
+   {
+       "email": "usuario@ejemplo.com",
+       "name": "Juan Pérez",
+       "deviceId": "a1b2c3d4e5f6g7h8...",  ← ID único del teléfono
+       "deviceModel": "Samsung Galaxy A10",
+       "deviceName": "Juan's Phone",
+       "platform": "android",
+       "appVersion": "1.1.0"
+   }
+
+RENDER RESPONDE:
+   {
+       "status": "pending",
+       "message": "Solicitud enviada. Esperando aprobación del administrador.",
+       "requestId": "req_123456789"
+   }
+
+RESULTADO EN APK:
+   ┌─────────────────────────────────────────┐
+   │ ⏳ SOLICITUD ENVIADA                    │
+   │                                          │
+   │ Tu solicitud está siendo revisada       │
+   │ por el administrador.                   │
+   │                                          │
+   │ Te notificaremos cuando sea aprobada.   │
+   │                                          │
+   │ ID: req_123456789                       │
+   │ Email: usuario@ejemplo.com              │
+   │                                          │
+   │ Puedes cerrar esta app y esperar...    │
+   │                                          │
+   │           [OK]                          │
+   └─────────────────────────────────────────┘
+
+═════════════════════════════════════════════════════════════════════════════
+🎛️ FASE 3: TÚ (ADMIN) REVISAS Y APRUEBAS EN RENDER
+═════════════════════════════════════════════════════════════════════════════
+
+[TÚ EN TU DASHBOARD DE ADMIN]
+
+URL: https://edulocksystemsoficial.dpdns.org/admin
+
+o en tu panel de administración:
+
+┌──────────────────────────────────────────────────────┐
+│ DASHBOARD ADMIN - EDULOCK PLAYER                    │
+├──────────────────────────────────────────────────────┤
+│                                                      │
+│  📋 SOLICITUDES DE REGISTRO PENDIENTES: 3           │
+│                                                      │
+│  ┌────────────────────────────────────────────────┐ │
+│  │ 1. usuario@ejemplo.com                         │ │
+│  │    ├─ Nombre: Juan Pérez                       │ │
+│  │    ├─ Dispositivo: Samsung Galaxy A10          │ │
+│  │    ├─ ID Teléfono: a1b2c3d4e5f6g7h8...        │ │
+│  │    ├─ Hora: 28/05/2026 14:30                  │ │
+│  │    │                                            │ │
+│  │    ├─ Cursos disponibles: [v] Curso Python    │ │
+│  │    │                      [v] Curso React     │ │
+│  │    │                      [v] Curso Node.js   │ │
+│  │    │                                            │ │
+│  │    ├─ Notas: "Alumno de grupo 2B"             │ │
+│  │    │                                            │ │
+│  │    │     [✓ APROBAR]  [✗ RECHAZAR]            │ │
+│  │    │                                            │ │
+│  │    └────────────────────────────────────────────│ │
+│  │                                                 │ │
+│  │ 2. otro_usuario@ejemplo.com                    │ │
+│  │    ... (similar)                               │ │
+│  │                                                 │ │
+│  └────────────────────────────────────────────────┘ │
+│                                                      │
+└──────────────────────────────────────────────────────┘
+
+TÚ HACES:
+   1. Ves la solicitud de "usuario@ejemplo.com"
+   2. Verificas sus datos
+   3. Seleccionas qué cursos puede ver:
+      ✓ Curso Python
+      ✓ Curso React
+      ✗ Curso Node.js (se lo niegas)
+   4. Añades notas (opcional): "Alumno de grupo 2B"
+   5. Haces clic en [✓ APROBAR]
+
+RENDER EJECUTA (Backend):
+   POST /api/admin/registrations/req_123456789/approve
+   {
+       "courseIds": ["course_python", "course_react"],
+       "notes": "Alumno de grupo 2B"
+   }
+
+LO QUE SUCEDE EN RENDER:
+   ✓ Crea usuario en base de datos
+   ✓ Marca solicitud como "approved"
+   ✓ Asigna los cursos Python y React
+   ✓ Guarda notas administrativas
+   ✓ Registra que fue aprobado por TI a las 14:35
+
+═════════════════════════════════════════════════════════════════════════════
+📲 FASE 4: LA APK DETECTA AUTOMÁTICAMENTE QUE FUE APROBADO
+═════════════════════════════════════════════════════════════════════════════
+
+[MIENTRAS TANTO, EL USUARIO ESPERA EN LA APK]
+
+La APK hace un "polling" cada 10 segundos:
+
+APK ENVÍA:
+   GET /api/auth/check-device?deviceId=a1b2c3d4e5f6g7h8...
+
+MIENTRAS:
+   [Primera consulta - AÚN PENDIENTE]
+      RENDER RESPONDE:
+         { status: "pending", email: "usuario@ejemplo.com" }
+      
+      APK MUESTRA:
+         ⏳ Solicitud aún pendiente... (sigue esperando)
+
+   [Segunda consulta]
+      Igual... aún pending
+
+   ... (más intentos)
+
+   [TERCERA consulta - ¡APROBADO!]
+      RENDER RESPONDE (después de que TÚ aprobaste):
+         {
+            status: "approved",
+            email: "usuario@ejemplo.com",
+            requestId: "req_123456789"
+         }
+      
+      APK DETECTA EL CAMBIO Y:
+         ✓ Muestra mensaje de éxito
+         ✓ Habilita acceso a la app
+         ✓ Automáticamente VA AL CATÁLOGO
+
+[PANTALLA EN LA APK - DESPUÉS DE APROBACIÓN]
+
+┌─────────────────────────────────────────┐
+│ ✅ ¡APROBADO!                           │
+│                                          │
+│ Tu solicitud ha sido aprobada.          │
+│                                          │
+│ Tienes acceso a:                        │
+│  • Curso Python                         │
+│  • Curso React                          │
+│                                          │
+│ Puedes empezar a ver los videos.       │
+│                                          │
+│      [CONTINUAR AL CATÁLOGO]            │
+│                                          │
+└─────────────────────────────────────────┘
+
+[CATÁLOGO - CURSOS DISPONIBLES]
+
+┌──────────────────────────────┐
+│  MIS CURSOS                  │
+├──────────────────────────────┤
+│                              │
+│  📚 Curso Python             │
+│     Instructor: Juan López   │
+│     Duración: 24 horas       │
+│     [▶ REPRODUCIR]           │
+│                              │
+│  ⚛️  Curso React              │
+│     Instructor: María García │
+│     Duración: 18 horas       │
+│     [▶ REPRODUCIR]           │
+│                              │
+│  🚫 Curso Node.js            │ ← NO APROBADO
+│     (No tienes acceso)       │
+│                              │
+│                    [LOGOUT]  │
+│                              │
+└──────────────────────────────┘
+
+═════════════════════════════════════════════════════════════════════════════
+▶️ FASE 5: EL USUARIO VE EL VIDEO SEGURO
+═════════════════════════════════════════════════════════════════════════════
+
+[USUARIO HACE CLIC EN "REPRODUCIR" DEL CURSO PYTHON]
+
+APK ENVÍA:
+   GET /api/video/curso_python_video_1/play
+   Headers: Authorization: Bearer <JWT_TOKEN>
+
+RENDER VALIDA:
+   ✓ Token JWT válido
+   ✓ Usuario tiene permiso para ver este video
+   ✓ Video existe
+   ✓ Usuario no ha excedido límite de dispositivos
+
+RENDER RESPONDE:
+   {
+       "url": "https://bunny.cdn.net/video.m3u8?token=XXXXX",
+       "keyId": "key_12345",
+       "drmType": "widevine",
+       "licenseUrl": "https://licencia-widevine.example.com",
+       "watermarkText": "EDULOCK|1234567890|usuario@ejemplo.com|device_a1b2c3",
+       "expires": 3600
+   }
+
+[EN LA APK - REPRODUCTOR]
+
+┌──────────────────────────────────────────┐
+│                                          │
+│           🎬 REPRODUCTOR                │
+│                                          │
+│    ┌─────────────────────────────────┐  │
+│    │                                 │  │
+│    │       [VIDEO REPRODUCIENDO]     │  │
+│    │                                 │  │
+│    │    🔒 MARCA DE AGUA FORENSE:    │  │
+│    │    EDULOCK|2026-05-28|         │  │
+│    │    usuario@ejemplo.com|         │  │
+│    │    device_a1b2c3                │  │
+│    │                                 │  │
+│    └─────────────────────────────────┘  │
+│                                          │
+│    ⏮️ ⏯️ ⏸️ ⏩  ━━━■━━━━ 00:45/02:30   │
+│    🔊 70%    ⛶ Pantalla Completa      │
+│                                          │
+│    🔒 Anti-screenshot ACTIVADO         │
+│    🔒 Anti-grabación ACTIVADO          │
+│    🔒 Cifrado DRM ACTIVADO             │
+│                                          │
+├──────────────────────────────────────────┤
+│ No se puede capturar, grabar,            │
+│ ni descargar este contenido.             │
+└──────────────────────────────────────────┘
+
+PROTECCIONES ACTIVAS:
+   ✓ No se puede hacer screenshot (FLAG_SECURE)
+   ✓ No se puede grabar pantalla (FLAG_SECURE)
+   ✓ Watermark invisible pero auditable
+   ✓ Si el video se filtra: se identifica al usuario
+   ✓ Cifrado HLS + DRM Widevine
+   ✓ Token JWT expira cada sesión
+   ✓ Device binding: solo 2 dispositivos por usuario
+
+═════════════════════════════════════════════════════════════════════════════
+🔄 RESUMEN DEL FLUJO COMPLETO
+═════════════════════════════════════════════════════════════════════════════
+
+USUARIO FINAL (Estudiante)
+┌────────────────────────────────────────────────────────────────┐
+│                                                                │
+│ 1. Instala APK en su teléfono Android                         │
+│ 2. Abre app → Ve SPLASH → Va a LOGIN                         │
+│ 3. Hace clic en "REGISTRAR" (no tiene cuenta)                │
+│ 4. Completa formulario: email, nombre, acepta términos       │
+│ 5. Hizo clic "ENVIAR SOLICITUD"                              │
+│ 6. APK envía datos a Render (email + deviceId + fingerprint) │
+│ 7. Ve mensaje: "⏳ Solicitud pendiente, esperando aprobación"│
+│ 8. ESPERA... (puede cerrar la app)                           │
+│ 9. ⏰ Cuando TÚ lo apruebas, la APK lo detecta               │
+│ 10. ✅ Mensaje "Aprobado" aparece en la APK                  │
+│ 11. Va al CATÁLOGO → Ve sus cursos asignados                 │
+│ 12. Hace clic en un curso → REPRODUCTOR                      │
+│ 13. Ve video con watermark forense                           │
+│ 14. 🔒 No puede capturar ni grabar (protecciones activas)   │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+
+TÚ (Administrador en Render)
+┌────────────────────────────────────────────────────────────────┐
+│                                                                │
+│ 1. Accedes a tu dashboard de admin en Render                  │
+│ 2. Ves tab "SOLICITUDES PENDIENTES"                           │
+│ 3. Revisas la solicitud de "usuario@ejemplo.com"             │
+│ 4. Verificas: email válido, nombre razonable, dispositivo OK │
+│ 5. Seleccionas qué cursos puede ver (ej: Python, React)     │
+│ 6. Añades notas (ej: "Alumno de grupo 2B")                  │
+│ 7. Haces clic en "✓ APROBAR"                                 │
+│ 8. Backend actualiza BD: status="approved"                    │
+│ 9. Asigna cursos al estudiante                               │
+│ 10. Registra quién aprobó y cuándo                           │
+│ 11. Sistema notifica al usuario (opcional)                   │
+│ 12. La APK del usuario detecta cambio automáticamente        │
+│ 13. La próxima vez que el usuario intente: ¡ACCESO FULL!    │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+
+═════════════════════════════════════════════════════════════════════════════
+🌍 CONEXIÓN A INTERNET REQUERIDA EN CADA PASO
+═════════════════════════════════════════════════════════════════════════════
+
+APK → RENDER (HTTPS)
+   Registro:          POST /api/auth/register-request
+   Consulta estado:   GET /api/auth/check-device
+   Login verificación: POST /api/auth/firebase-login (si aplica)
+   Obtener videos:    GET /api/video/list
+   Reproducir video:  GET /api/video/{videoId}/play
+   Logs de auditoría: POST /api/watermark/log
+
+RENDER → PostgreSQL (Local en Render)
+   Guarda solicitud
+   Actualiza estado
+   Guarda logs
+   Verifica permisos
+
+SINCRONIZACIÓN AUTOMÁTICA (Cron Jobs):
+   • Cada hora: Sincroniza catálogo con ambiente de Render
+   • Cada día: Genera reportes de reproducciones
+   • Automático: Notificaciones cuando hay cambios
+
+═════════════════════════════════════════════════════════════════════════════
+💾 DATOS GUARDADOS EN CADA ETAPA
+═════════════════════════════════════════════════════════════════════════════
+
+EN LA APK (Android):
+   ✓ ID único del dispositivo (fingerprint SHA-256)
+   ✓ Email del usuario
+   ✓ Token JWT (encriptado)
+   ✓ Información del dispositivo (marca, modelo)
+   ✓ Logs locales de reproducción
+
+EN RENDER (PostgreSQL):
+   ✓ Tabla registration_requests (solicitudes pendientes)
+   ✓ Tabla students (usuarios aprobados)
+   ✓ Tabla audit_log (cada reproducción)
+   ✓ Tabla devices (dispositivos autorizados por usuario)
+   ✓ Tabla playback_sessions (sesiones activas)
+   ✓ Tabla catalog (videos disponibles)
+
+MARCA DE AGUA (Para identificar piratería):
+   ✓ Timestamp de reproducción
+   ✓ Email del usuario
+   ✓ ID del dispositivo
+   ✓ ID del video
+   ✓ Si video se filtra → sabes exactamente quién lo hizo
+
+═════════════════════════════════════════════════════════════════════════════
+🔐 SEGURIDAD EN CADA PUNTO
+═════════════════════════════════════════════════════════════════════════════
+
+EN EL LOGIN:
+   ✓ Contraseña nunca se guarda (solo en sesión)
+   ✓ JWT con expiración
+   ✓ Device binding (máximo 2 dispositivos por usuario)
+   ✓ Detección de VPN/Proxy
+
+EN LA REPRODUCCIÓN:
+   ✓ FLAG_SECURE: No se puede capturar pantalla
+   ✓ FLAG_SECURE: No se puede grabar pantalla
+   ✓ Cifrado HLS (Advanced Encryption Standard)
+   ✓ DRM Widevine (protección de contenido)
+   ✓ Watermark forense invisible
+   ✓ Detección de emulador
+   ✓ Detección de debugger
+
+EN LA BD:
+   ✓ PostgreSQL en Render (encriptado en tránsito)
+   ✓ SSL/TLS para todas las conexiones
+   ✓ Permisos por rol (admin vs estudiante)
+   ✓ Logs de auditoría de todos los accesos
+
+═════════════════════════════════════════════════════════════════════════════
+⚡ CASOS ESPECIALES
+═════════════════════════════════════════════════════════════════════════════
+
+CASO: El usuario intenta registrarse desde 2 dispositivos
+
+   Dispositivo 1 (teléfono):
+      Envía: deviceId = "phone_a1b2c3"
+      Status: "pending" → "approved" por admin
+      Resultado: ✓ Acceso PERMITIDO
+
+   Dispositivo 2 (tablet):
+      Envía: deviceId = "tablet_d4e5f6"
+      Status: "not_registered"
+      Resultado: ✗ "Este dispositivo no está registrado.
+                     Máximo 2 dispositivos por cuenta."
+
+CASO: El estudiante intenta ver un curso que NO está asignado
+
+   APK Envía: GET /api/video/curso_node_video_1/play
+   
+   Render Verifica:
+      - ¿Token válido? SÍ
+      - ¿Usuario aprobado? SÍ
+      - ¿Tiene permiso para curso_node? NO
+   
+   Render Responde:
+      { error: "No tienes acceso a este curso", code: 403 }
+   
+   APK Muestra:
+      ❌ Este curso no está disponible para ti
+
+CASO: El admin RECHAZA una solicitud
+
+   Admin hace: POST /api/admin/registrations/req_123/reject
+   
+   Render:
+      ✓ Marca como "rejected"
+      ✓ Guarda notas del rechazo
+   
+   APK en siguiente consulta:
+      GET /api/auth/check-device → { status: "rejected" }
+      
+      Muestra:
+         ❌ Tu solicitud ha sido RECHAZADA
+         Razón: "No proporcionaste información verificable"
+         Contacta: admin@tudominio.com
+
+═════════════════════════════════════════════════════════════════════════════
+📊 ESTADÍSTICAS Y REPORTES
+═════════════════════════════════════════════════════════════════════════════
+
+TÚ PUEDES VER EN RENDER:
+
+• Dashboard de Estudiantes:
+  - Total registrados: 145
+  - Activos en últimas 24h: 98
+  - Pendientes de aprobación: 7
+  - Rechazados: 3
+  - Suspendidos: 2
+
+• Por Video:
+  - Video "Python Intro" visto 342 veces
+  - Video "React Hooks" visto 215 veces
+  - Video "Node API" visto 89 veces
+
+• Por Dispositivo:
+  - Dispositivos únicos: 156
+  - Dispositivos bloqueados: 2
+  - En línea ahora: 23
+
+• Auditoría:
+  - Última reproducción: ahora
+  - Usuario: usuario@ejemplo.com
+  - Video: Python Intro
+  - Duración: 45 minutos
+  - Dispositivo: Samsung Galaxy A10
+  - IP: 192.168.1.100
+  - Watermark: EDULOCK|2026-05-28|usuario@ejemplo.com|device_a1b2c3
+
+═════════════════════════════════════════════════════════════════════════════
+🎯 PRÓXIMOS PASOS RECOMENDADOS
+═════════════════════════════════════════════════════════════════════════════
+
+1. CREAR ADMIN PANEL en Render
+   └─ Ya está en code pero necesita frontend
+   └─ O usa API REST directamente
+
+2. CONFIGURAR NOTIFICACIONES (opcional)
+   └─ Email: "Tu solicitud fue aprobada"
+   └─ SMS: Notificación en tiempo real
+   └─ Push: Notificación en APK
+
+3. PRUEBAS DE EXTREMO A EXTREMO
+   └─ Instalar APK en un teléfono real
+   └─ Registrarse desde la app
+   └─ Aprobar desde Render
+   └─ Verificar acceso a video
+   └─ Confirmar protecciones (no screenshot, no grabación)
+
+4. DISTRIBUIR APK
+   └─ Google Play Store (release)
+   └─ Link directo a APK (testing)
+   └─ QR code para facilitar descarga
+
+═════════════════════════════════════════════════════════════════════════════
+
+¿Dudas sobre alguna fase específica? Pregunta en qué punto quieres más detalles.
+
+═════════════════════════════════════════════════════════════════════════════

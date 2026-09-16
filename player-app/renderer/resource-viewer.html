@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Documento protegido</title><link rel="stylesheet" href="resource-viewer.css"></head>
+<body>
+<header><div><strong id="document-name">Documento protegido</strong><small>Lectura protegida · requiere conexión</small></div><button id="close" type="button">Cerrar</button></header>
+<nav aria-label="Páginas y zoom"><button id="previous" disabled type="button">Anterior</button><span id="page-label">Página 1</span><button id="next" disabled type="button">Siguiente</button><label for="zoom">Zoom</label><select id="zoom"><option value="0.75">75 %</option><option value="1" selected>100 %</option><option value="1.25">125 %</option><option value="1.5">150 %</option><option value="2">200 %</option></select></nav>
+<p id="status" role="status" aria-live="polite">Autorizando documento…</p>
+<main id="paper-area"><div id="paper"><canvas id="page" aria-label="Página del documento protegido"></canvas><div id="watermarks" aria-hidden="true"></div></div></main>
+<footer id="identity"></footer><script src="resource-viewer.js"></script>
+</body></html>

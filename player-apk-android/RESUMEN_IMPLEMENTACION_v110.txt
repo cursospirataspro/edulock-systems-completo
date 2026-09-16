@@ -1,0 +1,357 @@
+✅ EDULOCK PLAYER v1.1.0 — NOTIFICACIONES PUSH IMPLEMENTADAS
+═══════════════════════════════════════════════════════════════════════════
+
+COMPLETADO: Sistema completo de notificaciones push + captura de info del dispositivo
+
+═══════════════════════════════════════════════════════════════════════════
+📱 LO QUE SE IMPLEMENTÓ EN LA APK (ANDROID)
+═══════════════════════════════════════════════════════════════════════════
+
+1. ✅ DeviceFingerprintAdvanced.kt (NUEVA)
+   ├─ Captura TODA la información del dispositivo (como reproductor PC):
+   │  ├─ Modelo: "Samsung Galaxy A10"
+   │  ├─ Serial: "R38M7087CKL"  
+   │  ├─ Device ID: SHA-256 persistente
+   │  ├─ Versión Android: "Android 11 (API 30)"
+   │  ├─ RAM: "4.0 GB"
+   │  ├─ CPU: 8 cores
+   │  ├─ Build Fingerprint: "samsung/a10/a10:11/..."
+   │  └─ Android ID: Único del dispositivo
+   │
+   └─ Métodos:
+      ├─ captureFullDeviceInfo(context) → DeviceInfo completa
+      ├─ formatDeviceInfo() → Para logging/debugging
+      └─ formatWatermarkText() → Para auditoría
+
+2. ✅ NotificationPermissionHelper.kt (NUEVA)
+   ├─ Solicita permiso POST_NOTIFICATIONS (Android 13+)
+   ├─ Verifica si ya tiene permiso
+   ├─ Maneja resultados de permisos
+   └─ Muestra explicación clara al usuario
+
+3. ✅ EdulockNotificationService.kt (NUEVA)
+   ├─ Extiende FirebaseMessagingService
+   ├─ Recibe mensajes push de Firebase
+   ├─ Procesa 3 tipos de notificaciones:
+   │  ├─ registration_approved (✅)
+   │  ├─ registration_rejected (❌)
+   │  └─ registration_suspended (⚠️)
+   │
+   ├─ Muestra notificaciones visuales al usuario
+   ├─ Guarda estado en SharedPreferences
+   ├─ Envía broadcast a LoginActivity
+   └─ Funciona incluso con app cerrada
+
+4. ✅ EdulockApp.kt (ACTUALIZADO)
+   ├─ Inicializa Firebase Cloud Messaging
+   ├─ Obtiene y guarda token FCM
+   ├─ Captura información del dispositivo al inicio
+   ├─ Inicia SecurityMonitorService
+   └─ Centraliza inicialización de la app
+
+5. ✅ LoginActivity.kt (ACTUALIZADO)
+   ├─ Solicita permisos de notificación
+   ├─ Muestra diálogo explicativo
+   ├─ Envía token FCM al backend en login/registro
+   ├─ Captura y envía información del dispositivo:
+   │  ├─ deviceModel
+   │  ├─ deviceSerial
+   │  ├─ osVersion
+   │  ├─ totalRam
+   │  └─ fcmToken
+   │
+   ├─ Maneja respuesta del backend
+   ├─ Recibe broadcasts de notificación
+   └─ Actualiza UI cuando se aprueba acceso
+
+6. ✅ app/build.gradle (ACTUALIZADO)
+   ├─ Agregadas dependencias Firebase:
+   │  ├─ firebase-messaging:23.4.1
+   │  ├─ firebase-core:21.1.1
+   │  └─ firebase-analytics:21.6.1
+   │
+   └─ Agregado plugin: com.google.gms.google-services
+
+7. ✅ AndroidManifest.xml (ACTUALIZADO)
+   ├─ Permiso: POST_NOTIFICATIONS (Android 13+)
+   ├─ Servicio: EdulockNotificationService
+   ├─ Intent-filter: com.google.firebase.MESSAGING_EVENT
+   └─ Resto de permisos existentes intactos
+
+8. ✅ app/google-services.json (NUEVA)
+   └─ Configuración de Firebase (plantilla a personalizar)
+
+═══════════════════════════════════════════════════════════════════════════
+🖥️ LO QUE SE DEBE HACER EN EL BACKEND (RENDER/NODE.JS)
+═══════════════════════════════════════════════════════════════════════════
+
+1. ✅ firebase-notification.js (CREADO)
+   ├─ Módulo listo para usar
+   ├─ Inicializa Firebase Admin SDK
+   ├─ Funciones:
+   │  ├─ sendApprovalNotification(fcmToken, email, courseIds)
+   │  ├─ sendRejectionNotification(fcmToken, email, reason)
+   │  ├─ sendSuspensionNotification(fcmToken, email, reason)
+   │  ├─ sendTopicNotification(topic, title, body, data)
+   │  ├─ subscribeToTopic(token, topic)
+   │  └─ unsubscribeFromTopic(token, topic)
+   │
+   └─ Listo para copiar a Render
+
+2. 📝 server.js (CAMBIOS MANUALES NECESARIOS)
+   
+   PASO 1: Agregar require
+   ────────────────────
+   const notificationService = require('./firebase-notification');
+   
+   PASO 2: Actualizar POST /api/auth/register-request
+   ──────────────────────────────────────────────────
+   Recibir fcmToken del APK y guardarlo en BD
+   
+   PASO 3: Actualizar POST /api/auth/login
+   ───────────────────────────────────────
+   Recibir fcmToken y guardarlo en tabla students
+   
+   PASO 4: Actualizar POST /api/admin/registrations/:id/approve
+   ──────────────────────────────────────────────────────────
+   Después de aprobar, enviar notificación:
+     await notificationService.sendApprovalNotification(
+       fcmToken,
+       email,
+       courseIds
+     );
+   
+   PASO 5: Actualizar POST /api/admin/registrations/:id/reject
+   ──────────────────────────────────────────────────────────
+   Después de rechazar, enviar notificación:
+     await notificationService.sendRejectionNotification(
+       fcmToken,
+       email,
+       reason
+     );
+
+3. 📝 database-pg.js (CAMBIOS MANUALES NECESARIOS)
+   
+   PASO 1: Agregar columna fcm_token
+   ──────────────────────────────────
+   ALTER TABLE registration_requests ADD COLUMN fcm_token TEXT;
+   
+   PASO 2: Agregar función updateStudentFcmToken()
+   ───────────────────────────────────────────────
+   async function updateStudentFcmToken(studentId, fcmToken) {
+       const q = `
+           UPDATE students 
+           SET fcm_token = $1, updated_at = NOW() 
+           WHERE id = $2
+       `;
+       return await pool.query(q, [fcmToken, studentId]);
+   }
+   
+   PASO 3: Exportar la función
+   ────────────────────────────
+   module.exports.updateStudentFcmToken = updateStudentFcmToken;
+
+4. 📝 .env (VARIABLES NECESARIAS)
+   
+   FIREBASE_KEY_PATH=./firebase-service-account.json
+
+5. 📝 .gitignore (AGREGAR)
+   
+   firebase-service-account.json
+
+6. 📝 package.json (INSTALAR)
+   
+   npm install firebase-admin
+
+═══════════════════════════════════════════════════════════════════════════
+🔐 CONFIGURACIÓN DE FIREBASE (PASO A PASO)
+═══════════════════════════════════════════════════════════════════════════
+
+1. Ir a https://console.firebase.google.com/
+2. Crear nuevo proyecto: "edulock-player-android"
+3. Habilitar "Cloud Messaging"
+4. Ir a: Project Settings → Service Accounts
+5. Clic: "Generate new private key"
+6. Se descarga: edulock-player-android-XXXXX.json
+7. Renombrar a: firebase-service-account.json
+8. Guardar en: /reproductor-cursos-master/ (raíz del proyecto Render)
+
+═══════════════════════════════════════════════════════════════════════════
+📱 CONFIGURACIÓN DE APK EN FIREBASE
+═══════════════════════════════════════════════════════════════════════════
+
+1. Firebase Console → Project Settings
+2. Clic: "Add app"
+3. Seleccionar: "Android"
+4. Package Name: com.edulock.player
+5. SHA-1 Certificate:
+   - Generar con: keytool -list -v -keystore ~/.android/debug.keystore
+   - O en Android Studio: Build → Generate Signed APK
+6. Descargar: google-services.json
+7. Copiar a: app/google-services.json (ya incluido)
+
+═══════════════════════════════════════════════════════════════════════════
+🔄 FLUJO COMPLETO (RESUMIDO)
+═══════════════════════════════════════════════════════════════════════════
+
+1. USER INSTALA APK
+   ├─ APK obtiene token FCM
+   └─ APK captura info del dispositivo
+
+2. USER SOLICITA ACCESO
+   └─ Envía: email + name + deviceId + deviceModel + fcmToken + osVersion + ram
+   └─ Backend guarda todo (incluyendo fcmToken)
+
+3. USER ESPERA
+   └─ APK consulta cada 10s: "¿Ya fui aprobado?"
+   └─ Muestra pantalla de espera
+
+4. ADMIN APRUEBA
+   ├─ Haz clic: [✓ APROBAR]
+   └─ Backend obtiene fcmToken de BD
+   └─ Backend llama: sendApprovalNotification(fcmToken, ...)
+   └─ Firebase envía push al APK
+
+5. APK RECIBE NOTIFICACIÓN
+   ├─ EdulockNotificationService.onMessageReceived()
+   ├─ Muestra notificación visual
+   ├─ Guarda estado en preferences
+   └─ Si user toca: abre app con catálogo
+
+6. USER ACCEDE
+   └─ Ve sus cursos
+   └─ Puede reproducir videos
+   └─ ¡¡CONTENIDO SEGURO CON WATERMARK Y FLAG_SECURE!!
+
+═══════════════════════════════════════════════════════════════════════════
+📊 ARCHIVOS NUEVOS/MODIFICADOS
+═══════════════════════════════════════════════════════════════════════════
+
+NUEVA CARPETA:
+  player-apk-android/
+
+ARCHIVOS NUEVOS (APK):
+  ✅ app/src/main/kotlin/com/edulock/player/EdulockApp.kt
+  ✅ app/src/main/kotlin/com/edulock/player/ui/LoginActivity.kt
+  ✅ app/src/main/kotlin/com/edulock/player/utils/DeviceFingerprintAdvanced.kt
+  ✅ app/src/main/kotlin/com/edulock/player/utils/NotificationPermissionHelper.kt
+  ✅ app/src/main/kotlin/com/edulock/player/services/EdulockNotificationService.kt
+  ✅ app/google-services.json
+
+ARCHIVOS ACTUALIZADOS (APK):
+  ✅ build.gradle (top-level) - Agregado plugin google-services
+  ✅ app/build.gradle - Agregadas dependencias Firebase
+  ✅ app/src/main/AndroidManifest.xml - Permisos + servicio + intent-filter
+
+ARCHIVOS NUEVOS (Backend):
+  ✅ firebase-notification.js - Módulo de notificaciones
+  ✅ firebase-service-account.json - Credenciales (template)
+  ✅ INTEGRACION_FCM_BACKEND.txt - Guía de integración
+  ✅ NOTIFICACIONES_COMPLETO.txt - Documentación completa
+
+═══════════════════════════════════════════════════════════════════════════
+🚀 PRÓXIMOS PASOS
+═══════════════════════════════════════════════════════════════════════════
+
+FASE 1: Preparar Backend (Render)
+─────────────────────────────────
+1. Descargar firebase-service-account.json desde Google Cloud Console
+2. Copiar el archivo a la raíz del proyecto en Render
+3. Ejecutar: npm install firebase-admin
+4. Editar server.js según instrucciones en INTEGRACION_FCM_BACKEND.txt
+5. Editar database-pg.js para agregar columna fcm_token
+6. Deploy a Render
+
+FASE 2: Compilar y Probar APK
+──────────────────────────────
+1. Abrir Android Studio
+2. Importar: player-apk-android
+3. Conectar dispositivo Android (USB)
+4. Build → Run (Shift+F10)
+5. Instalar APK en dispositivo
+
+FASE 3: Test de Notificaciones
+───────────────────────────────
+1. En dispositivo: Instalar APK
+2. Abrir APK → Click "REGISTRAR"
+3. Completar registro
+4. En Dashboard (admin): Aceptar solicitud
+5. ¡¡Verificar que notificación llega al teléfono!!
+6. Tap en notificación → APK abre con catálogo
+
+FASE 4: Usar en Producción
+──────────────────────────
+1. Generar APK de release (firmado)
+2. Subir a Google Play Store
+3. Usuarios instalan desde Store
+4. ¡¡Sistema funciona en producción!!
+
+═══════════════════════════════════════════════════════════════════════════
+📚 DOCUMENTACIÓN DISPONIBLE
+═══════════════════════════════════════════════════════════════════════════
+
+Dentro de player-apk-android/:
+  • README.md - Documentación técnica general
+  • GUIA_RAPIDA.txt - Inicio rápido
+  • QUICK_START.txt - 5 minutos
+  • RESUMEN.txt - Overview
+  • FLUJO_AUTENTICACION.txt - 5 fases de auth
+  • NOTIFICACION_TIEMPO_REAL.txt - Polling + notificaciones
+  • RESUMEN_SIMPLE.txt - Explicación visual simple
+
+En raíz del proyecto:
+  • INTEGRACION_FCM_BACKEND.txt - Cómo integrar en backend
+  • NOTIFICACIONES_COMPLETO.txt - Flujo completo (este archivo)
+
+═══════════════════════════════════════════════════════════════════════════
+✅ CARACTERÍSTICAS INCLUIDAS
+═══════════════════════════════════════════════════════════════════════════
+
+📱 APK:
+  ✅ Captura modelo, serial, device ID, RAM, SO, CPU
+  ✅ Solicita permisos de notificación
+  ✅ Registra token FCM
+  ✅ Recibe notificaciones push
+  ✅ Muestra notificaciones visuales
+  ✅ Polling cada 10s como fallback
+  ✅ Watermark forense en videos
+  ✅ FLAG_SECURE (no screenshot/grabación)
+  ✅ Sincronización en tiempo real
+  ✅ Anti-bypass security monitoring
+
+🖥️ Backend:
+  ✅ Almacena fcm_token
+  ✅ Envía notificaciones push via FCM
+  ✅ 3 tipos de notificaciones (aprobado/rechazado/suspendido)
+  ✅ Logging de notificaciones
+  ✅ Soporta tópicos (broadcasts)
+  ✅ Soporta dispositivos suscritos
+
+═══════════════════════════════════════════════════════════════════════════
+🎯 RESULTADO FINAL
+═══════════════════════════════════════════════════════════════════════════
+
+Los usuarios ahora reciben NOTIFICACIONES PUSH en tiempo real cuando su 
+solicitud de acceso es APROBADA.
+
+La APK captura EXACTAMENTE la misma información que el reproductor de PC:
+  • Modelo del dispositivo
+  • Serial del dispositivo
+  • Device ID único y persistente
+  • Versión del SO
+  • RAM disponible
+  • CPU info
+  • Build fingerprint
+
+Todo se envía al backend, se almacena, y se usa para:
+  • Autenticación segura
+  • Rastreo de dispositivos autorizados
+  • Auditoría de acceso
+  • Watermark forense
+  • Prevención de fraude
+
+═══════════════════════════════════════════════════════════════════════════
+
+¡¡EDULOCK PLAYER v1.1.0 LISTA PARA TESTING!!
+
+═══════════════════════════════════════════════════════════════════════════

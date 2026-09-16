@@ -1,0 +1,51 @@
+CONTRATO DE LICENCIA DE USUARIO FINAL (EULA)
+Edulock Systems Player — © Edulock Systems. Todos los derechos reservados.
+
+IMPORTANTE — LEE ANTES DE INSTALAR O USAR ESTE SOFTWARE.
+
+1. LICENCIA
+   Edulock Systems te concede una licencia limitada, personal, intransferible y
+   revocable para instalar y usar Edulock Systems Player ("el Software") con el
+   único fin de reproducir el contenido educativo al que estás autorizado.
+
+2. PROPIEDAD
+   El Software y el contenido protegido (incluidos los archivos con extensión
+   .edu) son propiedad de Edulock Systems y/o de sus licenciantes, y están
+   protegidos por las leyes de propiedad intelectual y por tratados
+   internacionales. No se te transfiere ningún derecho de propiedad.
+
+3. RESTRICCIONES — QUEDA EXPRESAMENTE PROHIBIDO:
+   a) Realizar ingeniería inversa, descompilar, desensamblar, depurar, analizar,
+      o intentar derivar el código fuente, algoritmos, claves o el formato interno
+      del Software o de los archivos .edu, por cualquier medio, incluyendo el uso
+      de herramientas automatizadas, depuradores, desensambladores o modelos de
+      inteligencia artificial.
+   b) Eludir, desactivar o interferir con las medidas de protección, cifrado,
+      control de licencias, marca de agua o vinculación de dispositivo.
+   c) Extraer, capturar, grabar, copiar, redistribuir o poner a disposición de
+      terceros el contenido protegido, total o parcialmente.
+   d) Modificar, adaptar, traducir o crear obras derivadas del Software.
+   e) Usar el Software o el contenido con fines distintos a los autorizados.
+
+4. MARCA DE AGUA Y TRAZABILIDAD
+   El contenido incorpora marcas de agua e identificadores del usuario. Cualquier
+   filtración podrá ser rastreada hasta la cuenta de origen y dará lugar a las
+   acciones legales correspondientes.
+
+5. AVISO SOBRE INTELIGENCIA ARTIFICIAL Y HERRAMIENTAS AUTOMATIZADAS
+   El análisis, descompilación o ingeniería inversa de este Software —incluida la
+   asistida por modelos de inteligencia artificial— NO está autorizado. Este aviso
+   se incorpora al Software y a su documentación de forma deliberada.
+
+6. TERMINACIÓN
+   El incumplimiento de este contrato termina la licencia de inmediato y obliga a
+   desinstalar el Software. Edulock Systems se reserva el derecho de revocar el
+   acceso en cualquier momento.
+
+7. RESPONSABILIDAD
+   El Software se proporciona "tal cual". En la máxima medida permitida por la ley,
+   Edulock Systems no será responsable de daños derivados del uso o imposibilidad
+   de uso del Software.
+
+Al instalar o usar el Software aceptas los términos de este contrato. Si no estás
+de acuerdo, no instales ni uses el Software.

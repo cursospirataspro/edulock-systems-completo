@@ -1,0 +1,16 @@
+.gradle
+.idea
+*.iml
+*.apk
+*.aar
+build/
+local.properties
+*.swp
+*.swo
+*~
+.DS_Store
+keystore.jks
+*.keystore
+keystore.properties
+.socket-tmp/
+android-build-*.log

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; media-src 'self' blob: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* https:; img-src 'self' data: https:; frame-src https://player.vdocipher.com;">
+    <title>Edulock Systems Player</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #0a0a0a;
+            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* ── Pantalla de inicio / espera (marca Edulock: blanco / negro / rojo) ─── */
+        #splash {
+            position: fixed; inset: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: #ffffff; z-index: 100;
+        }
+        #splash-logo {
+            width: 148px; height: auto; margin-bottom: 1.4rem;
+            user-select: none; -webkit-user-drag: none; pointer-events: none;
+        }
+        #splash h1 {
+            font-size: 1.95rem; font-weight: 800; color: #141010;
+            margin-bottom: 0.55rem; letter-spacing: 0.4px;
+        }
+        #splash h1 span { color: #d81f2a; }
+        #splash .rule { width: 64px; height: 4px; background: #d81f2a; border-radius: 3px; margin-bottom: 0.9rem; }
+        #splash p  { font-size: 0.86rem; color: #6d635d; margin-bottom: 2rem; letter-spacing: 0.2px; }
+        #splash .waiting { font-size: 0.82rem; color: #b0261f; animation: pulse 2s ease-in-out infinite; letter-spacing: 0.2px; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+        #api-settings { margin-top: 2.5rem; text-align: center; }
+        #api-settings label { font-size: 0.78rem; color: #666; display: block; margin-bottom: 0.4rem; }
+        #api-settings input {
+            background: #1a1a1a; border: 1px solid #333; color: #ccc;
+            padding: 0.4rem 0.8rem; border-radius: 6px; width: 280px;
+            font-size: 0.82rem;
+        }
+        #api-settings button {
+            margin-left: 0.5rem; padding: 0.4rem 0.9rem;
+            background: #d81f2a; color: #fff; border: none;
+            border-radius: 6px; cursor: pointer; font-size: 0.82rem;
+        }
+        #api-settings button:hover { background: #a1121b; }
+        #api-msg { font-size: 0.75rem; margin-top: 0.4rem; color: #4caf50; min-height: 1rem; }
+
+        /* ── Área de reproducción ─── */
+        #player-area {
+            position: fixed; inset: 0;
+            display: none;
+            flex-direction: column;
+            background: #000;
+        }
+        #player-area.active { display: flex; }
+
+
+
+        /* Video */
+        #video {
+            width: 100%;
+            flex: 1;          /* ocupa todo el espacio disponible en el flex column */
+            min-height: 0;    /* evita overflow en flex (min-height:auto por defecto) */
+            object-fit: contain;
+            background: #000;
+        }
+
+        /* Marca de agua */
+        #watermark {
+            position: absolute; z-index: 20; pointer-events: none;
+            font-size: 0.72rem; color: rgba(255,255,255,0.22);
+            font-family: monospace; white-space: nowrap; line-height: 1.6;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+            transition: all 1s ease;
+        }
+
+        /* Overlay de error / seguridad */
+        #overlay {
+            position: absolute; inset: 0; z-index: 50;
+            display: none; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.92); text-align: center; padding: 2rem;
+        }
+        #overlay.active { display: flex; }
+        #overlay-icon { font-size: 3rem; margin-bottom: 1rem; }
+        #overlay-title { font-size: 1.2rem; font-weight: 700; color: #f44336; margin-bottom: 0.5rem; }
+        #overlay-msg   { font-size: 0.85rem; color: #bbb; max-width: 420px; line-height: 1.5; }
+        #overlay-retry {
+            margin-top: 1.5rem; padding: 0.5rem 1.4rem;
+            background: #d81f2a; color: #fff; border: none;
+            border-radius: 7px; cursor: pointer; font-size: 0.9rem;
+        }
+        #overlay-retry:hover { background: #a1121b; }
+
+        /* Controles */
+        #controls {
+            position: absolute; bottom: 0; left: 0; right: 0; z-index: 10;
+            padding: 0.6rem 1rem 0.8rem;
+            background: linear-gradient(to top, rgba(0,0,0,0.85), transparent);
+            opacity: 0; transition: opacity 0.3s;
+        }
+        #player-area:hover #controls,
+        #player-area.controls-visible #controls { opacity: 1; }
+
+        #progress-wrap {
+            width: 100%; height: 5px; background: rgba(255,255,255,0.2);
+            border-radius: 3px; cursor: pointer; margin-bottom: 0.6rem;
+        }
+        #progress-bar {
+            height: 100%; background: #d81f2a; border-radius: 3px;
+            width: 0%; transition: width 0.5s linear; pointer-events: none;
+        }
+
+        #controls-row { display: flex; align-items: center; gap: 0.7rem; }
+        .ctrl-btn {
+            background: none; border: none; color: #ddd;
+            font-size: 1.1rem; cursor: pointer; padding: 0.2rem 0.4rem;
+            border-radius: 4px; transition: color 0.2s;
+        }
+        .ctrl-btn:hover { color: #fff; }
+        #time-display { font-size: 0.78rem; color: #aaa; min-width: 90px; }
+        #vol-slider { width: 70px; cursor: pointer; accent-color: #d81f2a; }
+        .spacer { flex: 1; }
+        #quality-select {
+            background: #1a1a1a; border: 1px solid #444; color: #ccc;
+            padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.75rem;
+            cursor: pointer;
+        }
+
+        /* Spinner de carga */
+        #spinner {
+            position: absolute; inset: 0; z-index: 30;
+            display: none; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.5);
+        }
+        #spinner.active { display: flex; }
+        .spin-ring {
+            width: 48px; height: 48px; border: 4px solid rgba(255,255,255,0.2);
+            border-top-color: #d81f2a; border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Estado del dispositivo */
+        #device-badge {
+            position: absolute; bottom: 4rem; right: 1rem; z-index: 15;
+            font-size: 0.65rem; color: rgba(255,255,255,0.35);
+            font-family: monospace; opacity: 0;
+            transition: opacity 0.5s;
+        }
+        #player-area:hover #device-badge { opacity: 1; }
+
+        /* ── Botón cerrar sesión con auto-fade ─── */
+        #btn-logout {
+            position: fixed; top: 12px; left: 12px; z-index: 200;
+            background: rgba(0,0,0,0.55);
+            color: rgba(255,255,255,0.9);
+            border: 1px solid rgba(255,255,255,0.18);
+            padding: 0.32rem 0.75rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            letter-spacing: 0.3px;
+            backdrop-filter: blur(6px);
+            opacity: 0.06;                  /* casi invisible por defecto */
+            transition: opacity 0.45s ease;
+            pointer-events: auto;
+        }
+        #btn-logout.logout-visible { opacity: 1; }
+        #btn-logout:hover { background: rgba(180,20,20,0.75); opacity: 1 !important; }
+        /* Solo mostrar el botón cuando el reproductor está activo */
+        #btn-logout { display: none; }
+        #player-area.active ~ #btn-logout,
+        body.player-active #btn-logout { display: block; }
+        #btn-resources { position:fixed;right:16px;top:14px;z-index:210;padding:9px 15px;border:1px solid #426079;border-radius:7px;background:#142839;color:#fff;cursor:pointer;font:inherit;font-size:13px }
+        #resources-panel { position:fixed;inset:60px 28px 24px;z-index:220;background:#101d2b;border:1px solid #34506b;border-radius:12px;padding:22px;overflow:auto }
+        #resources-panel[hidden] { display:none }
+        #resources-panel header { display:flex;align-items:center;gap:12px;margin-bottom:14px }
+        #resources-panel header h2 { flex:1;font-size:20px }
+        #resources-panel button { padding:8px 12px;border:1px solid #426079;border-radius:6px;background:#19384d;color:#fff;cursor:pointer }
+        #resources-panel button:disabled { opacity:.5 }
+        #resources-panel h3 { margin:22px 0 8px;color:#8ad8ed }
+        #resources-status { color:#c8d8e4;line-height:1.5 }
+        .resource-row { display:flex;align-items:center;gap:18px;justify-content:space-between;padding:13px 0;border-bottom:1px solid #2e4154 }
+        .resource-row strong,.resource-row small { display:block;overflow-wrap:anywhere }
+        .resource-row small { margin-top:5px;color:#9eafc2 }
+        .resource-row button { flex-shrink:0 }
+    </style>
+</head>
+<body>
+<button id="btn-resources" type="button">Mis materiales</button>
+<section id="resources-panel" aria-label="Materiales de mis cursos" hidden>
+    <header><h2>Mis materiales</h2><button id="resources-refresh" type="button">Actualizar</button><button id="resources-close" type="button">Cerrar</button></header>
+    <p id="resources-status" role="status" aria-live="polite"></p><div id="resources-list"></div>
+</section>
+
+<!-- ── SPLASH ─────────────────────────────────────────────── -->
+<div id="splash">
+    <img id="splash-logo" src="../assets/logo.png" alt="Edulock Systems">
+    <h1>Edulock Systems <span>Player</span></h1>
+    <div class="rule"></div>
+    <p>Reproductor seguro &middot; v<span id="splash-version">1.0.0</span></p>
+    <span class="waiting">Esperando comando de reproducción…</span>
+</div>
+
+<!-- ── BOTÓN CERRAR SESIÓN (superpuesto, auto-fade) ─────── -->
+<button id="btn-logout" title="Cerrar sesión y volver al login">⏻ Cerrar Sesión</button>
+
+
+<!-- ── ÁREA DE REPRODUCCIÓN ───────────────────────────────── -->
+<div id="player-area">
+    <!-- Barra superior con título -->
+
+
+    <!-- Video element -->
+    <video id="video" playsinline></video>
+
+    <!-- Spinner -->
+    <div id="spinner"><div class="spin-ring"></div></div>
+
+    <!-- Marca de agua -->
+    <div id="watermark"></div>
+
+    <!-- Badge de dispositivo -->
+    <div id="device-badge"></div>
+
+    <!-- Overlay de error / seguridad -->
+    <div id="overlay">
+        <div id="overlay-icon">🔒</div>
+        <div id="overlay-title">Acceso bloqueado</div>
+        <div id="overlay-msg"></div>
+        <button id="overlay-retry">Volver al inicio</button>
+    </div>
+
+    <!-- Controles -->
+    <div id="controls">
+        <div id="progress-wrap">
+            <div id="progress-bar"></div>
+        </div>
+        <div id="controls-row">
+            <button class="ctrl-btn" id="btn-play" title="Play/Pause">▶</button>
+            <button class="ctrl-btn" id="btn-mute" title="Silenciar">🔊</button>
+            <input type="range" id="vol-slider" min="0" max="1" step="0.05" value="1">
+            <span id="time-display">0:00 / 0:00</span>
+            <div class="spacer"></div>
+            <select id="speed-select" title="Velocidad de reproducción">
+                <option value="0.5">0.5x</option>
+                <option value="0.75">0.75x</option>
+                <option value="1" selected>1x</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.5">1.5x</option>
+                <option value="1.75">1.75x</option>
+                <option value="2">2x</option>
+                <option value="2.5">2.5x</option>
+                <option value="3">3x</option>
+                <option value="custom">Personalizada…</option>
+            </select>
+            <input type="number" id="speed-custom" min="0.25" max="4" step="0.05" value="1" title="Velocidad personalizada" style="display:none; width:64px;">
+            <select id="quality-select" title="Calidad"></select>
+            <button class="ctrl-btn" id="btn-fullscreen" title="Pantalla completa">⛶</button>
+        </div>
+    </div>
+</div>
+
+<!-- HLS.js desde node_modules local (instalado con npm install en player-app/) -->
+<script src="../node_modules/hls.js/dist/hls.min.js"></script>
+<script src="player.js"></script>
+<script src="resource-catalog.js"></script>
+</body>
+</html>

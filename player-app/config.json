@@ -1,0 +1,10 @@
+{
+  "API_BASE": "https://edulocksystemsoficial.dpdns.org",
+  "VERSION": "1.0.0",
+  "APP_NAME": "Edulock Systems Player",
+  "PROTOCOL": "cdp",
+  "TOKEN_REFRESH_MARGIN_SECONDS": 120,
+  "HEARTBEAT_INTERVAL_SECONDS": 30,
+  "MAX_RETRY_ATTEMPTS": 3,
+  "APP_SECRET": "gQdfqC6szeT3LCDusM4j0xh1X1MQbv8gOcyLD09PnFM"
+}
