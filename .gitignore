@@ -12,8 +12,8 @@ firebase-service-account.json
 *.p12
 
 # Datos locales y generados
-data/
-logs/
+/data/
+/logs/
 public/hls/
 *.log
 
