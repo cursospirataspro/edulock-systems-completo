@@ -39,7 +39,12 @@ class CatalogActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "CatalogActivity"
+        /** true → solo documentos/PDF (sin videos): el panel "Mis documentos". */
+        const val EXTRA_DOCS_ONLY = "docs_only"
     }
+
+    private val docsOnly: Boolean get() = intent?.getBooleanExtra(EXTRA_DOCS_ONLY, false) == true
+    private val isAdmin: Boolean get() = getSharedPreferences("edulock_auth", Context.MODE_PRIVATE).getString("user_role", "student") == "admin"
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var loadingView: ProgressBar
@@ -76,6 +81,7 @@ class CatalogActivity : AppCompatActivity() {
         recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.adapter = adapter
         findViewById<android.widget.Button>(R.id.logout_button).setOnClickListener { finish() }
+        if (docsOnly) findViewById<android.widget.TextView?>(R.id.catalog_title)?.setText(R.string.resources_open_documents)
 
         // Cargar videos
         loadVideos()
@@ -103,7 +109,8 @@ class CatalogActivity : AppCompatActivity() {
             // Pequeña espera inicial para no competir con la carga del catálogo
             delay(3000)
             while (isActive && !expelled) {
-                val result = LicenseManager.validate(this@CatalogActivity)
+                // El admin nunca pasa por la pantalla de licencia (igual que en PC).
+                val result = if (isAdmin) LicenseManager.ValidationResult(true) else LicenseManager.validate(this@CatalogActivity)
                 if (result.revoked) {
                     expelToLicense(
                         result.error
@@ -146,6 +153,12 @@ class CatalogActivity : AppCompatActivity() {
                     apiService.getVideoList("Bearer $jwtToken")
                 }
 
+                // One-license-per-session: server says student needs a license
+                if (response.requiresLicense == true && !isAdmin) {
+                    expelToLicense("Ingresa tu licencia para acceder al contenido.")
+                    return@launch
+                }
+
                 // Aplanar estructura: courses → modules → videos
                 val flatVideos = mutableListOf<VideoItem>()
 
@@ -173,14 +186,17 @@ class CatalogActivity : AppCompatActivity() {
                     appendResources(v.documents, v.title ?: "Video", flatVideos)
                 }
 
+                // Modo "Mis documentos": los videos solo se abren por enlace externo (paridad con PC).
+                if (docsOnly) flatVideos.retainAll { it.resourceItem != null }
+
                 if (flatVideos.isNotEmpty()) {
                     videos.clear()
                     videos.addAll(flatVideos)
                     adapter.notifyDataSetChanged()
-                    Log.i(TAG, "✅ ${videos.size} videos cargados")
+                    Log.i(TAG, "✅ ${videos.size} elementos cargados (docsOnly=$docsOnly)")
                 } else {
                     videos.clear(); adapter.notifyDataSetChanged()
-                    showError("No hay cursos ni recursos disponibles")
+                    showError(if (docsOnly) "No hay documentos disponibles en tus cursos" else "No hay cursos ni recursos disponibles")
                 }
 
             } catch (e: Exception) {

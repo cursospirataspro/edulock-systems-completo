@@ -48,8 +48,19 @@ const LEGAL_NOTICE =
 const IS_DEV  = process.argv.includes('--dev');
 const IS_MAC  = process.platform === 'darwin';
 const IS_WIN  = process.platform === 'win32';
-const PROTOCOL    = 'cdp';
+const PROTOCOL    = 'edulock';
+// Esquema anterior: ya no se registra en el SO (chocaba con otros reproductores
+// que también usan cdp://), pero los enlaces antiguos se siguen entendiendo.
+const LEGACY_PROTOCOL = 'cdp';
+const DEEP_LINK_RE = /^(edulock|cdp):/i;
 const APP_DISPLAY = 'Edulock Systems Player';
+
+// Normaliza "edulock:play?..", "cdp://play?.." → "edulock://play?.." para new URL()
+function normalizeDeepLink(rawUrl) {
+    return String(rawUrl || '')
+        .replace(/^(edulock|cdp):\/\//i, `${PROTOCOL}://`)
+        .replace(/^(edulock|cdp):(?!\/\/)/i, `${PROTOCOL}://`);
+}
 
 // Nombre mostrado en diálogos del SO y en "Abrir con"
 app.setName(APP_DISPLAY);
@@ -70,10 +81,10 @@ const { exec } = require('child_process');
 const log = console;
 
 // ─── Detección de herramientas de descarga, control remoto y bypass DRM ──────
-// CRITERIO: solo se bloquean programas cuyo propósito PRINCIPAL es descargar
-// streams, controlar remotamente otra PC, o hacer ingeniería inversa/bypass.
-// NO se bloquean: grabadores de pantalla comunes (OBS, etc.), apps de
-// videollamadas (Zoom, Discord, Teams), ni procesos de fondo de GPU (NVIDIA/AMD).
+// CRITERIO: se bloquean programas de descarga de streams, control remoto,
+// ingeniería inversa/bypass Y grabadores de pantalla.
+// NO se bloquean: apps de videollamadas (Zoom, Discord, Teams) ni procesos
+// de fondo de GPU (NVIDIA/AMD).
 const REMOTE_TOOLS = [
     // ── Control remoto / escritorio remoto ────────────────────────────────────
     'mstsc.exe',               // Remote Desktop Connection (Windows built-in)
@@ -128,6 +139,29 @@ const REMOTE_TOOLS = [
     'charles.exe',
     'http toolkit.exe', 'httptoolkit.exe',
     'dnspy.exe', 'ilspy.exe',
+    // ── Grabadores de pantalla ───────────────────────────────────────────────
+    'obs64.exe', 'obs32.exe', 'obs.exe',           // OBS Studio
+    'bdcam.exe', 'bandicam.exe',                    // Bandicam
+    'camtasia.exe', 'camrec.exe',                   // Camtasia
+    'camtasiastudio.exe',
+    'sharex.exe',                                    // ShareX
+    'snagit.exe', 'snagiteditor.exe',               // Snagit
+    'action.exe', 'mirillis action!.exe',           // Mirillis Action!
+    'screenpal.exe', 'screencastomatic.exe',        // ScreenPal
+    'loom.exe',                                      // Loom
+    'xsplit.exe', 'xsplitbroadcaster.exe',          // XSplit
+    'xsplitgamecaster.exe',
+    'flashbackrecorder.exe', 'bbflashback.exe',     // FlashBack
+    'movavi screen recorder.exe',                    // Movavi
+    'recexperts.exe',                                // EaseUS RecExperts
+    'icecreamscreenrecorder.exe',                    // Icecream
+    'apowerrec.exe',                                 // Apowersoft
+    'screenrecorder.exe',                            // Generic
+    'fraps.exe',                                     // Fraps
+    'dxtory.exe',                                    // Dxtory
+    'litecam.exe',                                   // LiteCam
+    'vokoscreenng.exe',                              // vokoscreen
+    'captura.exe',                                   // Captura
 ];
 
 // ── Herramientas con IA (asistentes / IDEs / LLM locales) ─────────────────────
@@ -663,15 +697,25 @@ if (!gotLock) {
     process.exit(0);
 }
 
-// ─── Registro del protocolo cdp:// ───────────────────────────────────────────
+// ─── Registro del protocolo edulock:// ───────────────────────────────────────
 if (profileDirectory) {
-    // Do not replace the user's installed cdp:// association during acceptance.
+    // Do not replace the user's installed edulock:// association during acceptance.
 } else if (IS_DEV) {
     app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
         path.resolve(process.argv[1] || __filename),
     ]);
 } else {
-    app.setAsDefaultProtocolClient(PROTOCOL);
+    // En modo portable el ejecutable real vive en una carpeta temporal que Windows
+    // puede borrar; registramos el .exe portable (el lanzador reenvía los argumentos)
+    // para que el enlace edulock:// siga funcionando entre reinicios.
+    const portableExe = IS_WIN && process.env.PORTABLE_EXECUTABLE_FILE;
+    if (portableExe) app.setAsDefaultProtocolClient(PROTOCOL, portableExe, []);
+    else app.setAsDefaultProtocolClient(PROTOCOL);
+    // Si una versión anterior de ESTE ejecutable dejó registrado cdp://, lo
+    // liberamos para no interferir con otros programas que usan ese esquema.
+    try {
+        if (app.isDefaultProtocolClient(LEGACY_PROTOCOL)) app.removeAsDefaultProtocolClient(LEGACY_PROTOCOL);
+    } catch { /* sin permisos o esquema no registrado */ }
 }
 
 // ─── Ventana principal ────────────────────────────────────────────────────────
@@ -890,13 +934,10 @@ function buildAppMenu() {
     Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-// ─── Parseo de URL cdp:// ─────────────────────────────────────────────────────
+// ─── Parseo de URL edulock:// ─────────────────────────────────────────────────
 function parseCdpUrl(rawUrl) {
     try {
-        const normalized = rawUrl
-            .replace(/^cdp:\/\//i, 'cdp://')
-            .replace(/^cdp:(?!\/\/)/i, 'cdp://');
-        const url  = new URL(normalized);
+        const url  = new URL(normalizeDeepLink(rawUrl));
         const t    = url.searchParams.get('t')    || '';
         const p    = url.searchParams.get('p')    || '';
         const cmd  = url.searchParams.get('cmd')  || '';
@@ -910,15 +951,12 @@ function parseCdpUrl(rawUrl) {
     }
 }
 
-// CHECK-IN de apertura: apenas llega el deep link cdp://, avisamos al servidor
+// CHECK-IN de apertura: apenas llega el deep link edulock://, avisamos al servidor
 // que la app abrió realmente (aunque el usuario aún no haya iniciado sesión).
 // Así la página web sabe con certeza que el reproductor está instalado y abrió.
 function _pingLaunchCheckin(rawUrl) {
     try {
-        const normalized = String(rawUrl || '')
-            .replace(/^cdp:\/\//i, 'cdp://')
-            .replace(/^cdp:(?!\/\/)/i, 'cdp://');
-        const url = new URL(normalized);
+        const url = new URL(normalizeDeepLink(rawUrl));
         const lt  = url.searchParams.get('lt') || '';
         if (!lt) return;
         const apiBase = (getConfig().API_BASE || '').replace(/\/$/, '');
@@ -957,7 +995,7 @@ function dispatchCdpUrl(rawUrl) {
 
 // ─── Segunda instancia / open-url ────────────────────────────────────────────
 app.on('second-instance', (_event, argv) => {
-    const cdpArg = argv.find(a => /^cdp:\/\//i.test(a));
+    const cdpArg = argv.find(a => DEEP_LINK_RE.test(a));
     if (cdpArg) dispatchCdpUrl(cdpArg);
     if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore();
@@ -1056,9 +1094,44 @@ ipcMain.handle('get-session', () => {
 
 ipcMain.handle('clear-session', () => {
     resourceWindows.invalidate();
+    stopTokenRefresh();
     try { if (fs.existsSync(SESSION_PATH)) fs.unlinkSync(SESSION_PATH); return true; }
     catch { return false; }
 });
+
+let _refreshTimer = null;
+function startTokenRefresh() {
+    stopTokenRefresh();
+    _refreshTimer = setInterval(async () => {
+        try {
+            const saved = readSavedSession();
+            if (!saved || !saved.token) return;
+            const parts = saved.token.split('.');
+            if (parts.length !== 3) return;
+            const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+            const expMs = (payload.exp || 0) * 1000;
+            const remaining = expMs - Date.now();
+            if (remaining > 10 * 60 * 1000) return;
+            if (remaining < -24 * 60 * 60 * 1000) return;
+            const cfg = getConfig();
+            const r = await httpFetch(
+                `${cfg.API_BASE}/api/auth/refresh`,
+                { method: 'POST', headers: { Authorization: `Bearer ${saved.token}` } }
+            );
+            if (r.status === 200 && r.body && r.body.token) {
+                fs.writeFileSync(SESSION_PATH, JSON.stringify({ ...saved, token: r.body.token }), 'utf8');
+                log.info('[TOKEN-REFRESH] token renovado automaticamente');
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('token-refreshed', r.body.token);
+                }
+            }
+        } catch (e) { log.warn('[TOKEN-REFRESH] error:', e.message); }
+    }, 5 * 60 * 1000);
+    _refreshTimer.unref?.();
+}
+function stopTokenRefresh() {
+    if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
+}
 
 let _eduEpoch = 0;
 function clearEduBuffers(contentId) {
@@ -1338,17 +1411,17 @@ app.whenReady().then(async () => {
     createWindow();
 
     if (canEnterDirectly()) {
-        // Sesión válida + (admin O activación DRM local válida) → mostrar player
         _userIsLoggedIn = true;
+        startTokenRefresh();
         mainWindow.once('ready-to-show', () => mainWindow.show());
     } else {
         createAuthWindow();  // primera vez, sesión expirada o sin activación DRM
     }
 
-    // Capturar URL cdp:// si la app se lanzó directamente con ella (Windows)
+    // Capturar URL edulock:// si la app se lanzó directamente con ella (Windows)
     const cdpArg = process.argv
         .slice(IS_DEV ? 2 : 1)
-        .find(a => /^cdp:\/\//i.test(a));
+        .find(a => DEEP_LINK_RE.test(a));
 
     if (cdpArg) {
         mainWindow.webContents.once('did-finish-load', () => dispatchCdpUrl(cdpArg));
@@ -1357,6 +1430,9 @@ app.whenReady().then(async () => {
     // ── Chequeo de seguridad inicial (de fondo, no bloquea el arranque) ────────
     // Corre la whitelist + chequeo de amenazas + Secure Boot/HVCI sin hacer
     // esperar al usuario. Si hay amenaza real, bloquea en ese momento.
+    syncServerClock();
+    setInterval(syncServerClock, 30 * 60 * 1000).unref?.();
+
     (async () => {
         try {
             await fetchSecurityWhitelist();
@@ -1718,15 +1794,38 @@ ipcMain.handle('get-device-info', async () => {
     };
 });
 
+// ─── Sincronización de reloj con el servidor ────────────────────────────────
+// Compensa desfases de reloj del cliente para que las firmas HMAC usen tiempo
+// del servidor (tolerancia de 5 min). Se sincroniza al arrancar y cada 30 min.
+let _serverTimeOffset = 0;
+// Siempre entero: el servidor hace parseInt del header x-cdp-ts y firma ese valor;
+// un ".5" aquí produciría una firma distinta ("Reproductor no autorizado").
+function serverNow() { return Math.round(Date.now() + _serverTimeOffset); }
+async function syncServerClock() {
+    try {
+        const apiBase = (getConfig().API_BASE || '').replace(/\/$/, '');
+        if (!apiBase) return;
+        const t0 = Date.now();
+        const r = await httpFetch(`${apiBase}/api/time`);
+        const t1 = Date.now();
+        if (r.status === 200 && r.body && r.body.ts) {
+            const rtt = (t1 - t0) / 2;
+            _serverTimeOffset = Math.round(r.body.ts - (t0 + rtt));
+            if (Math.abs(_serverTimeOffset) > 5000) {
+                log.warn(`[clock-sync] desfase corregido: ${Math.round(_serverTimeOffset / 1000)}s`);
+            }
+        }
+    } catch {}
+}
+
 // ─── Firma HMAC-SHA256 para verificar autenticidad del app ────────────────────
-// El renderer no tiene acceso a Node crypto — lo solicita al main process via IPC.
-// Así APP_SECRET nunca viaja al contexto web del renderer.
 const { createHmac } = require('crypto');
 ipcMain.handle('compute-sig', (_e, message) => {
     const secret = getConfig().APP_SECRET || '';
     if (!secret) return '';
     return createHmac('sha256', secret).update(String(message)).digest('hex');
 });
+ipcMain.handle('get-server-time', () => serverNow());
 
 // ── Auth IPC handlers ──────────────────────────────────────────────────────────
 const https = require('https');
@@ -1860,7 +1959,7 @@ async function reportSecurityEvent(event, deviceId, details = {}) {
         const cfg    = getConfig();
         const apiBase = cfg.API_BASE;
         if (!apiBase) return;
-        const ts  = Date.now();
+        const ts  = serverNow();
         const sig = createHmac('sha256', cfg.APP_SECRET || '').update('resolve:' + ts).digest('hex');
         await httpFetch(
             `${apiBase}/api/security/report`,
@@ -1944,7 +2043,7 @@ async function validateActivationOnline(deviceId) {
     try {
         const cfg     = getConfig();
         const apiBase = cfg.API_BASE;
-        const ts      = Date.now();
+        const ts      = serverNow();
         const sig     = createHmac('sha256', cfg.APP_SECRET || '').update('resolve:' + ts).digest('hex');
 
         const res = await httpFetch(
@@ -2034,35 +2133,33 @@ ipcMain.handle('activation-activate-license', async (_e, { licenseKey, deviceId 
     try {
         const cfg     = getConfig();
         const apiBase = cfg.API_BASE;
-        const ts      = Date.now();
-        const sig     = createHmac('sha256', cfg.APP_SECRET || '').update('resolve:' + ts).digest('hex');
+        const session = readSavedSession();
 
         const res = await httpFetch(
-            `${apiBase}/api/license/activate`,
-            { method: 'POST', headers: { 'x-cdp-ts': String(ts), 'x-cdp-sig': sig, Authorization: 'Bearer ' + (readSavedSession()?.token || '') } },
-            { licenseKey, deviceId, appVersion: app.getVersion() }
+            `${apiBase}/api/session/activate-license`,
+            { method: 'POST', headers: { Authorization: 'Bearer ' + (session?.token || '') } },
+            { licenseKey, deviceId }
         );
 
-        if (res.status !== 200 || !res.body?.activationToken) {
+        if (res.status !== 200 || !res.body?.token) {
             return { ok: false, error: res.body?.error || 'No se pudo activar la licencia' };
         }
 
-        // Guardar activación local cifrada
+        // Save Stage 2 JWT (license-scoped)
+        const saved = session || {};
+        fs.writeFileSync(SESSION_PATH, JSON.stringify({ ...saved, token: res.body.token }), 'utf8');
+
+        // Save activation state locally
         activationStore.saveActivation({
-            activationId:    res.body.activationId,
-            activationToken: res.body.activationToken,
+            activationId:    res.body.licenseId,
+            activationToken: res.body.token,
             licenseId:       res.body.licenseId,
-            studentId:       res.body.studentId,
+            studentId:       saved.sub || '',
             courseId:        res.body.courseId || null,
-            expiresAt:       res.body.expiresAt || null,
+            expiresAt:       null,
         }, deviceId);
 
-        if (res.body.token) {
-            const saved = readSavedSession() || {};
-            fs.writeFileSync(SESSION_PATH, JSON.stringify({ ...saved, token: res.body.token }), 'utf8');
-        }
-
-        return { ok: true, studentId: res.body.studentId };
+        return { ok: true, studentId: saved.sub || '', hasLicense: true };
     } catch (err) {
         return { ok: false, error: err.message };
     }
@@ -2087,7 +2184,7 @@ ipcMain.handle('vdocipher-otp', async (_e, { videoId, deviceId }) => {
     try {
         const cfg     = getConfig();
         const apiBase = cfg.API_BASE;
-        const ts      = Date.now();
+        const ts      = serverNow();
         const sig     = createHmac('sha256', cfg.APP_SECRET || '').update('resolve:' + ts).digest('hex');
 
         const res = await httpFetch(
@@ -2124,6 +2221,7 @@ ipcMain.on('request-license', () => {
 ipcMain.on('auth-success', () => {
     if (!canEnterDirectly()) return;
     _userIsLoggedIn = true;
+    startTokenRefresh();
     if (mainWindow) mainWindow.webContents.setAudioMuted(false);
     if (authWindow) { authWindow.close(); authWindow = null; }
     if (mainWindow) {
@@ -2146,6 +2244,7 @@ ipcMain.on('auth-success', () => {
 ipcMain.on('logout', () => {
     resourceWindows.invalidate('Se cerró la sesión.');
     clearEduBuffers();
+    activationStore.clearActivation();
     _userIsLoggedIn = false;
     _pendingCdpUrl  = null;
     try { if (fs.existsSync(SESSION_PATH)) fs.unlinkSync(SESSION_PATH); } catch { /* ok */ }

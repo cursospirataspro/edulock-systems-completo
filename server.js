@@ -70,7 +70,8 @@ const watermarkStreamClients = new Map();
 const WATERMARK_DEFAULT = {
     enabled: true,
     visible: { size: 13, color: '#ffffff', weight: 600, alpha: 0.22, enabled: true },
-    forensic: { size: 8, color: '#c8c8c8', weight: 400, alpha: 0.06, enabled: true },
+    // Marca forense casi invisible (rejilla con la huella de la sesión). Valores = los del reproductor.
+    forensic: { on: true, size: 11, color: '#808080', weight: 500, alpha: 0.02, enabled: true },
     email:    { on: true, size: 35, color: '#ff2d2d', weight: 700, alpha: 0.60 },
     ip:       { on: true, size: 16, color: '#ffffff', weight: 600, alpha: 0.22 },
     code:     { on: true, size: 16, color: '#ffffff', weight: 600, alpha: 0.22 },
@@ -91,11 +92,76 @@ function mergeWatermarkConfig(base) {
 }
 
 const WATERMARK_CONFIG_KEY = 'watermark_config';
+const WATERMARK_OS_KEYS = ['windows', 'mac', 'linux', 'android', 'ios'];
 
-function getWatermarkConfig(courseId = '__default__', os = 'windows') {
-    const stored = watermarkConfigStore.get(courseId) || {};
-    const base = (stored && typeof stored === 'object' && stored[os]) ? stored[os] : WATERMARK_DEFAULT;
+// El panel y el reproductor usan "mac"; versiones anteriores emitían "macos".
+function normalizeWatermarkOs(os) {
+    const o = String(os || 'windows').toLowerCase();
+    if (o === 'macos' || o === 'darwin') return 'mac';
+    if (o === 'iphone') return 'ios';
+    return WATERMARK_OS_KEYS.includes(o) ? o : 'windows';
+}
+
+// Ámbitos de configuración: "__default__" | "<courseId>" | "producer:<producerId>"
+function isValidWatermarkScope(scope) {
+    return scope === '__default__' || /^[0-9a-f-]{36}$/i.test(scope) || /^producer:[A-Za-z0-9_-]{1,64}$/.test(scope);
+}
+
+// Configuración CRUDA de un ámbito (lo que edita el panel), rellenada con los defaults.
+function getWatermarkConfig(scope = '__default__', os = 'windows') {
+    os = normalizeWatermarkOs(os);
+    const stored = watermarkConfigStore.get(scope) || {};
+    const base = (stored && typeof stored === 'object' && stored[os]) ? stored[os] : {};
     return mergeWatermarkConfig(base);
+}
+
+// Configuración EFECTIVA para una reproducción: predeterminado ← productor ← curso.
+// Cada capa solo sobreescribe las claves que define, por elemento.
+function resolveWatermarkConfig({ courseId = null, producerId = null } = {}, os = 'windows') {
+    os = normalizeWatermarkOs(os);
+    const layers = [];
+    const def = watermarkConfigStore.get('__default__');
+    if (def && def[os]) layers.push(def[os]);
+    if (producerId) {
+        const p = watermarkConfigStore.get('producer:' + producerId);
+        if (p && p[os]) layers.push(p[os]);
+    }
+    if (courseId && courseId !== '__default__') {
+        const c = watermarkConfigStore.get(courseId);
+        if (c && c[os]) layers.push(c[os]);
+    }
+    const base = {};
+    for (const layer of layers) {
+        if (!layer || typeof layer !== 'object') continue;
+        for (const [k, v] of Object.entries(layer)) {
+            if (v && typeof v === 'object' && !Array.isArray(v)) base[k] = { ...(base[k] || {}), ...v };
+            else base[k] = v;
+        }
+    }
+    return mergeWatermarkConfig(base);
+}
+
+// courseId → producerId (con caché corta) para que el push en vivo por productor
+// llegue a los reproductores, que solo conocen su curso y su video.
+const _wmOwnerCache = new Map();
+async function watermarkOwnerFor({ courseId = null, videoId = null } = {}) {
+    const key = `${courseId || ''}|${videoId || ''}`;
+    const hit = _wmOwnerCache.get(key);
+    if (hit && hit.exp > Date.now()) return hit.value;
+    let producerId = null;
+    try {
+        if (courseId && courseId !== '__default__' && db.getCourseById) {
+            const course = await db.getCourseById(courseId);
+            producerId = course?.producerId || null;
+        }
+        if (!producerId && videoId && db.getCatalogById) {
+            const video = await db.getCatalogById(videoId);
+            producerId = video?.producerId || null;
+        }
+    } catch { /* sin BD: sin productor */ }
+    const value = { producerId };
+    _wmOwnerCache.set(key, { value, exp: Date.now() + 120000 });
+    return value;
 }
 
 async function loadStoredWatermarkConfig() {
@@ -106,6 +172,12 @@ async function loadStoredWatermarkConfig() {
         if (parsed && typeof parsed === 'object') {
             for (const [courseId, cfg] of Object.entries(parsed)) {
                 if (cfg && typeof cfg === 'object') {
+                    // Migración: guardados antiguos arrastraban el forensic por defecto del
+                    // servidor (8px/6%), que nadie eligió. Se descarta para usar el actual (11px/2%).
+                    for (const osCfg of Object.values(cfg)) {
+                        const f = osCfg && osCfg.forensic;
+                        if (f && f.size === 8 && f.color === '#c8c8c8' && f.alpha === 0.06) delete osCfg.forensic;
+                    }
                     watermarkConfigStore.set(courseId, cfg);
                 }
             }
@@ -125,14 +197,20 @@ async function persistWatermarkConfigStore() {
     }
 }
 
-function broadcastWatermarkConfig(courseId = '__default__', os = 'windows') {
-    const payload = getWatermarkConfig(courseId, os);
-    const clients = watermarkStreamClients.get(courseId) || [];
-    const chunk = `event: config\ndata: ${JSON.stringify(payload)}\n\n`;
-    for (const client of clients.filter(c => String(c.os || 'windows') === String(os))) {
-        try {
-            if (!client.res.writableEnded) client.res.write(chunk);
-        } catch {}
+// Tras cualquier cambio (predeterminado, productor o curso) se recalcula la
+// configuración efectiva de CADA reproductor conectado y se le envía solo si cambió.
+function broadcastWatermarkConfig() {
+    for (const clients of watermarkStreamClients.values()) {
+        for (const client of clients) {
+            try {
+                if (client.res.writableEnded) continue;
+                const payload = resolveWatermarkConfig({ courseId: client.courseId, producerId: client.producerId }, client.os);
+                const json = JSON.stringify(payload);
+                if (json === client.lastJson) continue;
+                client.lastJson = json;
+                client.res.write(`event: config\ndata: ${json}\n\n`);
+            } catch {}
+        }
     }
 }
 
@@ -189,6 +267,20 @@ const findStudentByEmail = async (email) => await db.findStudentByEmail(email);
 // SSRF: solo se permiten dominios de Bunny.net
 const SAFE_BUNNY_RE = /^https:\/\/[a-z0-9-]+\.(?:b-cdn\.net|bunnycdn\.com|mediadelivery\.net)\//i;
 function isSafeBunnyUrl(url) { return SAFE_BUNNY_RE.test(url); }
+
+// SSRF: validate document URLs — reject file://, localhost, private IPs
+function isValidDocumentUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    try {
+        const u = new URL(url);
+        if (!['http:', 'https:'].includes(u.protocol)) return false;
+        const host = u.hostname.toLowerCase();
+        if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]') return false;
+        if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.)/.test(host)) return false;
+        if (host.endsWith('.local') || host.endsWith('.internal')) return false;
+        return true;
+    } catch { return false; }
+}
 
 // Token auth key para el pull zone de Bunny Stream
 const BUNNY_TOKEN_KEY = process.env.BUNNY_TOKEN_KEY || '';
@@ -446,8 +538,7 @@ const app  = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const JWT_SECRET  = process.env.JWT_SECRET;
 const JWT_EXPIRES = process.env.JWT_EXPIRES_IN || '2h';
-// Tokens de alumnos: sin caducidad (100 años) — los enlaces permanentes nunca expiran
-const STUDENT_JWT_EXPIRES = process.env.STUDENT_JWT_EXPIRES_IN || '100y';
+const STUDENT_JWT_EXPIRES = process.env.STUDENT_JWT_EXPIRES_IN || '2h';
 const MEDIA_TTL      = parseInt(process.env.MEDIA_TOKEN_TTL || '1800', 10);
 const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT_SESSIONS || '1', 10);
 // Secreto compartido app↔servidor para verificar que las peticiones vienen del reproductor oficial.
@@ -457,7 +548,7 @@ const APP_SECRET = process.env.APP_SECRET || '';
 // Shared player contract: identity, license, provider and active media session.
 const playerSessions = createPlayerSessions({ db, jwt, jwtSecret: JWT_SECRET, accessPolicy });
 const playerHandshake = createPlayerHandshake({
-    db, jwt, jwtSecret: JWT_SECRET, accessPolicy, getWatermarkConfig, generateFingerprint, sessions: playerSessions,
+    db, jwt, jwtSecret: JWT_SECRET, accessPolicy, getWatermarkConfig, resolveWatermarkConfig, generateFingerprint, sessions: playerSessions,
     mediaTtl: MEDIA_TTL, maxConcurrent: MAX_CONCURRENT, isReady: () => dbReady,
     publicBase: req => process.env.PUBLIC_URL || process.env.BASE_URL || `${req.protocol}://${req.get('host')}`,
     verifyFirebaseToken: async token => {
@@ -505,18 +596,15 @@ function deriveEduCek(saltHex, contentId) {
 // Modo de fallo: si APP_SECRET no está configurado, se permite sin firma (dev).
 function validateAppSig(req, res, next) {
     if (!APP_SECRET) return next(); // sin secreto configurado → no se valida (dev)
-    const ts  = parseInt(req.headers['x-cdp-ts']  || '0', 10);
+    const tsRaw = String(req.headers['x-cdp-ts'] || '').trim();
+    const ts  = parseFloat(tsRaw) || 0;
     const sig  = req.headers['x-cdp-sig']  || '';
     const now  = Date.now();
-    // Tolerancia MUY amplia (30 días): la seguridad real la aporta el HMAC con
-    // APP_SECRET (+ JWT en endpoints autenticados); el timestamp solo acota replays
-    // antiguos. Con 5 min, cualquier alumno con el reloj/zona horaria mal configurado
-    // quedaba bloqueado con "Firma de reproductor expirada" sin poder activar licencia.
-    const SIG_TOLERANCE_MS = 30 * 24 * 60 * 60_000;
+    const SIG_TOLERANCE_MS = 5 * 60 * 1000;
     if (!sig) {
         return res.status(401).json({ error: 'Firma de reproductor ausente.' });
     }
-    if (!ts || Math.abs(now - ts) > SIG_TOLERANCE_MS) {
+    if (!ts || !/^\d+(\.\d+)?$/.test(tsRaw) || Math.abs(now - ts) > SIG_TOLERANCE_MS) {
         return res.status(401).json({ error: 'Firma de reproductor expirada. Verifica la fecha y hora de tu equipo.' });
     }
     // Observabilidad: registrar desfases grandes de reloj (no bloquea)
@@ -524,9 +612,11 @@ function validateAppSig(req, res, next) {
         console.warn(`[appsig] desfase de reloj del cliente: ${Math.round((now - ts) / 60000)} min · ip=${req.ip || '?'} · path=${req.path}`);
     }
     // El mensaje firmado varía según el endpoint para evitar reutilización entre endpoints
+    // Se firma el timestamp EXACTAMENTE como lo envió el cliente: players antiguos
+    // pueden mandar decimales ("...456.5") y parseInt rompía la firma a mitad de las veces.
     const isRedeem  = req.path.startsWith('/api/playback/t/');
     const token     = isRedeem ? (req.params.token || '') : '';
-    const message   = isRedeem ? (token + ':' + ts) : ('resolve:' + ts);
+    const message   = isRedeem ? (token + ':' + tsRaw) : ('resolve:' + tsRaw);
     const expected  = crypto.createHmac('sha256', APP_SECRET).update(message).digest('hex');
     try {
         if (!crypto.timingSafeEqual(Buffer.from(sig.padEnd(64, '0')), Buffer.from(expected.padEnd(64, '0')))) {
@@ -695,9 +785,26 @@ function requireResourceManager(req, res, next) {
 //  Ventana deslizante en memoria por IP+ruta. Nota: en cluster PM2 el límite
 //  es por-worker; para límite global usar Redis (ver notas del PDF, Mejora 2).
 // ================================================================
-const _authHits = new Map(); // key -> { count, resetAt }
-const AUTH_RL_WINDOW_MS = parseInt(process.env.AUTH_RL_WINDOW_MS || '900000', 10); // 15 min
-const AUTH_RL_MAX       = parseInt(process.env.AUTH_RL_MAX       || '10', 10);     // 10 intentos/ventana
+const _authHits = new Map();
+const AUTH_RL_WINDOW_MS = parseInt(process.env.AUTH_RL_WINDOW_MS || '900000', 10);
+const AUTH_RL_MAX       = parseInt(process.env.AUTH_RL_MAX       || '10', 10);
+const AUTH_RL_FILE      = path.resolve('./data/rate-limits.json');
+(function _rlLoad() {
+    try {
+        const raw = JSON.parse(fs.readFileSync(AUTH_RL_FILE, 'utf-8'));
+        const now = Date.now();
+        for (const [k, v] of Object.entries(raw)) { if (v.resetAt > now) _authHits.set(k, v); }
+    } catch {}
+})();
+function _rlPersist() {
+    try {
+        const obj = {};
+        const now = Date.now();
+        for (const [k, v] of _authHits) { if (v.resetAt > now) obj[k] = v; }
+        fs.mkdirSync(path.dirname(AUTH_RL_FILE), { recursive: true });
+        fs.writeFileSync(AUTH_RL_FILE, JSON.stringify(obj), 'utf-8');
+    } catch {}
+}
 function authRateLimit(req, res, next) {
     const ip = req.ip || req.socket?.remoteAddress || 'unknown';
     const key = ip + '|' + req.path;
@@ -708,12 +815,13 @@ function authRateLimit(req, res, next) {
     if (e.count > AUTH_RL_MAX) {
         const retry = Math.ceil((e.resetAt - now) / 1000);
         res.setHeader('Retry-After', String(retry));
-        console.warn('[AUTH-RL] bloqueado ip=%s path=%s', ip, req.path);
+        console.warn('[AUTH-RL] bloqueado ip=%s path=%s count=%d', ip, req.path, e.count);
+        _rlPersist();
         return res.status(429).json({ error: 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.' });
     }
     next();
 }
-setInterval(() => { const now = Date.now(); for (const [k, e] of _authHits) if (e.resetAt < now) _authHits.delete(k); }, 5 * 60 * 1000).unref?.();
+setInterval(() => { const now = Date.now(); for (const [k, e] of _authHits) if (e.resetAt < now) _authHits.delete(k); _rlPersist(); }, 60 * 1000).unref?.();
 
 // ================================================================
 //  REVOCACIÓN EN TIEMPO REAL (P0-2 del PDF)
@@ -872,6 +980,10 @@ async function lookupIpInfo(ip) {
 //  RUTAS: AUTENTICACIÓN
 // ================================================================
 
+app.get('/api/time', (_req, res) => {
+    res.json({ ts: Date.now() });
+});
+
 // --- Login de alumnos: email + ID de alumno + fingerprint de dispositivo ---
 app.post('/api/auth/login', authRateLimit, async (req, res) => {
     const { email, studentId, deviceFingerprint } = req.body || {};
@@ -1020,6 +1132,28 @@ app.post('/api/auth/login-email', authRateLimit, async (req, res) => {
                 [deviceId || null, student.id]);
         }
 
+        // ── Verificación de integridad del dispositivo Android ─────────
+        const rootIndicators = [];
+        if (buildFingerprint) {
+            const fp = String(buildFingerprint).toLowerCase();
+            if (fp.includes('test-keys'))    rootIndicators.push('test-keys');
+            if (fp.includes('userdebug'))    rootIndicators.push('userdebug');
+            if (fp.includes('lineageos'))    rootIndicators.push('lineageos');
+            if (fp.includes('cyanogenmod'))  rootIndicators.push('cyanogenmod');
+        }
+        const isRooted = req.body.isRooted === true;
+        const hasSu    = req.body.hasSu === true;
+        if (isRooted || hasSu) rootIndicators.push(isRooted ? 'root-flag' : 'su-binary');
+
+        if (rootIndicators.length > 0) {
+            console.warn(`[auth/login-email] [INTEGRITY] Dispositivo con indicadores de root: ${rootIndicators.join(', ')} email=${email} device=${deviceId} fingerprint=${buildFingerprint || '?'}`);
+            return res.status(403).json({
+                error: 'Dispositivo no compatible. Por seguridad, no se permite el acceso desde dispositivos modificados.',
+                code: 'DEVICE_INTEGRITY_FAILED',
+                indicators: rootIndicators
+            });
+        }
+
         // Generar JWT
         const token = jwt.sign(
             {
@@ -1090,16 +1224,146 @@ app.post('/api/auth/admin-login', authRateLimit, async (req, res) => {
     res.json({ token, expiresIn: JWT_EXPIRES });
 });
 
-app.post('/api/auth/refresh', requireAuth, async (req, res) => {
-    if (!isAccountToken(req.user)) return res.status(403).json({ error: 'Inicia sesión para renovar tu cuenta.', code: 'ACCOUNT_TOKEN_REQUIRED' });
-    const { sub, username, admin, label, email, deviceId, allowedVideos } = req.user;
+app.post('/api/auth/refresh', async (req, res) => {
+    const header = req.headers['authorization'] || '';
+    if (!header.startsWith('Bearer ')) return res.status(401).json({ error: 'No autorizado' });
+    let payload;
+    try {
+        payload = jwt.verify(header.slice(7), JWT_SECRET);
+    } catch (err) {
+        if (err.name === 'TokenExpiredError') {
+            payload = jwt.verify(header.slice(7), JWT_SECRET, { ignoreExpiration: true });
+            const expiredAgo = Date.now() - (payload.exp * 1000);
+            if (expiredAgo > 24 * 60 * 60 * 1000) return res.status(401).json({ error: 'Token expirado hace mas de 24h. Inicia sesion de nuevo.', code: 'TOKEN_EXPIRED' });
+        } else {
+            return res.status(401).json({ error: 'Token invalido' });
+        }
+    }
+    if (!isAccountToken(payload)) return res.status(403).json({ error: 'Inicia sesion para renovar tu cuenta.', code: 'ACCOUNT_TOKEN_REQUIRED' });
+    const { sub, username, admin, label, email, deviceId, allowedVideos, producer, producerId, hasLicense, licenseId, courseId, role } = payload;
     const expiresIn = admin ? JWT_EXPIRES : STUDENT_JWT_EXPIRES;
     const token = jwt.sign(
-        { sub, username, admin, label, email, deviceId, allowedVideos },
+        { sub, username, admin, label, email, deviceId, allowedVideos, producer, producerId, hasLicense, licenseId, courseId, role },
         JWT_SECRET,
         { expiresIn, issuer: 'reproductor-cursos' }
     );
     res.json({ token, expiresIn });
+});
+
+// ================================================================
+//  SESSION — ONE LICENSE PER SESSION (Section 15)
+// ================================================================
+
+function hashLicenseKey(licenseKey) {
+    return crypto.createHmac('sha256', process.env.JWT_SECRET || 'secret')
+        .update(licenseKey).digest('hex');
+}
+
+/**
+ * POST /api/session/activate-license
+ * Activa una licencia en la sesión actual. Devuelve Stage 2 JWT con acceso a un curso.
+ * Body: { licenseKey, deviceId? }
+ */
+app.post('/api/session/activate-license', requireAuth, async (req, res) => {
+    try {
+        if (req.user.admin) {
+            return res.json({ status: 'admin', hasLicense: true, allowedVideos: ['*'] });
+        }
+
+        const { licenseKey, deviceId: bodyDeviceId } = req.body || {};
+        if (!licenseKey) return res.status(400).json({ error: 'licenseKey requerido' });
+
+        const cleanKey = String(licenseKey).trim().toUpperCase().replace(/[\s-]/g, '');
+        if (!/^[A-Z0-9]{16}$/.test(cleanKey)) {
+            return res.status(400).json({ error: 'Formato de licencia inválido' });
+        }
+        const formatted = `${cleanKey.slice(0,4)}-${cleanKey.slice(4,8)}-${cleanKey.slice(8,12)}-${cleanKey.slice(12,16)}`;
+        const licenseKeyHash = hashLicenseKey(formatted);
+
+        const license = await db.getLicenseByKeyHash(licenseKeyHash);
+        if (!license) return res.status(401).json({ error: 'Licencia inválida o no encontrada' });
+        if (license.status !== 'active') return res.status(403).json({ error: 'Licencia inactiva o revocada' });
+        if (license.expires_at && new Date(license.expires_at) < new Date()) {
+            return res.status(403).json({ error: 'Licencia expirada' });
+        }
+
+        const studentId = req.user.sub;
+
+        // Auto-bind si la licencia no tiene alumno
+        if (!license.student_id) {
+            const bound = await db.bindLicenseToStudent(license.id, studentId);
+            if (!bound) return res.status(409).json({ error: 'Esta licencia ya fue asignada a otro usuario' });
+            if (license.producer_id) {
+                await db.linkProducerStudent(license.producer_id, studentId, 'license_activation');
+            }
+            if (license.course_id) {
+                await db.addStudentCourse(studentId, license.course_id, 'license');
+            }
+        } else if (license.student_id !== studentId) {
+            return res.status(403).json({ error: 'Esta licencia pertenece a otro usuario' });
+        }
+
+        // Device activation (if deviceId provided)
+        const effectiveDeviceId = bodyDeviceId || req.user.deviceId || 'unknown';
+        if (effectiveDeviceId && effectiveDeviceId !== 'unknown') {
+            const activationToken = crypto.randomBytes(32).toString('base64url');
+            const activationTokenHash = crypto.createHmac('sha256', process.env.JWT_SECRET || 'secret')
+                .update(activationToken).digest('hex');
+
+            const act = await db.activateDeviceAtomic({
+                licenseId: license.id,
+                studentId,
+                deviceId: effectiveDeviceId,
+                activationTokenHash,
+                maxAllowed: license.max_devices || 2,
+                expiresAt: license.expires_at || null,
+            });
+
+            if (!act.ok) {
+                return res.status(403).json({
+                    error: `Límite de ${act.limit} dispositivos alcanzado.`,
+                    code: 'DEVICE_LIMIT_EXCEEDED',
+                });
+            }
+        }
+
+        // Compute allowed videos for this license's course
+        const courseId = license.course_id;
+        let allowedVideos = [];
+        if (courseId) {
+            allowedVideos = [courseId];
+        }
+
+        // Stage 2 JWT: acceso limitado a un curso
+        const token = jwt.sign(
+            {
+                sub: studentId,
+                email: req.user.email,
+                studentEmail: req.user.email,
+                deviceId: effectiveDeviceId,
+                approved: true,
+                role: 'student',
+                hasLicense: true,
+                licenseId: license.id,
+                courseId: courseId || null,
+                allowedVideos,
+            },
+            JWT_SECRET,
+            { expiresIn: '30d', issuer: 'reproductor-cursos' }
+        );
+
+        res.json({
+            status: 'activated',
+            token,
+            hasLicense: true,
+            licenseId: license.id,
+            courseId: courseId || null,
+            allowedVideos,
+        });
+    } catch (err) {
+        console.error('[session/activate-license] Error:', err.message);
+        res.status(500).json({ error: 'Error interno' });
+    }
 });
 
 /**
@@ -1509,7 +1773,11 @@ app.delete('/api/video/:videoId', requireAdmin, async (req, res) => {
  */
 app.get('/api/my-catalog', requireAuth, async (req, res) => {
     try {
-        const allowed   = req.user.admin ? ['*'] : (Array.isArray(req.user.allowedVideos) ? req.user.allowedVideos : []);
+        // One-license-per-session: student must activate a license first
+        if (!req.user.admin && req.user.hasLicense === false) {
+            return res.json({ courses: [], requiresLicense: true });
+        }
+        const allowed   = req.user.admin ? ['*'] : (Array.isArray(req.user.allowedVideos) ? req.user.allowedVideos : ['*']);
         const allVideos = (await db.loadCatalog()).filter(v => v.status === 'ready');
         const videos    = allowed.includes('*') ? allVideos : allVideos.filter(v => allowed.includes(v.videoId) || allowed.includes(v.courseId));
         const courses   = await db.getAllCourses();
@@ -2299,19 +2567,148 @@ app.post('/api/auth/account-status', authRateLimit, async (req, res) => {
 });
 app.post('/api/auth/firebase-login', authRateLimit, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
+    if (!dbReady) return res.status(503).json({ error: 'DB no disponible' });
+    if (!firebaseAdmin) return res.status(503).json({ error: 'Firebase Admin no inicializado' });
+    const { idToken, deviceId, deviceModel, deviceName, platform, osRelease, appVersion,
+            deviceSerial, osVersion, osVersionCode, cpuCores, totalRam, androidId, buildFingerprint,
+            brand, manufacturer, fcmToken, integrityToken } = req.body || {};
+    if (!idToken) return res.status(400).json({ error: 'idToken requerido' });
+
+    let decoded;
     try {
-        const result = await accountAuth.login(req.body);
-        if (result.status === 'approved' && result.role === 'student') {
-            const claims = jwt.verify(result.token, JWT_SECRET);
-            const fields = ['deviceModel','deviceName','deviceSerial','osVersion','osVersionCode','cpuCores','totalRam','androidId','buildFingerprint','brand','manufacturer','fcmToken'];
-            const values = fields.map(field => String(req.body[field] ?? '').slice(0, field === 'fcmToken' ? 4096 : 250));
-            await db.pool.query(`UPDATE students SET device_model=$1,device_name=$2,device_serial=$3,os_version=$4,
-                os_version_code=$5,cpu_cores=$6,total_ram=$7,android_id=$8,build_fingerprint=$9,brand=$10,
-                manufacturer=$11,fcm_token=$12,last_login=NOW()::text WHERE id=$13`, [...values, claims.sub])
-                .catch(() => console.warn('[auth] No se pudo actualizar la telemetría de un dispositivo autenticado.'));
+        decoded = await firebaseAdmin.auth().verifyIdToken(idToken, firebasePrivileged);
+    } catch (e) {
+        return res.status(401).json({ error: 'Token Firebase inválido o expirado' });
+    }
+
+    const { uid, email } = decoded;
+    const clientIp = req.ip || req.connection?.remoteAddress || '';
+    console.log(`[firebase-login] uid=${uid} email=${email} device=${deviceId || 'n/a'} ip=${clientIp}`);
+
+    // ── Play Integrity attestation (Android) ──
+    if (integrityToken && process.env.PLAY_INTEGRITY_KEY) {
+        try {
+            const piRes = await fetch('https://playintegrity.googleapis.com/v1/' +
+                process.env.PLAY_INTEGRITY_PACKAGE + ':decodeIntegrityToken', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.PLAY_INTEGRITY_KEY },
+                body: JSON.stringify({ integrity_token: integrityToken }),
+            }).then(r => r.json());
+            const verdict = piRes?.tokenPayloadExternal?.deviceIntegrity?.deviceRecognitionVerdict || [];
+            const meetsDi = verdict.includes('MEETS_DEVICE_INTEGRITY');
+            console.log(`[firebase-login] [INTEGRITY] Play Integrity verdict=${JSON.stringify(verdict)} meetsDI=${meetsDi} email=${email}`);
+            if (!meetsDi) {
+                console.warn(`[firebase-login] [INTEGRITY] Device failed Play Integrity: email=${email} device=${deviceId}`);
+            }
+        } catch (e) {
+            console.warn(`[firebase-login] [INTEGRITY] Play Integrity check error: ${e.message}`);
         }
-        res.json(result);
-    } catch (error) { sendAccountError(res, error); }
+    } else if (integrityToken) {
+        console.log(`[firebase-login] [INTEGRITY] integrityToken received but PLAY_INTEGRITY_KEY not configured`);
+    }
+
+    const geoInfo = await lookupIpInfo(clientIp).catch(() => null);
+    const geoCity = geoInfo?.city || '';
+    const osStr     = platform && osRelease ? `${platform} ${osRelease}` : (platform || deviceName || '');
+    const browserStr = appVersion ? `Edulock Player ${appVersion}` : (deviceModel || '');
+
+    // ── Admin check ──
+    const envAdminUser = (process.env.ADMIN_USER || '').trim().toLowerCase();
+    const knownAdminUser = email ? findUser(email.trim().toLowerCase()) : null;
+    const isAdminEmail = email && (email.trim().toLowerCase() === envAdminUser);
+    if (decoded.admin === true || isAdminEmail || (knownAdminUser && knownAdminUser.admin === true)) {
+        if (deviceId) {
+            await db.registerOrValidateDevice(
+                `admin_${uid}`, deviceId,
+                { deviceName: deviceName || '', browser: browserStr, os: osStr, city: geoCity },
+                2
+            ).catch(() => {});
+        }
+        if (email) {
+            db.findStudentByEmail(email).then(s => {
+                if (s && !s.firebase_uid) db.linkFirebaseUid(s.id, uid).catch(() => {});
+            }).catch(() => {});
+        }
+        const adminToken = jwt.sign(
+            { sub: uid, email, admin: true, deviceId: deviceId || 'unknown', approved: true },
+            JWT_SECRET,
+            { expiresIn: '30d', issuer: 'reproductor-cursos' }
+        );
+        return res.json({ status: 'approved', role: 'admin', token: adminToken, email, name: 'Administrador' });
+    }
+
+    // ── Alumno normal ──
+    let student = await db.getStudentByFirebaseUid(uid).catch(() => null);
+    if (!student && email) {
+        student = await db.findStudentByEmail(email).catch(() => null);
+        if (student) await db.linkFirebaseUid(student.id, uid).catch(() => {});
+    }
+
+    if (!student) {
+        // Auto-registro: crear estudiante automáticamente (sin aprobación manual)
+        const newId = uuidv4();
+        const autoStudentId = email.split('@')[0] + '_' + Date.now().toString(36);
+        student = await db.createStudent({
+            id: newId, email, studentId: autoStudentId,
+            name: decoded.name || email.split('@')[0],
+            active: true, allowedVideos: [],
+        });
+        await db.linkFirebaseUid(newId, uid).catch(() => {});
+        await db.updateStudentApprovalStatus(newId, 'approved').catch(() => {});
+        if (deviceId) {
+            await db.createRegistrationRequest({
+                email, name: decoded.name || email.split('@')[0],
+                deviceId, deviceModel: deviceModel || '', deviceName: deviceName || '', firebaseUid: uid,
+            }).catch(() => {});
+            await db.updateRegistrationRequest(
+                (await db.getRegistrationRequestByDevice(deviceId).catch(() => null))?.id,
+                { status: 'auto_approved', reviewedBy: 'system' }
+            ).catch(() => {});
+        }
+        console.log(`[firebase-login] Auto-registered student: ${email} (${newId})`);
+    }
+
+    const approvalStatus = student.approval_status || 'approved';
+    if (approvalStatus === 'suspended') return res.json({ status: 'suspended', email });
+    if (approvalStatus === 'rejected')  return res.json({ status: 'rejected', email });
+
+    // ── Bloqueo y registro de dispositivo ──
+    if (deviceId) {
+        const devResult = await db.registerOrValidateDevice(
+            student.id, deviceId,
+            { deviceName: deviceName || '', browser: browserStr, os: osStr, city: geoCity },
+            1
+        ).catch(() => ({ ok: true }));
+        if (devResult.ok === false) {
+            return res.status(403).json({
+                status: 'wrong_device',
+                error: devResult.reason === 'device_blocked'
+                    ? 'Este dispositivo ha sido bloqueado por el administrador.'
+                    : `Límite de dispositivos alcanzado. Esta cuenta ya está activa en ${devResult.limit || 1} dispositivo(s). Contacta al administrador para resetear tus dispositivos.`,
+            });
+        }
+    }
+
+    // Actualizar telemetría del dispositivo
+    if (deviceId) {
+        await db.pool.query(`
+            UPDATE students SET device_model=$1, device_name=$2, device_serial=$3, os_version=$4,
+                os_version_code=$5, cpu_cores=$6, total_ram=$7, android_id=$8, build_fingerprint=$9,
+                brand=$10, manufacturer=$11, fcm_token=$12, last_login=NOW()::text
+            WHERE id=$13
+        `, [deviceModel || '', deviceName || '', deviceSerial || '', osVersion || '', osVersionCode || '',
+            cpuCores || '', totalRam || '', androidId || '', buildFingerprint || '',
+            brand || '', manufacturer || '', fcmToken || '', student.id]).catch(() => {});
+    }
+
+    // Stage 1 JWT: login sin acceso a contenido (one-license-per-session)
+    const token = jwt.sign(
+        { sub: student.id, email: student.email, studentEmail: student.email, deviceId: deviceId || 'unknown', approved: true, role: 'student', hasLicense: false },
+        JWT_SECRET,
+        { expiresIn: STUDENT_JWT_EXPIRES, issuer: 'reproductor-cursos' }
+    );
+
+    res.json({ status: 'approved', role: 'student', token, expiresIn: STUDENT_JWT_EXPIRES, requiresLicense: true });
 });
 
 /**
@@ -3023,22 +3420,31 @@ app.get('/api/watermark/detect', requireAdmin, async (req, res) => {
     res.json(match);
 });
 
-app.get('/api/watermark/stream/:courseId', (req, res) => {
+// SSE en vivo. El reproductor se suscribe con su curso (y opcionalmente ?v=videoId);
+// el servidor deduce el productor y envía la configuración EFECTIVA.
+app.get('/api/watermark/stream/:courseId', async (req, res) => {
     const courseId = decodeURIComponent(req.params.courseId || '__default__');
-    const os = String(req.query.os || 'windows');
+    const os = normalizeWatermarkOs(req.query.os);
+    const videoId = /^[0-9a-f-]{36}$/i.test(String(req.query.v || '')) ? String(req.query.v) : null;
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
 
-    const payload = getWatermarkConfig(courseId, os);
-    res.write(`event: config\ndata: ${JSON.stringify(payload)}\n\n`);
+    const { producerId } = await watermarkOwnerFor({ courseId, videoId });
+    const client = { res, os, courseId, videoId, producerId, lastJson: '' };
+    client.lastJson = JSON.stringify(resolveWatermarkConfig({ courseId, producerId }, os));
+    res.write(`event: config\ndata: ${client.lastJson}\n\n`);
 
     const clients = watermarkStreamClients.get(courseId) || [];
-    clients.push({ res, os });
+    clients.push(client);
     watermarkStreamClients.set(courseId, clients);
 
+    // Latido: evita que nginx/proxies corten la conexión por inactividad.
+    const ping = setInterval(() => { try { if (!res.writableEnded) res.write(': ping\n\n'); } catch {} }, 25000);
     req.on('close', () => {
+        clearInterval(ping);
         const remaining = (watermarkStreamClients.get(courseId) || []).filter(c => c.res !== res);
         if (remaining.length) watermarkStreamClients.set(courseId, remaining);
         else watermarkStreamClients.delete(courseId);
@@ -3046,22 +3452,35 @@ app.get('/api/watermark/stream/:courseId', (req, res) => {
 });
 
 app.post('/api/watermark/config', requireAdmin, async (req, res) => {
-    const { courseId = '__default__', os = 'windows', config = req.body || {} } = req.body || {};
-    const existing = watermarkConfigStore.get(courseId) || {};
-    const next = { ...existing, [os]: config };
-    watermarkConfigStore.set(courseId, next);
-    console.log('[watermark] config update', { courseId, os, config });
+    const scope = String((req.body || {}).courseId || '__default__').trim();
+    const os = normalizeWatermarkOs((req.body || {}).os);
+    const config = (req.body || {}).config;
+    if (!isValidWatermarkScope(scope)) return res.status(400).json({ error: 'Ámbito inválido' });
+    if (!config || typeof config !== 'object') return res.status(400).json({ error: 'Configuración inválida' });
+    const existing = watermarkConfigStore.get(scope) || {};
+    const next = { ...existing };
+    // clear=true → el ámbito deja de tener config propia para ese sistema y vuelve a heredar.
+    if ((req.body || {}).clear === true && scope !== '__default__') delete next[os];
+    else next[os] = config;
+    if (Object.keys(next).length) watermarkConfigStore.set(scope, next);
+    else watermarkConfigStore.delete(scope);
+    console.log('[watermark] config update', { scope, os });
     await persistWatermarkConfigStore();
-    broadcastWatermarkConfig(courseId, os);
-    res.json({ ok: true, courseId, os, config: next[os] });
+    broadcastWatermarkConfig();
+    res.json({ ok: true, courseId: scope, os, config: getWatermarkConfig(scope, os) });
 });
 
-// Debug helper: devuelve la configuración actual en memoria (útil para comprobar desde la VPS)
+// Configuración cruda de un ámbito (la que edita el panel). Con ?effective=1 y
+// courseId/producerId devuelve la configuración efectiva que vería un alumno.
 app.get('/api/watermark/config', (req, res) => {
-    const courseId = String(req.query.courseId || '__default__');
-    const os = String(req.query.os || 'windows');
-    const cfg = getWatermarkConfig(courseId, os);
-    res.json({ ok: true, courseId, os, config: cfg });
+    const scope = String(req.query.courseId || '__default__');
+    const os = normalizeWatermarkOs(req.query.os);
+    if (String(req.query.effective || '') === '1') {
+        const courseId = scope.startsWith('producer:') ? null : scope;
+        const producerId = scope.startsWith('producer:') ? scope.slice(9) : (String(req.query.producerId || '') || null);
+        return res.json({ ok: true, courseId: scope, os, effective: true, config: resolveWatermarkConfig({ courseId, producerId }, os) });
+    }
+    res.json({ ok: true, courseId: scope, os, config: getWatermarkConfig(scope, os), hasOwn: !!(watermarkConfigStore.get(scope) || {})[os] });
 });
 
 /**
@@ -3140,7 +3559,7 @@ app.get('/edu-player', (req, res) => res.sendFile(path.join(__dirname, 'public',
 
 /**
  * GET /launch?t=TOKEN[&dl=DOWNLOAD_URL]
- * Página intermedia que intenta abrir el reproductor vía cdp://.
+ * Página intermedia que intenta abrir el reproductor vía edulock://.
  * Si el reproductor no está instalado, redirige a la URL de descarga.
  * Si el token es inválido o ya expiró, muestra error.
  */
@@ -3503,7 +3922,7 @@ app.post('/api/playback/generate-command', requireAuth, async (req, res) => {
     };
 
     const token   = encryptCommand(payload);
-    const command = `cdp://${token}`;
+    const command = `edulock://${token}`;
 
     // JWT corto para que el reproductor externo valide al alumno (15 min)
     const playerToken = jwt.sign(
@@ -3523,7 +3942,7 @@ app.post('/api/playback/generate-command', requireAuth, async (req, res) => {
     const shortToken = crypto.randomBytes(16).toString('base64url');
     await db.storePendingToken(shortToken, command, playerToken, Date.now() + 15 * 60 * 1000, false);
 
-    const playerUrl = `cdp://play?t=${shortToken}`;
+    const playerUrl = `edulock://play?t=${shortToken}`;
 
     res.json({ command, sessionId, expiresIn: 900, playerToken, playerUrl, shortToken });
 });
@@ -3589,8 +4008,8 @@ app.post('/api/playback/resolve', validateAppSig, requireAuth, async (req, res) 
         return res.status(400).json({ error: 'No se pudo validar la sesión de reproducción.\nVuelve a ingresar desde Edulock Systems.' });
     }
 
-    // Limpiar prefijo cdp:// si viene
-    const token = command.startsWith('cdp://') ? command.slice(6) : command;
+    // Acepta el esquema actual (edulock://) y el legado (cdp://) de tokens ya emitidos
+    const token = command.replace(/^(edulock|cdp):\/\//i, '');
 
     let payload;
     try {
@@ -3672,7 +4091,7 @@ app.get('/api/admin/perm-link/:videoId', requireAdmin, async (req, res) => {
         return res.status(404).json({ error: 'Video no disponible' });
     }
     const token = encryptPermToken(videoId);
-    res.json({ link: `cdp://play?p=${token}` });
+    res.json({ link: `edulock://play?p=${token}` });
 });
 
 /**
@@ -4581,7 +5000,7 @@ app.post('/api/public/video/:publicCode/launch', async (req, res) => {
         const base = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
         res.json({
             launchToken,
-            deepLink:    `cdp://play?p=${permToken}&lt=${encodeURIComponent(launchToken)}`,
+            deepLink:    `edulock://play?p=${permToken}&lt=${encodeURIComponent(launchToken)}`,
             expiresIn:   300,
             downloadUrl: `${base}/download?video=${publicCode}`,
         });
@@ -4589,6 +5008,49 @@ app.post('/api/public/video/:publicCode/launch', async (req, res) => {
     } catch (e) {
         console.error('[launch]', e.message);
         res.status(500).json({ error: 'Error interno' });
+    }
+});
+
+/**
+ * GET /api/public/video/:publicCode/open
+ * Redirect directo al protocolo edulock:// — funciona como navegación normal,
+ * preservando el "user gesture" del clic del usuario en el navegador.
+ * Chrome/Edge bloquean protocolos custom desde fetch+click asíncrono,
+ * pero respetan redirects HTTP 302 hacia protocolos registrados.
+ */
+app.get('/api/public/video/:publicCode/open', async (req, res) => {
+    try {
+        const { publicCode } = req.params;
+        if (!publicCode || !/^[A-Z]{2,4}-[0-9A-F]{8}-[0-9A-F]{4}$/.test(publicCode)) {
+            return res.status(400).send('Código inválido');
+        }
+        const entry = await db.getCatalogByPublicCode(publicCode);
+        if (!entry || entry.status !== 'ready') {
+            return res.status(404).send('Video no disponible');
+        }
+        const permToken   = encryptPermToken(entry.videoId);
+        const launchToken = crypto.randomBytes(22).toString('base64url');
+        const expiresAt   = Date.now() + 5 * 60 * 1000;
+        await db.createLaunchToken(launchToken, entry.videoId, expiresAt);
+        const deepLink = `edulock://play?p=${permToken}&lt=${encodeURIComponent(launchToken)}`;
+        res.send(`<!DOCTYPE html><html><head>
+<meta charset="UTF-8">
+<title>Abriendo reproductor…</title>
+<style>body{background:#0d0d0d;color:#f5f5f5;font-family:system-ui;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;text-align:center;gap:16px}
+.open-btn{display:inline-block;padding:14px 32px;background:#c72b24;color:#fff;border-radius:8px;font-size:18px;font-weight:600;text-decoration:none;transition:background .2s}
+.open-btn:hover{background:#a82520}
+a{color:#c72b24}</style>
+</head><body>
+<p style="font-size:20px">Abriendo Edulock Systems Player…</p>
+<a class="open-btn" href="${deepLink}">Abrir reproductor</a>
+<p style="color:#9ca3af;font-size:14px">Si el reproductor no se abrió automáticamente, haz clic en el botón de arriba.</p>
+<p><a href="/cover/${publicCode}">← Volver a la página del video</a></p>
+<script>window.location.href="${deepLink}"</script>
+</body></html>`);
+        db.cleanExpiredLaunchTokens().catch(() => {});
+    } catch (e) {
+        console.error('[open-redirect]', e.message);
+        res.status(500).send('Error interno');
     }
 });
 
@@ -4693,6 +5155,39 @@ async function requireProducer(req, res, next) {
     } catch { return res.status(500).json({ error: 'Error validando productor' }); }
     req.user = payload;
     next();
+}
+
+// Middleware: permite admin O productor
+async function requireAdminOrProducer(req, res, next) {
+    const payload = verifyToken(req);
+    if (!payload) return res.status(401).json({ error: 'Token inválido' });
+    if (payload.admin) { req.user = payload; return next(); }
+    if (payload.role !== 'producer' || !payload.producerId) return res.status(403).json({ error: 'Acceso denegado' });
+    try {
+        const p = await db.getProducerById(payload.producerId);
+        if (!p || !(p.active === 1 || p.active === true)) return res.status(403).json({ error: 'Cuenta de productor suspendida', revoked: true });
+        req.producer = p;
+    } catch { return res.status(500).json({ error: 'Error validando productor' }); }
+    req.user = payload;
+    next();
+}
+
+// Central access check: admin=unlimited, producer=own scope, student=license scope
+function checkAccess(user, resource, action) {
+    if (!user) return { allowed: false, reason: 'No autenticado' };
+    if (user.admin) return { allowed: true };
+    if (user.producer) {
+        if (resource === 'course' && action === 'read') return { allowed: true, scope: 'producer', producerId: user.producerId };
+        if (resource === 'license') return { allowed: true, scope: 'producer', producerId: user.producerId };
+        if (resource === 'student' && action === 'read') return { allowed: true, scope: 'producer', producerId: user.producerId };
+        return { allowed: false, reason: 'Productores no tienen acceso a este recurso' };
+    }
+    if (user.hasLicense === false) return { allowed: false, reason: 'Requiere licencia activa' };
+    if (resource === 'video' && user.allowedVideos) {
+        const allowed = user.allowedVideos.includes('*') || user.allowedVideos.includes(action);
+        return { allowed, reason: allowed ? undefined : 'Video no incluido en tu licencia' };
+    }
+    return { allowed: true, scope: 'student' };
 }
 
 // Login del productor (su panel). Devuelve JWT con role='producer'.
@@ -4926,14 +5421,24 @@ app.get('/api/producer/activations', requireProducer, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/license/generate', requireAdmin, async (req, res) => {
+app.post('/api/license/generate', requireAdminOrProducer, async (req, res) => {
     const { studentId, courseId, maxDevices = 2, expiresAt } = req.body || {};
-    if (!studentId) return res.status(400).json({ error: 'studentId requerido' });
 
-    const student = await db.findStudentById(studentId);
-    if (!student) return res.status(404).json({ error: 'Alumno no encontrado' });
+    // studentId is now optional — unbound licenses can be generated without a student
+    if (studentId) {
+        const student = await db.findStudentById(studentId);
+        if (!student) return res.status(404).json({ error: 'Alumno no encontrado' });
+    }
 
-    // Generar clave legible: XXXX-XXXX-XXXX-XXXX (base32 sin ambigüos)
+    // Producer can only generate for their assigned courses
+    const producerId = req.user.producerId || null;
+    if (producerId && courseId) {
+        const producerCourses = await db.getCoursesByProducer(producerId).catch(() => []);
+        if (!producerCourses.some(c => c.id === courseId)) {
+            return res.status(403).json({ error: 'No tienes acceso a este curso' });
+        }
+    }
+
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let rawKey = '';
     const rndBuf = crypto.randomBytes(16);
@@ -4947,13 +5452,14 @@ app.post('/api/license/generate', requireAdmin, async (req, res) => {
     await db.createLicense({
         id: licenseId,
         licenseKeyHash,
-        studentId,
+        studentId: studentId || null,
         courseId: courseId || null,
         maxDevices: parseInt(maxDevices, 10) || 2,
         expiresAt: expiresAt || null,
+        producerId,
     });
 
-    res.json({ licenseKey, licenseId, studentId, courseId: courseId || null, maxDevices, expiresAt: expiresAt || null });
+    res.json({ licenseKey, licenseId, studentId: studentId || null, courseId: courseId || null, maxDevices, expiresAt: expiresAt || null });
 });
 
 // ================================================================

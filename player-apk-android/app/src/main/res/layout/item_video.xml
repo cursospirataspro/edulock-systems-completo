@@ -2,60 +2,57 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@color/dark_gray"
+    android:layout_marginHorizontal="4dp"
+    android:layout_marginVertical="5dp"
+    android:background="@drawable/card_bg"
     android:orientation="horizontal"
-    android:padding="8dp"
-    android:layout_margin="4dp">
+    android:padding="12dp">
 
-    <!-- Thumbnail -->
     <ImageView
         android:id="@+id/video_thumbnail"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
-        android:scaleType="centerCrop"
-        android:contentDescription="Thumbnail"
-        android:layout_marginEnd="12dp" />
+        android:layout_width="84dp"
+        android:layout_height="84dp"
+        android:layout_marginEnd="14dp"
+        android:background="@color/surface"
+        android:contentDescription="Miniatura"
+        android:scaleType="centerCrop" />
 
-    <!-- Info del video -->
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1"
-        android:orientation="vertical"
-        android:gravity="center_vertical">
+        android:gravity="center_vertical"
+        android:orientation="vertical">
 
-        <!-- Título -->
         <TextView
             android:id="@+id/video_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Video Title"
-            android:textColor="@color/white"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:maxLines="2"
+            android:layout_marginBottom="4dp"
             android:ellipsize="end"
-            android:layout_marginBottom="4dp" />
+            android:maxLines="2"
+            android:text="Documento"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            android:textStyle="bold" />
 
-        <!-- Descripción -->
         <TextView
             android:id="@+id/video_description"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Video description"
-            android:textColor="@color/light_gray"
-            android:textSize="12sp"
-            android:maxLines="2"
+            android:layout_marginBottom="4dp"
             android:ellipsize="end"
-            android:layout_marginBottom="4dp" />
+            android:maxLines="2"
+            android:text=""
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
 
-        <!-- Duración -->
         <TextView
             android:id="@+id/video_duration"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="00:45:30"
-            android:textColor="@color/light_gray"
+            android:text=""
+            android:textColor="@color/brand_red_deep"
             android:textSize="11sp" />
 
     </LinearLayout>

@@ -13,8 +13,8 @@ android {
         applicationId 'edulock.systemsoficial.com'
         minSdk 24
         targetSdk 34
-        versionCode 110
-        versionName '1.1.0'
+        versionCode 111
+        versionName '1.1.1'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
@@ -126,6 +126,9 @@ dependencies {
     // Firebase
     implementation 'com.google.firebase:firebase-messaging:23.4.1'
     implementation 'com.google.firebase:firebase-auth:22.3.1'
+
+    // Play Integrity (hardware attestation)
+    implementation 'com.google.android.play:integrity:1.4.0'
 
     // Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'

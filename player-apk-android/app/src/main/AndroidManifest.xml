@@ -37,19 +37,20 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Protocolo cdp:// para links directos -->
+            <!-- Protocolo edulock:// para links directos (cdp:// se mantiene
+                 solo para enlaces antiguos ya compartidos) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="cdp"
-                    android:host="play" />
+                <data android:scheme="edulock" android:host="play" />
+                <data android:scheme="cdp" android:host="play" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="edulock" android:host="resource" />
                 <data android:scheme="cdp" android:host="resource" />
             </intent-filter>
         </activity>
@@ -106,6 +107,9 @@
         <meta-data
             android:name="firebase_messaging_auto_init_enabled"
             android:value="false" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/brand_red" />
         <meta-data
             android:name="firebase_analytics_collection_enabled"
             android:value="false" />

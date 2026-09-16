@@ -12,7 +12,7 @@
     --card:    #171717;
     --border:  #333333;
     --accent:  #c72b24;
-    --accent2: #7b2fd1;
+    --accent2: #a1121b;
     --text:    #f5f5f5;
     --muted:   #9ca3af;
     --green:   #22c55e;
@@ -838,17 +838,29 @@
     box.classList.add('show');
   }
 
-  window.tryOpenVideo = function() {
+  // El enlace edulock:// se pide por adelantado para poder navegar de forma
+  // síncrona dentro del clic (el navegador exige gesto de usuario directo).
+  var prefetchedDeepLink = null;
+  function prefetchDeepLink() {
     if (!videoCode) return;
-    // Pedir launch token y abrir cdp://
     fetch('/api/public/video/' + videoCode + '/launch', { method: 'POST' })
       .then(r => r.json())
-      .then(d => {
-        if (d.deepLink) {
-          window.location.href = d.deepLink;
-        }
-      })
+      .then(d => { if (d.deepLink) prefetchedDeepLink = d.deepLink; })
       .catch(() => {});
+  }
+  prefetchDeepLink();
+
+  window.tryOpenVideo = function() {
+    if (!videoCode) return;
+    if (prefetchedDeepLink) {
+      var link = prefetchedDeepLink;
+      prefetchedDeepLink = null;
+      setTimeout(prefetchDeepLink, 2000);
+      window.location.href = link;
+      return;
+    }
+    prefetchDeepLink();
+    setTimeout(function() { if (prefetchedDeepLink) window.tryOpenVideo(); }, 1500);
   };
 
   // Cargar disponibilidad de descargas por plataforma dinámicamente.

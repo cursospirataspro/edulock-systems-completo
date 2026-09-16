@@ -2,11 +2,11 @@ appId: com.edulock.player
 productName: Edulock Systems Player
 copyright: "Copyright © 2026 Edulock Systems. Todos los derechos reservados."
 
-# ─── Protocolo cdp:// ──────────────────────────────────────────────────────────
+# ─── Protocolo edulock:// ──────────────────────────────────────────────────────
 protocols:
   - name: Edulock Systems Player
     schemes:
-      - cdp
+      - edulock
 
 # ─── Directorios ───────────────────────────────────────────────────────────────
 directories:
@@ -84,14 +84,14 @@ mac:
     CFBundleURLTypes:
       - CFBundleURLName: Edulock Systems Player
         CFBundleURLSchemes:
-          - cdp
+          - edulock
 
 # ─── Linux ─────────────────────────────────────────────────────────────────────
 linux:
   icon: assets/icon.png
   category: Education
   mimeTypes:
-    - x-scheme-handler/cdp
+    - x-scheme-handler/edulock
   target:
     - target: AppImage
       arch:

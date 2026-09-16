@@ -2,7 +2,8 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/primary_dark">
+    android:background="@color/white"
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -12,107 +13,107 @@
         android:padding="28dp">
 
         <ImageView
-            android:layout_width="88dp"
-            android:layout_height="88dp"
+            android:layout_width="96dp"
+            android:layout_height="96dp"
             android:layout_marginBottom="12dp"
             android:contentDescription="@string/app_name"
-            android:src="@mipmap/ic_launcher" />
+            android:src="@drawable/ic_launcher_edulock" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
             android:text="Activa tu licencia"
-            android:textColor="@color/accent_bright"
+            android:textColor="@color/text_primary"
             android:textSize="22sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.03"
-            android:layout_marginBottom="6dp" />
+            android:textStyle="bold" />
+
+        <View
+            android:layout_width="48dp"
+            android:layout_height="3dp"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/rule_red" />
 
         <TextView
             android:id="@+id/licenseSubtitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
             android:gravity="center"
             android:text="Ingresa la clave de licencia que te entregó el administrador para poder reproducir."
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:layout_marginBottom="20dp" />
+            android:textSize="13sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:background="@drawable/card_bg"
             android:orientation="vertical"
-            android:background="@color/primary"
             android:padding="20dp">
 
             <TextView
                 android:id="@+id/licenseEmail"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
                 android:text=""
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp"
-                android:layout_marginBottom="10dp"
                 android:visibility="gone" />
 
             <EditText
                 android:id="@+id/licenseKeyInput"
                 android:layout_width="match_parent"
-                android:layout_height="52dp"
-                android:background="@color/surface"
-                android:inputType="textCapCharacters"
-                android:maxLength="19"
-                android:hint="XXXX-XXXX-XXXX-XXXX"
-                android:textColor="@color/text_primary"
-                android:textColorHint="@color/text_secondary"
+                android:layout_height="54dp"
+                android:layout_marginBottom="14dp"
+                android:background="@drawable/input_bg"
                 android:fontFamily="monospace"
-                android:textSize="17sp"
-                android:letterSpacing="0.08"
                 android:gravity="center"
+                android:hint="XXXX-XXXX-XXXX-XXXX"
+                android:inputType="textCapCharacters"
+                android:letterSpacing="0.08"
+                android:maxLength="19"
                 android:paddingHorizontal="16dp"
-                android:layout_marginBottom="14dp" />
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_hint"
+                android:textSize="17sp" />
 
             <Button
                 android:id="@+id/activateButton"
                 android:layout_width="match_parent"
                 android:layout_height="50dp"
-                android:background="@color/accent_violet"
-                android:text="ACTIVAR LICENCIA"
-                android:textColor="@color/white"
-                android:textSize="15sp"
-                android:textStyle="bold" />
+                android:text="Activar licencia" />
 
             <TextView
                 android:id="@+id/licenseStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
                 android:gravity="center"
                 android:text=""
                 android:textColor="@color/error"
                 android:textSize="13sp"
-                android:layout_marginTop="12dp"
                 android:visibility="gone" />
 
             <ProgressBar
                 android:id="@+id/licenseProgress"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
                 android:layout_gravity="center"
                 android:layout_marginTop="12dp"
-                android:visibility="gone"
                 android:indeterminate="true"
-                android:indeterminateTint="@color/accent_violet" />
+                android:indeterminateTint="@color/brand_red"
+                android:visibility="gone" />
 
         </LinearLayout>
 
         <Button
             android:id="@+id/licenseLogoutButton"
+            style="@style/Widget.Edulock.Button.Text.Muted"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Cerrar sesión"
-            android:textColor="@color/accent_bright"
-            android:background="@android:color/transparent"
-            android:layout_marginTop="18dp" />
+            android:layout_marginTop="18dp"
+            android:text="@string/btn_logout" />
 
     </LinearLayout>
 </ScrollView>

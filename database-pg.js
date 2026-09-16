@@ -633,6 +633,35 @@ async function initDb() {
     await q(`CREATE INDEX IF NOT EXISTS idx_students_producer ON students(producer_id)`).catch(() => {});
     await q(`CREATE INDEX IF NOT EXISTS idx_licenses_producer ON licenses(producer_id)`).catch(() => {});
 
+    // Producer auth_version for session invalidation on password/suspension changes
+    await q(`ALTER TABLE producers ADD COLUMN IF NOT EXISTS auth_version INTEGER NOT NULL DEFAULT 0`).catch(() => {});
+
+    // Producer-student junction table (shared students across producers)
+    await q(`
+        CREATE TABLE IF NOT EXISTS producer_students (
+            producer_id TEXT NOT NULL,
+            student_id  TEXT NOT NULL,
+            linked_at   TEXT,
+            linked_via  TEXT DEFAULT 'license_activation',
+            PRIMARY KEY (producer_id, student_id)
+        )
+    `).catch(() => {});
+
+    // Producer-course assignment table
+    await q(`
+        CREATE TABLE IF NOT EXISTS producer_courses (
+            producer_id TEXT NOT NULL,
+            course_id   TEXT NOT NULL,
+            assigned_at TEXT,
+            PRIMARY KEY (producer_id, course_id)
+        )
+    `).catch(() => {});
+
+    // License columns for unbound licenses and producer tracking
+    await q(`ALTER TABLE licenses ALTER COLUMN student_id DROP NOT NULL`).catch(() => {});
+    await q(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS batch_id TEXT`).catch(() => {});
+    await q(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS reserved_email TEXT`).catch(() => {});
+
     // Durable upload/provision state. These migrations must succeed: silently
     // losing idempotency would make a retry create a second remote resource.
     await q(`CREATE TABLE IF NOT EXISTS stream_resources (
@@ -2148,13 +2177,13 @@ module.exports.getPlaybackHistory = async ({ limit = 200, date = null, student =
 //  API — LICENSES
 // ================================================================
 
-module.exports.createLicense = async ({ id, licenseKeyHash, studentId, courseId, maxDevices = 2, expiresAt }) => {
+module.exports.createLicense = async ({ id, licenseKeyHash, studentId, courseId, maxDevices = 2, expiresAt, producerId, batchId, reservedEmail }) => {
     const now = new Date().toISOString();
     await q(
-        `INSERT INTO licenses (id, license_key_hash, student_id, course_id, status, max_devices, created_at, expires_at)
-         VALUES ($1,$2,$3,$4,'active',$5,$6,$7)
+        `INSERT INTO licenses (id, license_key_hash, student_id, course_id, status, max_devices, created_at, expires_at, producer_id, batch_id, reserved_email)
+         VALUES ($1,$2,$3,$4,'active',$5,$6,$7,$8,$9,$10)
          ON CONFLICT (license_key_hash) DO NOTHING`,
-        [id, licenseKeyHash, studentId, courseId || null, maxDevices, now, expiresAt || null]
+        [id, licenseKeyHash, studentId || null, courseId || null, maxDevices, now, expiresAt || null, producerId || null, batchId || null, reservedEmail || null]
     );
 };
 
@@ -3226,6 +3255,50 @@ module.exports.updateStudentApprovalStatus = async (studentId, approvalStatus) =
 module.exports.countPendingRegistrations = async () => {
     const res = await q("SELECT COUNT(*) as n FROM registration_requests WHERE status='pending'");
     return parseInt(res.rows[0].n, 10);
+};
+
+// ================================================================
+//  PRODUCER-STUDENT LINKING & LICENSE BINDING
+// ================================================================
+
+module.exports.linkProducerStudent = async (producerId, studentId, linkedVia) => {
+    await q(
+        `INSERT INTO producer_students (producer_id, student_id, linked_at, linked_via)
+         VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+        [producerId, studentId, new Date().toISOString(), linkedVia || 'license_activation']
+    );
+};
+
+module.exports.bindLicenseToStudent = async (licenseId, studentId) => {
+    const res = await q(
+        `UPDATE licenses SET student_id=$1 WHERE id=$2 AND student_id IS NULL RETURNING id`,
+        [studentId, licenseId]
+    );
+    return res.rowCount > 0;
+};
+
+module.exports.getProducerLicenses = async (producerId) => {
+    return (await q(
+        `SELECT l.*, s.email as student_email, s.name as student_name, c.name as course_name
+         FROM licenses l
+         LEFT JOIN students s ON s.id = l.student_id
+         LEFT JOIN courses c ON c.id = l.course_id
+         WHERE l.producer_id = $1
+         ORDER BY l.created_at DESC`,
+        [producerId]
+    )).rows;
+};
+
+module.exports.getLicensesByBatch = async (batchId) => {
+    return (await q(
+        `SELECT l.*, s.email as student_email, c.name as course_name
+         FROM licenses l
+         LEFT JOIN students s ON s.id = l.student_id
+         LEFT JOIN courses c ON c.id = l.course_id
+         WHERE l.batch_id = $1
+         ORDER BY l.created_at`,
+        [batchId]
+    )).rows;
 };
 
 // ================================================================

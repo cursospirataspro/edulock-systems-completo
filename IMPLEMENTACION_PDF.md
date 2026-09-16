@@ -1,6 +1,6 @@
 # Implementación del PDF — Edulock Systems
 
-Este documento resume el rebrand Santana→Edulock y la implementación del roadmap del
+Este documento resume el rebrand a Edulock y la implementación del roadmap del
 PDF de factibilidad. **No se tocó ninguna VPS ni servicio remoto**; todo son cambios de
 código en esta carpeta (`Edulock Systems - Completo`).
 
@@ -8,7 +8,7 @@ código en esta carpeta (`Edulock Systems - Completo`).
 
 ## 1. Rebrand + limpieza de credenciales (hecho)
 
-- **Credenciales de Santana eliminadas** de `.env`, `.env.bak`, `.env.example`,
+- **Credenciales anteriores eliminadas** de `.env`, `.env.bak`, `.env.example`,
   `_env_backup.json` y de un secreto de BD que estaba en texto plano en `_make_deploy_pdf.js`.
 - **`.env` ahora usa identidad Edulock**: dominio `edulocksystemsoficial.dpdns.org`,
   JWT/admin de Edulock, `APP_SECRET` alineado con el reproductor y el APK, Bunny intacto.
@@ -22,7 +22,7 @@ código en esta carpeta (`Edulock Systems - Completo`).
   `setup.sh` crea la BD y te da la contraseña real — pégala ahí.
 - **Firebase**: todo apunta ya a tu proyecto real `edulock-systems-oficial` (`61528672386`):
   config web corregida en admin/remote-admin/served-admin/auth.html, `google-services.json`
-  oficial, y `FIREBASE_PROJECT_ID` en `.env`. El service account de Santana fue eliminado.
+  oficial, y `FIREBASE_PROJECT_ID` en `.env`. El service account anterior fue eliminado.
   **Falta solo** descargar el service account de `edulock-systems-oficial` para activar el push
   (FCM) — ver **FIREBASE_SETUP.md**. El login ya funciona sin él.
 - **Build viejo del reproductor**: `player-app/dist/win-unpacked/.../app.asar` es un ejecutable

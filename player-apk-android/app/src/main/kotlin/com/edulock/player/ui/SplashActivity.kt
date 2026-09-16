@@ -24,7 +24,7 @@ class SplashActivity : AppCompatActivity() {
     override fun onNewIntent(newIntent: Intent?) {
         super.onNewIntent(newIntent)
         if (newIntent != null) setIntent(newIntent)
-        newIntent?.dataString?.takeIf { it.startsWith("cdp:", ignoreCase = true) }?.let { raw ->
+        newIntent?.dataString?.takeIf { WaitingActivity.isDeepLink(it) }?.let { raw ->
             getSharedPreferences("edulock_auth", Context.MODE_PRIVATE).edit().putString(WaitingActivity.PREF_PENDING_CDP, raw).apply()
         }
     }
@@ -40,11 +40,11 @@ class SplashActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_splash)
 
-        // Si la app se abrió desde un enlace cdp://play?..., guardarlo para que
+        // Si la app se abrió desde un enlace edulock://play?..., guardarlo para que
         // WaitingActivity lo procese tras pasar por login/licencia (igual que el PC,
         // que despacha el comando solo después del login).
         intent?.dataString?.let { raw ->
-            if (raw.startsWith("cdp:", ignoreCase = true)) {
+            if (WaitingActivity.isDeepLink(raw)) {
                 getSharedPreferences("edulock_auth", Context.MODE_PRIVATE)
                     .edit().putString(WaitingActivity.PREF_PENDING_CDP, raw).apply()
             }
@@ -84,10 +84,10 @@ class SplashActivity : AppCompatActivity() {
         val dest = when {
             token.isEmpty() -> LoginActivity::class.java
             prefs.getString("user_role", "student") == "admin" -> WaitingActivity::class.java
-            // Logueado pero sin licencia activada en este dispositivo → pedir licencia.
-            // Si ya hay activación local, la pantalla de espera valida en línea y expulsa si fue regenerada.
-            !com.edulock.player.utils.ActivationStore.has(this) -> LicenseActivity::class.java
-            else -> WaitingActivity::class.java
+            // One-license-per-session: students always enter a license each session.
+            // If activation is still valid from a previous session that didn't logout, proceed.
+            com.edulock.player.utils.ActivationStore.has(this) -> WaitingActivity::class.java
+            else -> LicenseActivity::class.java
         }
         startActivity(Intent(this, dest))
         finish()

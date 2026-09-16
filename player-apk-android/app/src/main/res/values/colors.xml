@@ -1,34 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Colores principales - Paleta Edulock Systems (dark violet/purple) -->
-    <color name="primary">#1e0d35</color>
-    <color name="primary_dark">#0d0118</color>
-    <color name="secondary">#8b5cf6</color>
-    <color name="secondary_dark">#6d28d9</color>
-
-    <!-- Accentos del logo -->
-    <color name="accent_violet">#7c3aed</color>
-    <color name="accent_bright">#c4b5fd</color>
-    <color name="accent_glow">#a855f7</color>
-    <color name="surface">#150b28</color>
-    <color name="surface_variant">#250e40</color>
-    <color name="border_color">#4c2a8a</color>
-
-    <!-- Colores neutrales -->
+    <!-- Paleta Edulock Systems: BLANCO / NEGRO / ROJO (misma que el splash del reproductor de PC) -->
     <color name="white">#ffffff</color>
     <color name="black">#000000</color>
-    <color name="dark_gray">#1a0d2e</color>
-    <color name="light_gray">#9d8fc0</color>
-    <color name="text_primary">#e8e0ff</color>
-    <color name="text_secondary">#9d8fc0</color>
 
-    <!-- Colores de estado -->
-    <color name="error">#fca5a5</color>
-    <color name="error_bg">#2d0f1a</color>
-    <color name="success">#86efac</color>
-    <color name="success_bg">#0f2d1a</color>
-    <color name="warning">#fcd34d</color>
+    <!-- Rojo de marca (#d81f2a = reproductor PC) -->
+    <color name="brand_red">#d81f2a</color>
+    <color name="brand_red_dark">#a1121b</color>
+    <color name="brand_red_deep">#b0261f</color>
+    <color name="brand_red_disabled">#e9a3a8</color>
+    <color name="ripple_on_red">#33ffffff</color>
+    <color name="ripple_red">#1fd81f2a</color>
 
-    <!-- Marca de agua -->
-    <color name="watermark">#c4b5fd</color>
+    <!-- Fondos y bordes (fondo blanco como el PC) -->
+    <color name="bg">#ffffff</color>
+    <color name="surface">#f7f5f4</color>
+    <color name="surface_variant">#efecea</color>
+    <color name="border">#e4dfdd</color>
+    <color name="border_color">#e4dfdd</color>
+
+    <!-- Texto (negro de marca #141010 como el h1 del PC) -->
+    <color name="text_primary">#141010</color>
+    <color name="text_secondary">#6d635d</color>
+    <color name="text_hint">#9a918c</color>
+    <color name="light_gray">#6d635d</color>
+    <color name="dark_gray">#141010</color>
+
+    <!-- Alias heredados (siguen apuntando a la paleta rojo/negro/blanco) -->
+    <color name="primary">#141010</color>
+    <color name="primary_dark">#ffffff</color>
+    <color name="secondary">#d81f2a</color>
+    <color name="secondary_dark">#a1121b</color>
+    <color name="accent_violet">#d81f2a</color>
+    <color name="accent_bright">#b0261f</color>
+    <color name="accent_glow">#d81f2a</color>
+
+    <!-- Estados -->
+    <color name="error">#c8102e</color>
+    <color name="error_bg">#fdecee</color>
+    <color name="success">#141010</color>
+    <color name="success_bg">#f7f5f4</color>
+    <color name="warning">#b0261f</color>
+
+    <!-- Marca de agua (color por defecto; el panel manda el color real) -->
+    <color name="watermark">#ffffff</color>
 </resources>

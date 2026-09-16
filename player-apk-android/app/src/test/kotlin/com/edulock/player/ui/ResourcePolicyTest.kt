@@ -9,15 +9,16 @@ import org.junit.Test
 class ResourcePolicyTest {
     private val id = "34831ae4-3b98-4b4e-9b8d-ab546ee9c03c"
     private fun response() = ResourceViewResponse(ResourceItem(id = id, name = "Documento", protection = "protected", pageCount = 10, version = 3), ResourceWatermark("student@example.invalid", "EDU-SYNTHETIC"), 30)
-    @Test fun validCdpResourceAndEncodedUuidUseOnlyTheExpectedCommand() {
-        assertEquals(id, ResourcePolicy.deepLinkId("cdp://resource?id=$id"))
-        assertEquals(id, ResourcePolicy.deepLinkId("CDP://RESOURCE?id=${id.uppercase()}"))
-        for (raw in listOf("cdp://play?id=$id", "https://resource?id=$id", "cdp://resource/path?id=$id", "cdp://user@resource?id=$id", "cdp://resource:80?id=$id", "cdp://resource?id=$id&id=$id", "cdp://resource?id=../file", "cdp://resource?id=", "cdp://resource")) assertNull(raw, ResourcePolicy.deepLinkId(raw))
+    @Test fun validResourceDeepLinkAndEncodedUuidUseOnlyTheExpectedCommand() {
+        assertEquals(id, ResourcePolicy.deepLinkId("edulock://resource?id=$id"))
+        assertEquals(id, ResourcePolicy.deepLinkId("EDULOCK://RESOURCE?id=${id.uppercase()}"))
+        assertEquals("legacy scheme still accepted", id, ResourcePolicy.deepLinkId("cdp://resource?id=$id"))
+        for (raw in listOf("edulock://play?id=$id", "https://resource?id=$id", "edulock://resource/path?id=$id", "edulock://user@resource?id=$id", "edulock://resource:80?id=$id", "edulock://resource?id=$id&id=$id", "edulock://resource?id=../file", "edulock://resource?id=", "edulock://resource")) assertNull(raw, ResourcePolicy.deepLinkId(raw))
     }
     @Test fun publicLinksAllowDownloadableHttpHttpsWithoutCredentials() {
         assertEquals("https://example.invalid/free.pdf", ResourcePolicy.publicUrl("https://example.invalid/free.pdf"))
         assertEquals("http://example.invalid/file.zip", ResourcePolicy.publicUrl("http://example.invalid/file.zip"))
-        for (raw in listOf("javascript:alert(1)", "data:application/pdf;base64,AAAA", "file:///sdcard/a.pdf", "content://file", "cdp://resource?id=$id", "//example.invalid/a", "https://user:pass@example.invalid/a", "https://example.invalid/a b")) assertNull(raw, ResourcePolicy.publicUrl(raw))
+        for (raw in listOf("javascript:alert(1)", "data:application/pdf;base64,AAAA", "file:///sdcard/a.pdf", "content://file", "edulock://resource?id=$id", "//example.invalid/a", "https://user:pass@example.invalid/a", "https://example.invalid/a b")) assertNull(raw, ResourcePolicy.publicUrl(raw))
     }
     @Test fun relativeDownloadIsBoundToConfiguredApiAndCannotNavigateToArbitraryPaths() {
         assertEquals("https://api.example.invalid/resources/$id/download", ResourcePolicy.publicUrl("/resources/$id/download", "https://api.example.invalid/"))

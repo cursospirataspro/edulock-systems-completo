@@ -29,6 +29,8 @@ import com.edulock.player.utils.NotificationPermissionHelper
 import com.google.android.gms.tasks.Task
 import com.google.android.gms.tasks.Tasks
 import com.google.android.material.snackbar.Snackbar
+import com.google.android.play.core.integrity.IntegrityManagerFactory
+import com.google.android.play.core.integrity.IntegrityTokenRequest
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.FirebaseTooManyRequestsException
 import com.google.firebase.auth.FirebaseAuth
@@ -74,6 +76,7 @@ class LoginActivity : AppCompatActivity() {
     private var countdownJob: Job? = null
     private var authJob: Job? = null
     private var authGeneration = 0
+    private var _autoRegisterRetried = false
     private val apiService get() = ApiClient.getService()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -365,16 +368,28 @@ class LoginActivity : AppCompatActivity() {
         completeFirebaseLogin(user)
     }
 
+    private suspend fun requestIntegrityToken(): String? = withContext(Dispatchers.IO) {
+        try {
+            val mgr = IntegrityManagerFactory.create(this@LoginActivity)
+            val nonce = java.util.UUID.randomUUID().toString().replace("-", "")
+            val req = IntegrityTokenRequest.builder().setNonce(nonce).build()
+            val tokenResponse = Tasks.await(mgr.requestIntegrityToken(req), 8, TimeUnit.SECONDS)
+            tokenResponse.token()
+        } catch (_: Exception) { null }
+    }
+
     private suspend fun completeFirebaseLogin(user: FirebaseUser) {
         val idToken = awaitFirebase(user.getIdToken(true)).token
         if (idToken.isNullOrBlank()) { showStatus("No se pudo verificar tu identidad. Intenta nuevamente."); return }
         val info = withContext(Dispatchers.IO) { DeviceFingerprintAdvanced.captureFullDeviceInfo(this@LoginActivity) }
         if (info.deviceId.isBlank()) { showStatus("No se pudo identificar este dispositivo. Intenta nuevamente."); return }
+        val integrityTk = requestIntegrityToken()
         val http = apiService.firebaseLogin(FirebaseLoginRequest(
             idToken = idToken, uid = user.uid, email = user.email, deviceId = info.deviceId,
             deviceModel = info.deviceModel, fcmToken = getSharedPreferences("edulock_fcm", Context.MODE_PRIVATE).getString("fcm_token", ""),
             deviceSerial = info.deviceSerial, osVersion = info.osVersion, totalRam = info.totalRam,
-            buildFingerprint = info.buildFingerprint, brand = info.brand, manufacturer = info.manufacturer, androidId = info.androidId
+            buildFingerprint = info.buildFingerprint, brand = info.brand, manufacturer = info.manufacturer, androidId = info.androidId,
+            integrityToken = integrityTk
         ))
         val response = readResponse(http, LoginResponse::class.java)
         if (AuthResponsePolicy.canStartSession(http.code(), response)) {
@@ -390,17 +405,26 @@ class LoginActivity : AppCompatActivity() {
                     .commit()
             }
             if (!saved) { showStatus("No se pudo guardar la sesión. Revisa el espacio disponible e intenta nuevamente."); return }
-            val next = if (approved.role == "admin" || ActivationStore.has(this)) {
+            val next = if (approved.role == "admin") {
                 Intent(this, WaitingActivity::class.java)
             } else {
+                // One-license-per-session: always go to LicenseActivity for students
                 Intent(this, LicenseActivity::class.java).putExtra(LicenseActivity.EXTRA_EMAIL, email)
             }
             startActivity(next)
             finish()
             return
         }
-        if (AuthResponsePolicy.needsManualRegistration(http.code(), response) ||
-            (http.isSuccessful && response?.status == "not_registered")) {
+        // Auto-registration: retry once on not_registered (server should auto-register)
+        if ((http.isSuccessful && response?.status == "not_registered") ||
+            AuthResponsePolicy.needsManualRegistration(http.code(), response)) {
+            if (!_autoRegisterRetried) {
+                _autoRegisterRetried = true
+                showStatus("Registrando cuenta...")
+                delay(1500)
+                completeFirebaseLogin(user)
+                return
+            }
             if (isRegistrationMode) {
                 preserveRegistrationUser(user)
             } else {

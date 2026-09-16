@@ -25,7 +25,7 @@ build/
 .gradle/
 *.jks
 *.keystore
-keystore.properties
+keystore*.properties*
 key.properties
 *.exe
 *.dmg
@@ -33,6 +33,13 @@ key.properties
 *.AppImage
 *.tar.gz
 *.zip
+*.apk
+*.hprof
+
+# Backups y volcados temporales
+_backups/
+*.bak
+*.bak-*
 
 # Estado privado y material temporal de QA
 .qa-*
@@ -43,3 +50,4 @@ qa-*.ts
 server-qa.tar.gz
 
 _env_backup.json
+

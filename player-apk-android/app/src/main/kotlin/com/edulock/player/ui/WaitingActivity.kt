@@ -46,9 +46,13 @@ class WaitingActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "WaitingActivity"
-        /** SharedPref donde SplashActivity deja el enlace cdp:// pendiente. */
+        /** SharedPref donde SplashActivity deja el enlace edulock:// pendiente. */
         const val PREF_PENDING_CDP = "pending_cdp"
         private const val PREFS = "edulock_auth"
+
+        /** edulock:// es el esquema actual; cdp:// se acepta por enlaces antiguos. */
+        fun isDeepLink(raw: String?): Boolean =
+            raw != null && (raw.startsWith("edulock:", ignoreCase = true) || raw.startsWith("cdp:", ignoreCase = true))
     }
 
     private lateinit var subtitle: TextView
@@ -78,13 +82,26 @@ class WaitingActivity : AppCompatActivity() {
 
         subtitle = findViewById(R.id.waiting_subtitle)
         hint = findViewById(R.id.waiting_hint)
+        // Pulso suave del texto de espera (mismo efecto que el splash del PC)
+        hint.startAnimation(android.view.animation.AlphaAnimation(1f, 0.4f).apply {
+            duration = 1000
+            repeatMode = android.view.animation.Animation.REVERSE
+            repeatCount = android.view.animation.Animation.INFINITE
+        })
         progress = findViewById(R.id.waiting_progress)
         logoutBtn = findViewById(R.id.waiting_logout)
 
-        subtitle.text = "${getString(R.string.waiting_subtitle)} v${currentVersionName()}"
+        subtitle.text = "${getString(R.string.waiting_subtitle)} · v${currentVersionName()}"
         logoutBtn.setOnClickListener { onLogout() }
-        findViewById<Button>(R.id.waiting_catalog).setOnClickListener {
-            startActivity(Intent(this, CatalogActivity::class.java))
+        // Paridad con el reproductor de PC: los videos se abren solo desde enlaces
+        // externos (portadas edulock://). Dentro de la app solo queda el panel de documentos/PDF.
+        findViewById<Button>(R.id.waiting_catalog).apply {
+            visibility = android.view.View.VISIBLE
+            setText(R.string.resources_open_documents)
+            setOnClickListener {
+                startActivity(Intent(this@WaitingActivity, CatalogActivity::class.java)
+                    .putExtra(CatalogActivity.EXTRA_DOCS_ONLY, true))
+            }
         }
 
         Log.i(TAG, "🕒 Esperando comando de reproducción…")
@@ -119,10 +136,10 @@ class WaitingActivity : AppCompatActivity() {
         licenseGuardJob?.cancel()
     }
 
-    // ── Manejo del enlace cdp:// ──────────────────────────────────────────────
+    // ── Manejo del enlace edulock:// ──────────────────────────────────────────
 
     private fun stashPendingCdp(raw: String) {
-        if (!raw.startsWith("cdp:", ignoreCase = true)) return
+        if (!isDeepLink(raw)) return
         getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(PREF_PENDING_CDP, raw).apply()
     }
@@ -145,12 +162,12 @@ class WaitingActivity : AppCompatActivity() {
         resolveAndPlay(raw)
     }
 
-    /** Normaliza y extrae los parámetros del enlace cdp://play?... */
+    /** Normaliza y extrae los parámetros del enlace edulock://play?... (o cdp:// legado) */
     private fun parseCdp(raw: String): Map<String, String> {
         return try {
             val normalized = raw
-                .replace(Regex("^cdp://", RegexOption.IGNORE_CASE), "cdp://")
-                .replace(Regex("^cdp:(?!//)", RegexOption.IGNORE_CASE), "cdp://")
+                .replace(Regex("^(edulock|cdp)://", RegexOption.IGNORE_CASE), "edulock://")
+                .replace(Regex("^(edulock|cdp):(?!//)", RegexOption.IGNORE_CASE), "edulock://")
             val uri = Uri.parse(normalized)
             val out = HashMap<String, String>()
             for (key in listOf("t", "p", "cmd", "auth")) {
@@ -185,6 +202,12 @@ class WaitingActivity : AppCompatActivity() {
                 launchPlayer(data)
             } catch (e: Exception) {
                 if (e is CourseLicenseRequired) {
+                    val isAdmin = getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("user_role", "student") == "admin"
+                    if (isAdmin) {
+                        // El admin nunca pasa por la pantalla de licencia (igual que en PC).
+                        toast(e.message ?: "Este video requiere una licencia de curso.")
+                        return@launch
+                    }
                     if (!params.containsKey("t")) {
                         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(PREF_PENDING_CDP, raw).apply()
                     }

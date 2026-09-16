@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld('vcbPlayer', {
     onFullscreenChanged: (cb) => ipcRenderer.on('fullscreen-changed', (_e, isFs) => cb(isFs)),
 
     computeAppSig: (message) => ipcRenderer.invoke('compute-sig', message),
+    getServerTime: () => ipcRenderer.invoke('get-server-time'),
+    onTokenRefreshed: (cb) => ipcRenderer.on('token-refreshed', (_e, token) => cb(token)),
 
     // ── Auth / Registro ──────────────────────────────────────────────────────
     // Enviar solicitud de registro al servidor

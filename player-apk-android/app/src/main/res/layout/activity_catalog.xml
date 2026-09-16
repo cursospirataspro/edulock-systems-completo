@@ -2,53 +2,62 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/primary_dark"
+    android:background="@color/white"
     android:orientation="vertical">
 
-    <!-- Toolbar -->
+    <!-- Barra superior blanca con línea inferior -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:background="@color/surface"
+        android:layout_height="60dp"
+        android:background="@drawable/toolbar_bottom_line"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingHorizontal="16dp">
 
+        <ImageView
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_marginEnd="10dp"
+            android:contentDescription="@string/app_name"
+            android:src="@drawable/ic_launcher_edulock" />
+
         <TextView
+            android:id="@+id/catalog_title"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Mis Cursos"
-            android:textColor="@color/accent_bright"
+            android:text="@string/label_videos"
+            android:textColor="@color/text_primary"
             android:textSize="18sp"
             android:textStyle="bold" />
 
         <Button
             android:id="@+id/logout_button"
+            style="@style/Widget.Edulock.Button.Outline"
             android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:background="@color/border_color"
+            android:layout_height="38dp"
+            android:minHeight="38dp"
+            android:paddingLeft="14dp"
+            android:paddingRight="14dp"
             android:text="Salir"
-            android:textColor="@color/accent_bright"
-            android:paddingHorizontal="12dp" />
+            android:textSize="13sp" />
     </LinearLayout>
 
-    <!-- Indicador de carga -->
     <ProgressBar
         android:id="@+id/loading_spinner"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
         android:layout_gravity="center"
         android:layout_marginTop="32dp"
         android:indeterminate="true"
-        android:indeterminateTint="@color/accent_violet"
+        android:indeterminateTint="@color/brand_red"
         android:visibility="gone" />
 
-    <!-- RecyclerView de videos -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/videos_recycler"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:padding="8dp" />
+        android:clipToPadding="false"
+        android:padding="10dp" />
 
 </LinearLayout>

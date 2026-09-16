@@ -87,9 +87,10 @@ test('local public download resolves only the exact resource UUID route against 
         '/resources/invalid/download', `/resources/${ID}/../private/download`]) assert.equal(publicUrl(value, 'https://server.example'), null);
 });
 test('resource deep link has exactly one UUID and carries no credentials', () => {
-    assert.equal(parseResourceLink(`cdp://resource?id=${ID}`), ID);
-    for (const url of [`cdp://resource?id=${ID}&token=secret`, `cdp://resource?id=${ID}&id=${ID}`, `cdp://resource?id=${ID}#x`,
-        `cdp://other?id=${ID}`, 'cdp://resource?id=../../secret', `https://resource?id=${ID}`]) assert.equal(parseResourceLink(url), null);
+    assert.equal(parseResourceLink(`edulock://resource?id=${ID}`), ID);
+    assert.equal(parseResourceLink(`cdp://resource?id=${ID}`), ID, 'legacy scheme still accepted');
+    for (const url of [`edulock://resource?id=${ID}&token=secret`, `edulock://resource?id=${ID}&id=${ID}`, `edulock://resource?id=${ID}#x`,
+        `edulock://other?id=${ID}`, 'edulock://resource?id=../../secret', `https://resource?id=${ID}`]) assert.equal(parseResourceLink(url), null);
 });
 for (const page of [0, -1, 3, 1.5, '1', {}, undefined]) test('invalid page is rejected before HTTP: ' + String(page), async () => {
     const f = fixture(); await f.access.open(ID); await assert.rejects(f.access.page(page), { code: 'RESOURCE_PAGE_INVALID' }); assert.equal(f.calls.length, 1);

@@ -272,6 +272,17 @@ interface EdulockApiService {
         @Body request: ValidateActivationRequest
     ): Response<ValidateActivationResponse>
 
+    /**
+     * POST /api/session/activate-license
+     * Activa una licencia en la sesión actual (one-license-per-session).
+     * Devuelve Stage 2 JWT con acceso a un curso.
+     */
+    @POST("api/session/activate-license")
+    suspend fun sessionActivateLicense(
+        @Header("Authorization") authorization: String,
+        @Body request: SessionActivateLicenseRequest
+    ): Response<SessionActivateLicenseResponse>
+
     // ════════════════════════════════════════════════════════════════════════════════
     // REPRODUCCIÓN POR ENLACE cdp:// (paridad con el reproductor PC)
     // El mismo enlace cdp://play?t=... / cdp://play?p=... abre el PC o el APK.

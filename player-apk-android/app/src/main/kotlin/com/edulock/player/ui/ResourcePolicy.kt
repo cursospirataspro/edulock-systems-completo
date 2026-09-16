@@ -19,7 +19,7 @@ internal object ResourcePolicy {
     } catch (_: Exception) { null }
     fun deepLinkId(raw: String?): String? = try {
         val uri = URI(raw ?: "")
-        if (!uri.scheme.equals("cdp", true) || !uri.host.equals("resource", true) || !uri.path.isNullOrEmpty() || uri.userInfo != null || uri.port != -1) null
+        if (uri.scheme?.lowercase() !in setOf("edulock", "cdp") || !uri.host.equals("resource", true) || !uri.path.isNullOrEmpty() || uri.userInfo != null || uri.port != -1) null
         else {
             val ids = (uri.rawQuery ?: "").split('&').map { it.split('=', limit = 2) }.filter { it[0] == "id" }
             if (ids.size != 1 || ids[0].size != 2) null else URLDecoder.decode(ids[0][1], "UTF-8").takeIf(::validId)?.lowercase()

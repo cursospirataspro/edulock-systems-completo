@@ -59,9 +59,17 @@ class VideoAdapter(
             Glide.with(itemView.context).clear(thumbnailView)
             thumbnailView.setImageDrawable(null)
             if (video.resourceItem != null) {
+                // Icono de documento en rojo de marca, con aire alrededor
+                thumbnailView.scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+                val pad = (18 * itemView.resources.displayMetrics.density).toInt()
+                thumbnailView.setPadding(pad, pad, pad, pad)
+                thumbnailView.imageTintList = android.content.res.ColorStateList.valueOf(itemView.context.getColor(R.color.brand_red))
                 thumbnailView.setImageResource(android.R.drawable.ic_menu_agenda)
                 thumbnailView.contentDescription = "Recurso del curso"
             } else if (!video.thumbnail.isNullOrEmpty()) {
+                thumbnailView.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                thumbnailView.setPadding(0, 0, 0, 0)
+                thumbnailView.imageTintList = null
                 Glide.with(itemView.context)
                     .load(video.thumbnail)
                     .centerCrop()

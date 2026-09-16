@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="resources_open_catalog">Mis cursos y recursos</string>
+    <string name="resources_open_documents">Mis documentos (PDF)</string>
     <string name="app_name">Edulock Systems Player</string>
     <string name="app_description">Reproductor seguro de cursos con DRM y marca de agua forense</string>
     
@@ -27,8 +28,9 @@
     <string name="label_duration">Duración</string>
 
     <!-- Pantalla de espera (igual que el reproductor PC) -->
-    <string name="waiting_brand">⚡ Edulock Systems</string>
-    <string name="waiting_subtitle">Reproductor Seguro</string>
+    <string name="waiting_brand">Edulock Systems</string>
+    <string name="waiting_brand_accent">Player</string>
+    <string name="waiting_subtitle">Reproductor seguro</string>
     <string name="waiting_hint">Esperando comando de reproducción…</string>
     <string name="waiting_resolving">Abriendo reproducción…</string>
 </resources>

@@ -253,6 +253,7 @@ class EdulockNotificationService : FirebaseMessagingService() {
         // Crear la notificación
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setColor(getColor(R.color.brand_red))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

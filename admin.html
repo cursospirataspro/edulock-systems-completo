@@ -1093,7 +1093,12 @@
             <div class="card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
                     <h3 style="margin:0">Lista de alumnos</h3>
-                    <div style="display:flex;gap:8px">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <select id="filter-producer" title="Filtrar por productor"
+                            style="padding:6px 10px;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:0.82rem;outline:none;max-width:260px">
+                            <option value="">Todos los productores</option>
+                            <option value="__none__">Sin productor (directos)</option>
+                        </select>
                         <input type="text" id="filter-students" placeholder="Buscar email / ID / nombre"
                             style="padding:6px 10px;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:0.82rem;outline:none;width:240px">
                         <button class="btn btn-ghost" onclick="loadStudents()">Actualizar</button>
@@ -1102,10 +1107,10 @@
                 <div class="table-wrap">
                     <table>
                         <thead><tr>
-                            <th>Correo</th><th>ID alumno</th><th>Nombre</th>
+                            <th>Correo</th><th>ID alumno</th><th>Nombre</th><th>Productor</th>
                             <th>Videos</th><th>Dispositivo</th><th>Estado</th><th>Último acceso</th><th>Acciones</th>
                         </tr></thead>
-                        <tbody id="students-body"><tr><td colspan="8" style="color:var(--c-muted)">Cargando...</td></tr></tbody>
+                        <tbody id="students-body"><tr><td colspan="9" style="color:var(--c-muted)">Cargando...</td></tr></tbody>
                     </table>
                 </div>
                 <p id="students-count" style="font-size:0.75rem;color:var(--c-muted);margin-top:8px"></p>
@@ -1650,17 +1655,29 @@
 
         <div class="page" id="page-watermark">
             <h2>Marcas de agua</h2>
-            <p class="subtitle">Configura las marcas de agua por curso y por sistema. Los cambios se guardan automáticamente y se aplican en vivo.</p>
+            <p class="subtitle">Configura las marcas de agua por sistema, por productor y por curso. Cada cambio se guarda solo y se aplica en vivo en los reproductores abiertos.</p>
             <div class="card">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap">
                     <div style="flex:1;min-width:280px;">
                         <h3 style="margin:0 0 8px 0">Ajustes generales</h3>
                         <p style="font-size:0.85rem;color:var(--c-muted);line-height:1.5;">
-                            Selecciona el curso y el sistema, luego ajusta el tamaño, color y grosor de cada marca de agua.
+                            Elige el ámbito y el sistema, luego ajusta tamaño, color y grosor de cada marca. Prioridad: <b>Curso</b> manda sobre <b>Productor</b>, y Productor sobre <b>Predeterminado</b>. Lo que edites en un productor no afecta a los demás.
                         </p>
                     </div>
-                    <div style="display:flex;flex-direction:column;gap:10px;min-width:260px;">
+                    <div style="display:flex;flex-direction:column;gap:10px;min-width:280px;">
                         <div class="form-row" style="margin:0">
+                            <label>Ámbito</label>
+                            <select id="wm-scope-type" onchange="onWmScopeTypeChange()" style="width:100%;padding:10px;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:0.88rem">
+                                <option value="default">Predeterminado (toda la plataforma)</option>
+                                <option value="producer">Productor</option>
+                                <option value="course">Curso</option>
+                            </select>
+                        </div>
+                        <div class="form-row" id="wm-producer-row" style="margin:0;display:none">
+                            <label>Productor</label>
+                            <select id="wm-producer-id" onchange="loadWmConfig()" style="width:100%;padding:10px;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:0.88rem"></select>
+                        </div>
+                        <div class="form-row" id="wm-course-row" style="margin:0;display:none">
                             <label>Curso</label>
                             <select id="wm-course-id" style="width:100%;padding:10px;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:0.88rem">
                                 <option value="__default__">Predeterminado (todos los cursos)</option>
@@ -1669,7 +1686,6 @@
                         <div class="form-row" style="margin:0;display:none">
                             <label>Sistema</label>
                             <select id="wm-os-select">
-                                <option value="web">Web</option>
                                 <option value="windows">Windows</option>
                                 <option value="mac">Mac</option>
                                 <option value="linux">Linux</option>
@@ -1677,13 +1693,12 @@
                                 <option value="ios">iPhone</option>
                             </select>
                         </div>
-                        <div style="color:var(--c-muted);font-size:0.82rem;">Predeterminado se aplica a los cursos que no tengan configuración propia.</div>
+                        <div id="wm-scope-hint" style="color:var(--c-muted);font-size:0.82rem;">Predeterminado se aplica a todos los productores y cursos que no tengan configuración propia.</div>
                     </div>
                 </div>
 
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
-                    <button class="pa-tab pa-tab-active" type="button" data-os="web">Web</button>
-                    <button class="pa-tab" type="button" data-os="windows">Windows</button>
+                    <button class="pa-tab pa-tab-active" type="button" data-os="windows">Windows</button>
                     <button class="pa-tab" type="button" data-os="mac">Mac</button>
                     <button class="pa-tab" type="button" data-os="linux">Linux</button>
                     <button class="pa-tab" type="button" data-os="android">Android</button>
@@ -1694,12 +1709,25 @@
                     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
                         <label style="display:flex;align-items:center;gap:10px;font-weight:600;font-size:0.95rem;">
                             <input type="checkbox" id="wm-visible-enabled" style="accent-color: var(--c-primary);">
-                            Mostrar marcas de agua en Web
+                            Mostrar marcas de agua visibles en <span id="wm-os-name">Windows</span>
                         </label>
-                        <span style="color:var(--c-muted);font-size:0.85rem;">Activa o desactiva todas las marcas de agua visibles.</span>
+                        <span style="color:var(--c-muted);font-size:0.85rem;">Activa o desactiva todas las marcas de agua visibles de este sistema.</span>
                     </div>
 
                     <div id="wm-items-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:20px;">
+                        <div class="wm-item-card" style="border-color:rgba(200,200,200,.25)">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                                <strong>Marca forense (casi invisible)</strong>
+                                <label style="font-size:0.82rem;display:flex;align-items:center;gap:8px;">
+                                    <input type="checkbox" id="wm-forensic-visible" style="accent-color: var(--c-primary);"> Activa
+                                </label>
+                            </div>
+                            <div class="form-row" style="margin:0 0 6px 0;">
+                                <label>Tamaño: <span id="wm-forensic-size-label">11px</span></label>
+                                <input type="range" id="wm-forensic-size" min="6" max="30" value="11" oninput="updateWmSizeLabel('forensic'); updateWmPreview()">
+                            </div>
+                            <div style="font-size:0.78rem;color:var(--c-muted);line-height:1.4">Rejilla con la huella de la sesión (alumno + dispositivo + hora) al 2 % de opacidad. Sirve para "Detectar fuga". No se apaga con el interruptor general.</div>
+                        </div>
                         <div class="wm-item-card">
                             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                                 <strong>Correo</strong>
@@ -1820,6 +1848,7 @@
                     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;align-items:center">
                         <button class="btn btn-red" type="button" onclick="saveWmConfig()">Guardar ahora</button>
                         <button class="btn btn-ghost" type="button" onclick="resetWmConfig()">Restablecer este sistema</button>
+                        <button class="btn btn-ghost" type="button" id="wm-clear-scope-btn" onclick="clearWmScope()" style="display:none">Quitar configuración propia (usar la heredada)</button>
                         <span id="wm-config-status" style="font-size:0.85rem;color:var(--c-muted)">Estado: pendiente</span>
                     </div>
                 </div>
@@ -1831,6 +1860,7 @@
                         <div id="wm-preview-ip" style="position:absolute;top:22px;right:22px;font-size:16px;font-weight:600;color:#ffffff;">190.24.10.5</div>
                         <div id="wm-preview-code" style="position:absolute;bottom:22px;left:22px;font-size:16px;font-weight:600;color:#ffffff;">CDP-1042</div>
                         <div id="wm-preview-datetime" style="position:absolute;bottom:22px;right:22px;font-size:16px;font-weight:600;color:rgba(255,255,255,0.6);">11/7/2026, 10:24:28 p.m.</div>
+                        <div id="wm-preview-forensic" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:monospace;font-size:11px;font-weight:500;color:rgba(128,128,128,0.35);white-space:nowrap;">a1b2c3d4-Uk9x2f-D5f6fe9-Tabc12 (forense · 2 % real)</div>
                     </div>
                     <p style="font-size:0.82rem;color:var(--c-muted);margin-top:12px">Simulación con datos de ejemplo. El tamaño real depende de la resolución del video.</p>
                 </div>
@@ -2153,6 +2183,7 @@ function initWatermarkTabs() {
         tabs.forEach(x => x.classList.toggle('pa-tab-active', x === tab));
         const os = tab.dataset.os || 'windows';
         osSelect.value = os;
+        const name = $('wm-os-name'); if (name) name.textContent = tab.textContent.trim();
         if ($('page-watermark').classList.contains('active')) loadWmConfig();
     };
 
@@ -3538,22 +3569,51 @@ async function removeDomain(domain) {
 // ================================================================
 let allStudents = [];
 
+let producersById = {};
+
+async function loadProducerOptions() {
+    const sel = $('filter-producer'); if (!sel) return;
+    try {
+        const d = await api('GET', '/api/owner/producers');
+        producersById = {};
+        const current = sel.value;
+        sel.querySelectorAll('option[data-producer]').forEach(o => o.remove());
+        (d.producers || []).forEach(p => {
+            producersById[p.id] = p;
+            const o = document.createElement('option');
+            o.value = p.id; o.dataset.producer = '1';
+            o.textContent = (p.name ? p.name + ' — ' : '') + p.email + (p.active ? '' : ' (suspendido)');
+            sel.appendChild(o);
+        });
+        if ([...sel.options].some(o => o.value === current)) sel.value = current;
+    } catch (_) { /* sin productores o sin permiso: el filtro queda con las opciones base */ }
+}
+
+function producerLabel(s) {
+    if (!s.producerId) return '<span style="color:var(--c-muted)">Directo</span>';
+    const p = producersById[s.producerId];
+    return p ? esc(p.name || p.email) : '<span title="' + esc(s.producerId) + '">' + esc(s.producerId.slice(0, 8)) + '…</span>';
+}
+
 async function loadStudents() {
     const tbody = $('students-body'), countEl = $('students-count');
-    tbody.innerHTML = '<tr><td colspan="8" style="color:var(--c-muted)">Cargando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="color:var(--c-muted)">Cargando...</td></tr>';
     try {
-        const { students } = await api('GET', '/api/students');
+        const [{ students }] = await Promise.all([api('GET', '/api/students'), loadProducerOptions()]);
         allStudents = students || [];
         renderStudents();
     } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="8" style="color:var(--c-error)">${esc(err.message)}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="color:var(--c-error)">${esc(err.message)}</td></tr>`;
     }
 }
 
 function renderStudents() {
     const filter = ($('filter-students') ? $('filter-students').value.toLowerCase() : '');
+    const producerFilter = ($('filter-producer') ? $('filter-producer').value : '');
     const tbody = $('students-body'), countEl = $('students-count');
     let list = allStudents;
+    if (producerFilter === '__none__') list = list.filter(s => !s.producerId);
+    else if (producerFilter) list = list.filter(s => s.producerId === producerFilter);
     if (filter) list = list.filter(s =>
         s.email.toLowerCase().includes(filter) ||
         s.studentId.toLowerCase().includes(filter) ||
@@ -3561,7 +3621,7 @@ function renderStudents() {
     );
     $('students-count').textContent = list.length + ' / ' + allStudents.length + ' alumnos';
     if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="8" style="color:var(--c-muted)">Sin alumnos. Usa el formulario de arriba para agregar.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="color:var(--c-muted)">Sin alumnos con ese filtro.</td></tr>';
         return;
     }
     tbody.innerHTML = list.map(s => {
@@ -3578,6 +3638,7 @@ function renderStudents() {
             <td>${esc(s.email)}</td>
             <td style="font-family:monospace">${esc(s.studentId)}</td>
             <td>${esc(s.name || '—')}</td>
+            <td style="font-size:0.78rem">${producerLabel(s)}</td>
             <td>${esc(videos)}</td>
             <td>${deviceBadge}</td>
             <td>${activeBadge}</td>
@@ -3599,6 +3660,7 @@ function renderStudents() {
 }
 
 $('filter-students') && $('filter-students').addEventListener('input', renderStudents);
+$('filter-producer') && $('filter-producer').addEventListener('change', renderStudents);
 
 // --- Subir video a Bunny Stream (con estado en vivo) ---
 $('btn-add-stream').addEventListener('click', addStreamVideo);
@@ -4208,6 +4270,68 @@ async function populateWmCourseSelect() {
     select.onchange = loadWmConfig;
 }
 
+// ── Ámbito: predeterminado | producer:<id> | <courseId> ───────────────────
+let wmProducersLoaded = false;
+async function populateWmProducerSelect() {
+    const select = $('wm-producer-id');
+    if (!select) return;
+    const current = select.value || '';
+    try {
+        const d = await api('GET', '/api/owner/producers');
+        select.innerHTML = '';
+        (d.producers || []).forEach(p => {
+            const o = document.createElement('option');
+            o.value = p.id;
+            o.textContent = (p.name ? p.name + ' — ' : '') + p.email + (p.active ? '' : ' (suspendido)');
+            select.appendChild(o);
+        });
+        if (!select.options.length) select.innerHTML = '<option value="">(no hay productores todavía)</option>';
+        if ([...select.options].some(o => o.value === current)) select.value = current;
+        wmProducersLoaded = true;
+    } catch (_) { select.innerHTML = '<option value="">(no se pudieron cargar)</option>'; }
+}
+function getWmScope() {
+    const type = $('wm-scope-type')?.value || 'default';
+    if (type === 'producer') { const id = $('wm-producer-id')?.value || ''; return id ? 'producer:' + id : '__default__'; }
+    if (type === 'course') return $('wm-course-id')?.value || '__default__';
+    return '__default__';
+}
+async function onWmScopeTypeChange() {
+    const type = $('wm-scope-type')?.value || 'default';
+    $('wm-producer-row').style.display = type === 'producer' ? '' : 'none';
+    $('wm-course-row').style.display = type === 'course' ? '' : 'none';
+    const hint = $('wm-scope-hint');
+    if (hint) hint.textContent = type === 'producer'
+        ? 'Se aplica a todos los cursos y alumnos de este productor que no tengan configuración propia por curso. No afecta a otros productores.'
+        : type === 'course' ? 'Se aplica solo a este curso y manda sobre el productor y el predeterminado.'
+        : 'Predeterminado se aplica a todos los productores y cursos que no tengan configuración propia.';
+    if (type === 'producer' && !wmProducersLoaded) await populateWmProducerSelect();
+    loadWmConfig();
+}
+// Autoguardado: cualquier cambio en los controles se envía en vivo tras 450 ms.
+let _wmAutosaveTimer = null;
+function scheduleWmAutosave() {
+    clearTimeout(_wmAutosaveTimer);
+    const st = $('wm-config-status'); if (st) { st.textContent = 'Guardando…'; st.style.color = 'var(--c-muted)'; }
+    _wmAutosaveTimer = setTimeout(() => saveWmConfig(true), 450);
+}
+(function wireWmAutosave() {
+    const grid = $('wm-items-grid'); const enabledCb = $('wm-visible-enabled');
+    if (grid) { grid.addEventListener('input', scheduleWmAutosave); grid.addEventListener('change', scheduleWmAutosave); }
+    if (enabledCb) enabledCb.addEventListener('change', scheduleWmAutosave);
+})();
+async function clearWmScope() {
+    const scope = getWmScope();
+    if (scope === '__default__') return;
+    const os = $('wm-os-select')?.value || 'windows';
+    if (!confirm('¿Quitar la configuración propia de este ámbito para ' + os + '? Pasará a heredar la del nivel superior.')) return;
+    try {
+        await api('POST', '/api/watermark/config', { courseId: scope, os, config: {} , clear: true });
+        await loadWmConfig();
+        $('wm-config-status').textContent = 'Configuración propia eliminada; ahora hereda.';
+    } catch (err) { $('wm-config-status').textContent = 'Error: ' + err.message; $('wm-config-status').style.color = '#ff6b6b'; }
+}
+
 function updateWmSizeLabel(key) {
     const label = $(`wm-${key}-size-label`);
     const value = getWmField(`wm-${key}-size`);
@@ -4216,6 +4340,11 @@ function updateWmSizeLabel(key) {
 
 function updateWmPreview() {
     const enabled = getWmField('wm-visible-enabled');
+    const fEl = $('wm-preview-forensic');
+    if (fEl) {
+        fEl.style.display = getWmField('wm-forensic-visible') ? 'block' : 'none';
+        fEl.style.fontSize = `${Math.max(6, Math.min(30, getWmField('wm-forensic-size') || 11))}px`;
+    }
     ['email', 'ip', 'code', 'datetime'].forEach((key) => {
         const el = $(`wm-preview-${key}`);
         if (!el) return;
@@ -4235,11 +4364,16 @@ function updateWmPreview() {
 
 async function loadWmConfig() {
     await populateWmCourseSelect();
-    const courseId = $('wm-course-id')?.value || '__default__';
+    const courseId = getWmScope();
     const os = $('wm-os-select')?.value || 'windows';
     try {
         const d = await api('GET', `/api/watermark/config?courseId=${encodeURIComponent(courseId)}&os=${encodeURIComponent(os)}`);
         const cfg = d.config || {};
+        const clearBtn = $('wm-clear-scope-btn');
+        if (clearBtn) clearBtn.style.display = (courseId !== '__default__' && d.hasOwn) ? '' : 'none';
+        setWmField('wm-forensic-visible', cfg.forensic?.on ?? true);
+        setWmField('wm-forensic-size', cfg.forensic?.size ?? 11);
+        updateWmSizeLabel('forensic');
         setWmField('wm-visible-enabled', cfg.enabled ?? true);
         setWmField('wm-email-visible', cfg.email?.on ?? true);
         setWmField('wm-email-size', cfg.email?.size ?? 35);
@@ -4262,7 +4396,9 @@ async function loadWmConfig() {
         updateWmSizeLabel('code');
         updateWmSizeLabel('datetime');
         updateWmPreview();
-        $('wm-config-status').textContent = 'Configuración cargada';
+        $('wm-config-status').textContent = (courseId !== '__default__' && !d.hasOwn)
+            ? 'Este ámbito no tiene configuración propia: se muestra la heredada. Al mover un control se creará la suya.'
+            : 'Configuración cargada';
         $('wm-config-status').style.color = '#4ade80';
     } catch (err) {
         $('wm-config-status').textContent = 'Error al cargar: ' + err.message;
@@ -4270,13 +4406,17 @@ async function loadWmConfig() {
     }
 }
 
-async function saveWmConfig() {
-    const courseId = $('wm-course-id')?.value.trim() || '__default__';
+async function saveWmConfig(auto = false) {
+    const courseId = getWmScope();
     const os = $('wm-os-select')?.value || 'windows';
     const existingResponse = await api('GET', `/api/watermark/config?courseId=${encodeURIComponent(courseId)}&os=${encodeURIComponent(os)}`);
     const existing = existingResponse.config || {};
     const config = {
         ...existing,
+        forensic: {
+            on: getWmField('wm-forensic-visible'),
+            size: getWmField('wm-forensic-size'),
+        },
         enabled: getWmField('wm-visible-enabled'),
         email: {
             on: getWmField('wm-email-visible'),
@@ -4306,7 +4446,8 @@ async function saveWmConfig() {
     try {
         await api('POST', '/api/watermark/config', { courseId, os, config });
         updateWmPreview();
-        $('wm-config-status').textContent = 'Configuración guardada y enviada en vivo';
+        const clearBtn = $('wm-clear-scope-btn'); if (clearBtn) clearBtn.style.display = courseId !== '__default__' ? '' : 'none';
+        $('wm-config-status').textContent = (auto ? 'Guardado automáticamente' : 'Configuración guardada') + ' y enviado en vivo (' + os + ') · ' + new Date().toLocaleTimeString();
         $('wm-config-status').style.color = '#4ade80';
     } catch (err) {
         $('wm-config-status').textContent = 'Error al guardar: ' + err.message;
@@ -4316,6 +4457,9 @@ async function saveWmConfig() {
 
 function resetWmConfig() {
     if (!confirm('Restablecer este sistema a sus valores por defecto?')) return;
+    setWmField('wm-forensic-visible', true);
+    setWmField('wm-forensic-size', 11);
+    updateWmSizeLabel('forensic');
     setWmField('wm-visible-enabled', true);
     setWmField('wm-email-visible', true);
     setWmField('wm-email-size', 35);

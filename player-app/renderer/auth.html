@@ -266,6 +266,7 @@
   let registrationTimer = null;
   let pendingRegistrationUser = null;
   let incompleteRegistrationUser = null;
+  let _autoRegisterRetried = false;
 
   // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function showStatus(id, type, msg) {
@@ -449,13 +450,22 @@
         }
         showStatus(statusElId, 'success', welcome);
 
-        // Admin: no necesita licencia DRM
+        // Admin: no necesita licencia
         if (isAdmin) {
           setTimeout(() => window.vcbPlayer.authSuccess(), 1000);
           return;
         }
 
-        // Verificar activación DRM local
+        // One-license-per-session: always show license form for students
+        if (result.requiresLicense) {
+          _pendingAuthResult = result;
+          _pendingAuthUser   = user;
+          showLicenseForm(result.email || (user && user.email) || '');
+          showStatus('license-status', 'info', 'Ingresa tu clave de licencia para acceder al contenido.');
+          return;
+        }
+
+        // Verificar activación DRM local (fallback for old sessions)
         await checkActivationAndProceed(result, user, statusElId);
         return;
       }
@@ -476,9 +486,14 @@
         return;
       }
       if (result.status === 'not_registered') {
+        // Auto-registration: retry login once (server should auto-register on first attempt)
+        if (!_autoRegisterRetried) {
+          _autoRegisterRetried = true;
+          showStatus(statusElId, 'info', 'Registrando cuenta...');
+          setTimeout(() => handleFirebaseUser(user, statusElId), 1500);
+          return;
+        }
         if (statusElId === 'login-status' && startRegistrationCountdown(result, user.email, user)) return;
-        // A verified Firebase identity already exists. Legacy responses never
-        // authorize an automatic redirect or silently create an application user.
         offerRegistrationCompletion(user, statusElId);
         return;
       }

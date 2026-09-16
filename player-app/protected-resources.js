@@ -25,7 +25,7 @@ function parseResourceLink(value) {
     try {
         const url = new URL(value);
         const id = url.searchParams.get('id');
-        return url.protocol === 'cdp:' && url.hostname === 'resource' && UUID.test(id || '')
+        return ['edulock:', 'cdp:'].includes(url.protocol) && url.hostname === 'resource' && UUID.test(id || '')
             && [...url.searchParams.keys()].every(key => key === 'id') && url.searchParams.getAll('id').length === 1
             && !url.username && !url.password && !url.port && !url.hash && ['', '/'].includes(url.pathname)
             ? id.toLowerCase() : null;

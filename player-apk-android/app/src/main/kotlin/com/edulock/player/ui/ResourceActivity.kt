@@ -88,7 +88,7 @@ class ResourceActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferen
         if (!ResourcePolicy.validId(resourceId)) block("El enlace del recurso no es válido.")
     }
     private fun buildUi() {
-        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(19, 22, 31)); setPadding(12, 8, 12, 8) }
+        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(20, 16, 16)); setPadding(12, 8, 12, 8) }
         val heading = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         heading.addView(Button(this).apply { text = "Cerrar"; setOnClickListener { finish() } })
         title = TextView(this).apply { text = "Documento protegido"; textSize = 18f; setTextColor(Color.WHITE); maxLines = 2 }
@@ -136,7 +136,7 @@ class ResourceActivity : AppCompatActivity(), SharedPreferences.OnSharedPreferen
         if (!foreground) return
         clearAccess()
         if (prefs.getString("jwt_token", "").isNullOrBlank()) {
-            prefs.edit().putString(WaitingActivity.PREF_PENDING_CDP, "cdp://resource?id=$resourceId").apply()
+            prefs.edit().putString(WaitingActivity.PREF_PENDING_CDP, "edulock://resource?id=$resourceId").apply()
             startActivity(Intent(this, LoginActivity::class.java)); finish(); return
         }
         status.text = "Comprobando permiso de acceso…"; retry.visibility = View.GONE
@@ -233,7 +233,7 @@ private class ProtectedPageView(context: Context) : View(context) {
     private val pinch = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean { zoomBy(detector.scaleFactor); return true }
     })
-    init { setBackgroundColor(Color.rgb(33, 36, 44)); isClickable = true; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES }
+    init { setBackgroundColor(Color.rgb(30, 26, 26)); isClickable = true; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES }
     fun show(value: Bitmap, watermark: String) { clear(); bitmap = value; mark = watermark; invalidate() }
     fun clear() { val old = bitmap; bitmap = null; mark = ""; zoom = 1f; panX = 0f; panY = 0f; invalidate(); old?.let { if (!it.isRecycled) { if (it.isMutable) it.eraseColor(Color.TRANSPARENT); it.recycle() } } }
     fun zoomBy(factor: Float) { if (bitmap != null) { zoom = (zoom * factor).coerceIn(1f, 4f); if (zoom == 1f) { panX = 0f; panY = 0f }; invalidate() } }

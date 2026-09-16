@@ -1,6 +1,6 @@
 {
   "name": "edulock-systems-player",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Reproductor externo seguro Edulock Systems Player",
   "main": "main.js",
   "author": {
@@ -63,7 +63,7 @@
       {
         "name": "Edulock Systems Player",
         "schemes": [
-          "cdp"
+          "edulock"
         ]
       }
     ],
@@ -78,6 +78,7 @@
       }
     },
     "nsis": {
+      "include": "build/installer.nsh",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,

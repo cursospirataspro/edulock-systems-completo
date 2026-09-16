@@ -5,6 +5,8 @@ import android.util.Log
 import com.google.gson.Gson
 import com.edulock.player.api.data.LicenseActivateRequest
 import com.edulock.player.api.data.LicenseActivateResponse
+import com.edulock.player.api.data.SessionActivateLicenseRequest
+import com.edulock.player.api.data.SessionActivateLicenseResponse
 import com.edulock.player.api.data.ValidateActivationRequest
 import com.edulock.player.api.data.ValidateActivationResponse
 import com.edulock.player.utils.ActivationStore
@@ -60,36 +62,34 @@ object LicenseManager {
     suspend fun activate(context: Context, licenseKey: String): ActivateResult = withContext(Dispatchers.IO) {
         try {
             val devId = deviceId(context)
-            val (ts, sig) = AppSignature.headers()
-            val req = LicenseActivateRequest(
-                licenseKey = licenseKey.trim().uppercase(),
-                deviceId = devId,
-                appVersion = APP_VERSION
-            )
             val jwt = com.edulock.player.utils.SessionManager.validToken(context)
-            val resp = ApiClient.getService().activateLicense(ts.toString(), sig, "Bearer $jwt", req)
+            val req = SessionActivateLicenseRequest(
+                licenseKey = licenseKey.trim().uppercase(),
+                deviceId = devId
+            )
+            val resp = ApiClient.getService().sessionActivateLicense("Bearer $jwt", req)
 
             if (resp.isSuccessful) {
                 val body = resp.body() ?: return@withContext ActivateResult(false, error = "Respuesta inválida del servidor")
-                val token = body.activationToken
-                if (token.isNullOrBlank()) {
+                val newToken = body.token
+                if (newToken.isNullOrBlank()) {
                     return@withContext ActivateResult(false, error = "Respuesta inválida del servidor")
                 }
+                // Save Stage 2 JWT
+                context.getSharedPreferences("edulock_auth", Context.MODE_PRIVATE).edit()
+                    .putString("jwt_token", newToken).putLong("login_timestamp", System.currentTimeMillis()).apply()
+                // Save activation state locally
                 ActivationStore.save(
                     context,
-                    activationToken = token,
+                    activationToken = newToken,
                     licenseId = body.licenseId,
-                    studentId = body.studentId,
+                    studentId = null,
                     courseId = body.courseId,
                     deviceId = devId
                 )
-                body.token?.takeIf { it.isNotBlank() }?.let { renewed ->
-                    context.getSharedPreferences("edulock_auth", Context.MODE_PRIVATE).edit()
-                        .putString("jwt_token", renewed).putLong("login_timestamp", System.currentTimeMillis()).apply()
-                }
                 ActivateResult(true)
             } else {
-                val err = parseError(resp.errorBody()?.string())
+                val err = parseErrorSession(resp.errorBody()?.string())
                 ActivateResult(false, code = err.first, error = err.second)
             }
         } catch (e: Exception) {
@@ -140,6 +140,16 @@ object LicenseManager {
         if (json.isNullOrBlank()) return null to null
         return try {
             val r = gson.fromJson(json, LicenseActivateResponse::class.java)
+            r.code to r.error
+        } catch (_: Exception) {
+            null to null
+        }
+    }
+
+    private fun parseErrorSession(json: String?): Pair<String?, String?> {
+        if (json.isNullOrBlank()) return null to null
+        return try {
+            val r = gson.fromJson(json, SessionActivateLicenseResponse::class.java)
             r.code to r.error
         } catch (_: Exception) {
             null to null

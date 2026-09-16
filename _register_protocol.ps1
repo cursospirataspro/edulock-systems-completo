@@ -1,5 +1,5 @@
-# _register_protocol.ps1
-# Registra el protocolo cdp:// en Windows apuntando al reproductor local (modo dev).
+﻿# _register_protocol.ps1
+# Registra el protocolo edulock:// en Windows apuntando al reproductor local (modo dev).
 # Ejecutar UNA vez despues de instalar dependencias.
 # No requiere permisos de administrador (escribe en HKCU).
 
@@ -9,7 +9,7 @@ param(
 )
 
 $AppName   = "Edulock Systems Player"
-$Protocol  = "cdp"
+$Protocol  = "edulock"
 
 # Detectar electron.exe en node_modules
 if (-not $PlayerPath) {
@@ -33,18 +33,18 @@ if (-not $PlayerPath -or -not (Test-Path $PlayerPath)) {
 # Resolver ruta absoluta del main.js del player
 $MainJs = (Resolve-Path (Join-Path $AppDir "player-app\main.js")).Path
 
-# Comando que Windows ejecutara al abrir cdp://
+# Comando que Windows ejecutara al abrir edulock://
 # electron.exe "<path_to_main.js>" "%1"
 $Command = "`"$PlayerPath`" `"$MainJs`" `"%1`""
 
 Write-Host ""
-Write-Host "Registrando protocolo cdp:// ..." -ForegroundColor Cyan
+Write-Host "Registrando protocolo edulock:// ..." -ForegroundColor Cyan
 Write-Host "  App   : $AppName"
 Write-Host "  Exec  : $PlayerPath"
 Write-Host "  Cmd   : $Command"
 Write-Host ""
 
-# Crear claves en HKCU\Software\Classes\cdp
+# Crear claves en HKCU\Software\Classes\edulock
 $base = "HKCU:\Software\Classes\$Protocol"
 
 New-Item -Path $base -Force | Out-Null
@@ -63,9 +63,9 @@ Set-ItemProperty -Path "$base\DefaultIcon" -Name "(Default)" -Value "$PlayerPath
 New-Item -Path "$base\shell\open\command" -Force | Out-Null
 Set-ItemProperty -Path "$base\shell\open\command" -Name "(Default)" -Value $Command
 
-Write-Host "Protocolo cdp:// registrado correctamente." -ForegroundColor Green
+Write-Host "Protocolo edulock:// registrado correctamente." -ForegroundColor Green
 Write-Host ""
-Write-Host "Ahora cuando hagas clic en un link cdp:// Chrome preguntara:" -ForegroundColor Yellow
+Write-Host "Ahora cuando hagas clic en un link edulock:// Chrome preguntara:" -ForegroundColor Yellow
 Write-Host "  'Abrir $AppName'" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "NOTA: Reinicia Chrome para que detecte el nuevo registro." -ForegroundColor DarkYellow

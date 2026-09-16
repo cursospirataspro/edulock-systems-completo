@@ -149,6 +149,12 @@ async function init() {
     });
     window.vcbPlayer.onSecurityCleared(() => { /* Reopen an authorized link to resume. */ });
 
+    if (window.vcbPlayer.onTokenRefreshed) {
+        window.vcbPlayer.onTokenRefreshed((newToken) => {
+            if (newToken && STATE.isLoggedIn) STATE.auth = newToken;
+        });
+    }
+
     // Botones de UI
     overlayRetry.addEventListener('click', resetToSplash);
     btnPlay.addEventListener('click', togglePlay);
@@ -223,7 +229,7 @@ async function sendStartupCheckin(di) {
 
 // ── Canjear short-token por {cmd, auth} ──────────────────────────────────────
 async function redeemShortToken(t) {
-    const ts  = Date.now().toString();
+    const ts  = (window.vcbPlayer?.getServerTime ? await window.vcbPlayer.getServerTime() : Date.now()).toString();
     const sig = window.vcbPlayer?.computeAppSig
         ? await window.vcbPlayer.computeAppSig(t + ':' + ts)
         : '';
@@ -327,7 +333,7 @@ async function handleCdpPlay({ cmd, auth, t, p }) {
     }
 
     if (!cmd || !auth) {
-        showOverlay('⚠️', 'Comando inválido', 'El enlace cdp:// recibido no contiene los datos necesarios.');
+        showOverlay('⚠️', 'Comando inválido', 'El enlace edulock:// recibido no contiene los datos necesarios.');
         return;
     }
 
@@ -885,22 +891,18 @@ function stopHeartbeat() {
     }
 }
 
-// ── Marca de agua ─────────────────────────────────────────────────────────────
-// 4 watermarks INDEPENDIENTES: Correo, IP, Código CDP, Fecha y Hora.
-// Cada uno se mueve LIBREMENTE por cualquier parte del reproductor (no a una
-// esquina fija). La posición se calcula al azar dentro del área visible y se
-// limita (clamp) para que el texto SIEMPRE quede completo, sin cortarse.
-// El watermark del correo (rojo) usa una fuente más grande (35px); el resto 16px.
-// El TAMAÑO EN PÍXELES, color y grosor pueden cambiarse EN TIEMPO REAL desde el
-// panel admin: llegan por un canal SSE y se re-renderizan sin recargar el video.
+// ── Marca de agua (Canvas) ───────────────────────────────────────────────────
+// Renderiza sobre un <canvas> superpuesto al video. Los pixeles del canvas no
+// se pueden ocultar con CSS Inspector sin que el monitor de integridad lo
+// detecte y corte la reproduccion.
+// El TAMANO, color y grosor se controlan EN TIEMPO REAL desde el panel admin
+// via SSE — la config del admin sigue funcionando exactamente igual.
 const WM_DEFS = [
-    { id: 'wm-email',    key: 'email',    rotateMs: 9000,  transSec: 6 },
-    { id: 'wm-ip',       key: 'ip',       rotateMs: 13000, transSec: 8 },
-    { id: 'wm-code',     key: 'code',     rotateMs: 7000,  transSec: 5 },
-    { id: 'wm-datetime', key: 'datetime', rotateMs: 11000, transSec: 7 },
+    { key: 'email',    rotateMs: 9000  },
+    { key: 'ip',       rotateMs: 13000 },
+    { key: 'code',     rotateMs: 7000  },
+    { key: 'datetime', rotateMs: 11000 },
 ];
-
-// Estilo por defecto de cada marca (se usa hasta que el backend envía config).
 const _WM_DEFAULT = {
     email:    { on: true, size: 35, color: '#ff2d2d', weight: 700, alpha: 0.6  },
     ip:       { on: true, size: 16, color: '#ffffff', weight: 600, alpha: 0.22 },
@@ -908,28 +910,24 @@ const _WM_DEFAULT = {
     datetime: { on: true, size: 16, color: '#ffffff', weight: 600, alpha: 0.22 },
 };
 function getWmOsKey() {
-    const procPlatform = (typeof window !== 'undefined' && window.process && window.process.platform) || '';
-    if (procPlatform === 'darwin') return 'mac';
-    if (procPlatform === 'linux') return 'linux';
-    if (procPlatform === 'win32') return 'windows';
+    const p = (typeof window !== 'undefined' && window.process && window.process.platform) || '';
+    if (p === 'darwin') return 'mac'; if (p === 'linux') return 'linux'; if (p === 'win32') return 'windows';
     const ua = String(typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '').toLowerCase();
-    if (/iphone|ipad|ipod/.test(ua)) return 'ios';
-    if (/android/.test(ua)) return 'android';
-    if (/macintosh|mac os x|mac/.test(ua)) return 'mac';
-    if (/linux/.test(ua)) return 'linux';
-    if (/windows|win/.test(ua)) return 'windows';
+    if (/iphone|ipad|ipod/.test(ua)) return 'ios'; if (/android/.test(ua)) return 'android';
+    if (/mac/.test(ua)) return 'mac'; if (/linux/.test(ua)) return 'linux';
     return 'windows';
 }
 const _WM_OS_KEY = getWmOsKey();
-let   _wmConfig  = null;        // config resuelta del SO (llega del backend por SSE)
-let   _wmSSE     = null;        // canal EventSource abierto
-
-let _wmClientIp = null;
+let   _wmConfig  = null;
+let   _wmSSE     = null;
+let   _wmClientIp = null;
 const _wmTimers = [];
-const _wmEls    = [];
-let _wmResizeHandler = null;
+let   _wmCanvas = null;
+let   _wmCtx    = null;
+let   _wmResizeHandler = null;
+let   _wmIntegrityTimer = null;
+const _wmPositions = {};
 
-// Convierte #rrggbb + alpha en rgba(). Fallback: blanco translúcido.
 function _wmHexToRgba(hex, alpha) {
     const m = /^#([0-9a-fA-F]{6})$/.exec(String(hex || ''));
     if (!m) return `rgba(255,255,255,${alpha})`;
@@ -937,16 +935,13 @@ function _wmHexToRgba(hex, alpha) {
     return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
 }
 
-// Estilo aplicable de una marca: valores por defecto + override de la config en
-// vivo. El tamaño se valida al rango 6–80 px (igual que el clamp del servidor).
 function _wmMarkStyle(key) {
     const d = _WM_DEFAULT[key] || _WM_DEFAULT.datetime;
     if (!_wmConfig || typeof _wmConfig !== 'object') return Object.assign({}, d);
     if (_wmConfig.enabled === false) return Object.assign({}, d, { on: false });
     const m = _wmConfig[key];
     if (!m || typeof m !== 'object') return Object.assign({}, d);
-    const size   = parseInt(m.size, 10);
-    const weight = parseInt(m.weight, 10);
+    const size = parseInt(m.size, 10), weight = parseInt(m.weight, 10);
     return {
         on:     m.on !== false,
         size:   (Number.isFinite(size)   && size   >= 6   && size   <= 80)  ? size   : d.size,
@@ -956,155 +951,184 @@ function _wmMarkStyle(key) {
     };
 }
 
-// Pinta UNA marca dentro del contenedor y programa su rotación de posición.
-function _wmPaintOne(def, parent) {
-    const st = _wmMarkStyle(def.key);
-    let el = document.getElementById(def.id);
-    if (!st.on) { if (el) { try { el.remove(); } catch {} } return; }
-    if (!el) {
-        el = document.createElement('div');
-        el.id = def.id;
-        parent.appendChild(el);
-    }
-    Object.assign(el.style, {
-        position:      'absolute',
-        zIndex:        '20',
-        pointerEvents: 'none',
-        fontSize:      st.size + 'px',           // ◄◄ tamaño de píxeles en tiempo real
-        fontWeight:    String(st.weight),
-        color:         _wmHexToRgba(st.color, st.alpha),
-        fontFamily:    'monospace',
-        whiteSpace:    'nowrap',
-        lineHeight:    '1.6',
-        textShadow:    def.key === 'email' ? '0 1px 3px rgba(0,0,0,0.85)' : '0 1px 2px rgba(0,0,0,0.6)',
-        transition:    `top ${def.transSec}s ease-in-out, left ${def.transSec}s ease-in-out`,
-    });
-    el.textContent = _wmValue(def.key);
-    _wmEls.push(el);
-    _wmRandomPos(el, parent);
-    const timer = setInterval(() => {
-        try {
-            el.textContent = _wmValue(def.key);
-            _wmRandomPos(el, parent);
-        } catch {}
-    }, def.rotateMs);
-    _wmTimers.push(timer);
-}
-
-// Re-pinta TODAS las marcas (limpia timers/elementos previos). No cierra el SSE.
-function _wmPaintAll(parent) {
-    while (_wmTimers.length) { try { clearInterval(_wmTimers.pop()); } catch {} }
-    while (_wmEls.length)    { try { _wmEls.pop().remove();       } catch {} }
-    WM_DEFS.forEach(def => _wmPaintOne(def, parent));
-}
+// ── Canvas: funciones de dibujo y monitoreo de integridad ────────────────────
 
 function _wmFetchIp() {
     if (_wmClientIp) return;
     try {
         fetch('https://api.ipify.org?format=json', { cache: 'no-store' })
             .then(r => r.ok ? r.json() : null)
-            .then(d => {
-                if (d && d.ip) {
-                    _wmClientIp = d.ip;
-                    const el = document.getElementById('wm-ip');
-                    if (el) el.textContent = _wmValue('ip');
-                }
-            }).catch(() => {});
+            .then(d => { if (d && d.ip) { _wmClientIp = d.ip; _wmRedrawCanvas(); } })
+            .catch(() => {});
     } catch {}
 }
 
 function _wmValue(key) {
     if (key === 'email') {
-        const e = STATE.studentEmail && STATE.studentEmail.includes('@')
-            ? STATE.studentEmail
-            : '';
+        const e = STATE.studentEmail && STATE.studentEmail.includes('@') ? STATE.studentEmail : '';
         return e ? '\u2709 ' + e : '';
     }
-    if (key === 'ip') {
-        return _wmClientIp ? 'IP ' + _wmClientIp : '';
-    }
-    if (key === 'code') {
-        return STATE.watermarkText || STATE.studentCode || 'CDP-?????';
-    }
+    if (key === 'ip') return _wmClientIp ? 'IP ' + _wmClientIp : '';
+    if (key === 'code') return STATE.watermarkText || STATE.studentCode || 'CDP-?????';
     if (key === 'datetime') {
         const now = new Date();
-        const dd  = String(now.getDate()).padStart(2,'0');
-        const mm  = String(now.getMonth()+1).padStart(2,'0');
-        const hh  = String(now.getHours()).padStart(2,'0');
-        const mn  = String(now.getMinutes()).padStart(2,'0');
-        const ss  = String(now.getSeconds()).padStart(2,'0');
-        return `${dd}/${mm}/${now.getFullYear()} ${hh}:${mn}:${ss}`;
+        return `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
     }
     return '';
 }
 
-// Coloca el elemento en una posición aleatoria dentro del área del reproductor,
-// asegurando que el texto completo permanezca visible (sin cortarse en los bordes).
-function _wmRandomPos(el, parent) {
-    const pw = parent.clientWidth  || window.innerWidth;
-    const ph = parent.clientHeight || window.innerHeight;
-    const ew = el.offsetWidth  || 0;
-    const eh = el.offsetHeight || 0;
-    const margin  = 6;
-    const maxLeft = Math.max(margin, pw - ew - margin);
-    const maxTop  = Math.max(margin, ph - eh - margin);
-    const left = margin + Math.random() * Math.max(0, maxLeft - margin);
-    const top  = margin + Math.random() * Math.max(0, maxTop  - margin);
-    el.style.left   = Math.round(left) + 'px';
-    el.style.top    = Math.round(top)  + 'px';
-    el.style.right  = 'auto';
-    el.style.bottom = 'auto';
+function _wmRandomPos(key, w, h, textW, textH) {
+    const margin = 10;
+    const maxL = Math.max(margin, w - textW - margin);
+    const maxT = Math.max(margin, h - textH - margin);
+    _wmPositions[key] = {
+        x: margin + Math.random() * Math.max(0, maxL - margin),
+        y: margin + textH + Math.random() * Math.max(0, maxT - margin),
+    };
 }
 
-// Reajusta los watermarks que hayan quedado fuera del área visible (p. ej. al
-// cambiar el tamaño de la ventana o entrar/salir de pantalla completa).
-function _wmClampAll(parent) {
-    const pw = parent.clientWidth  || window.innerWidth;
-    const ph = parent.clientHeight || window.innerHeight;
-    const margin = 6;
-    _wmEls.forEach(el => {
-        const ew = el.offsetWidth  || 0;
-        const eh = el.offsetHeight || 0;
-        let left = parseFloat(el.style.left) || 0;
-        let top  = parseFloat(el.style.top)  || 0;
-        left = Math.min(Math.max(margin, left), Math.max(margin, pw - ew - margin));
-        top  = Math.min(Math.max(margin, top),  Math.max(margin, ph - eh - margin));
-        el.style.left = Math.round(left) + 'px';
-        el.style.top  = Math.round(top)  + 'px';
-    });
+function _wmRedrawCanvas() {
+    if (!_wmCanvas || !_wmCtx) return;
+    const parent = _wmCanvas.parentElement || document.body;
+    const w = parent.clientWidth  || window.innerWidth;
+    const h = parent.clientHeight || window.innerHeight;
+    const dpr = window.devicePixelRatio || 1;
+    _wmCanvas.width  = w * dpr;
+    _wmCanvas.height = h * dpr;
+    _wmCanvas.style.width  = w + 'px';
+    _wmCanvas.style.height = h + 'px';
+    _wmCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    _wmCtx.clearRect(0, 0, w, h);
+    for (const def of WM_DEFS) {
+        const st = _wmMarkStyle(def.key);
+        if (!st.on) continue;
+        const text = _wmValue(def.key);
+        if (!text) continue;
+        _wmCtx.font = `${st.weight} ${st.size}px monospace`;
+        const measured = _wmCtx.measureText(text);
+        const textW = measured.width;
+        const textH = st.size * 1.4;
+        if (!_wmPositions[def.key]) _wmRandomPos(def.key, w, h, textW, textH);
+        const pos = _wmPositions[def.key];
+        _wmCtx.fillStyle = _wmHexToRgba(st.color, st.alpha);
+        _wmCtx.shadowColor = def.key === 'email' ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0.6)';
+        _wmCtx.shadowBlur = def.key === 'email' ? 3 : 2;
+        _wmCtx.shadowOffsetY = 1;
+        _wmCtx.fillText(text, pos.x, pos.y);
+        _wmCtx.shadowColor = 'transparent';
+        _wmCtx.shadowBlur = 0;
+        _wmCtx.shadowOffsetY = 0;
+    }
+    _wmDrawForensic(w, h);
+}
+
+function _wmForensicFingerprint() {
+    const parts = [];
+    if (STATE.sessionId) parts.push(STATE.sessionId.slice(0, 8));
+    if (STATE.studentEmail) {
+        let h = 0;
+        for (let i = 0; i < STATE.studentEmail.length; i++) h = ((h << 5) - h + STATE.studentEmail.charCodeAt(i)) | 0;
+        parts.push('U' + (h >>> 0).toString(36));
+    }
+    if (STATE.deviceId) parts.push('D' + String(STATE.deviceId).slice(0, 6));
+    const ts = Math.floor(Date.now() / 300000);
+    parts.push('T' + ts.toString(36));
+    return parts.join('-') || 'EL-NODATA';
+}
+
+// Tamaño y activación de la capa forense controlables desde el panel (config.forensic).
+function _wmForensicStyle() {
+    const f = (_wmConfig && typeof _wmConfig === 'object' && _wmConfig.forensic && typeof _wmConfig.forensic === 'object') ? _wmConfig.forensic : {};
+    const size = parseInt(f.size, 10);
+    // La opacidad se mantiene fija al 2 %: solo el tamaño y la activación se controlan desde el panel.
+    return {
+        on:    f.on !== false && f.enabled !== false,
+        size:  (Number.isFinite(size) && size >= 6 && size <= 30) ? size : 11,
+        alpha: 0.02,
+    };
+}
+
+function _wmDrawForensic(w, h) {
+    if (!_wmCtx) return;
+    const fs = _wmForensicStyle();
+    if (!fs.on) return;
+    const fp = _wmForensicFingerprint();
+    const cellW = Math.max(160, Math.round(fs.size * 20)), cellH = Math.max(60, Math.round(fs.size * 8));
+    _wmCtx.save();
+    _wmCtx.font = `500 ${fs.size}px monospace`;
+    _wmCtx.fillStyle = `rgba(128,128,128,${fs.alpha})`;
+    _wmCtx.shadowColor = 'transparent';
+    _wmCtx.shadowBlur = 0;
+    for (let y = 20; y < h; y += cellH) {
+        for (let x = 15; x < w; x += cellW) {
+            _wmCtx.fillText(fp, x, y);
+        }
+    }
+    _wmCtx.restore();
+}
+
+function _wmCheckIntegrity() {
+    if (!_wmCanvas) return;
+    const cs = window.getComputedStyle(_wmCanvas);
+    const hidden = cs.display === 'none' || cs.visibility === 'hidden' ||
+                   cs.opacity === '0' || _wmCanvas.width === 0 ||
+                   !document.body.contains(_wmCanvas);
+    if (hidden) {
+        try { video.pause(); } catch {}
+        stopPlayback();
+        showOverlay('⚠️', 'Marca de agua eliminada', 'Se ha detectado manipulacion de la marca de agua. La reproduccion se ha detenido.');
+    }
 }
 
 function startWatermark() {
     stopWatermark();
     _wmFetchIp();
-
-    // El elemento original #watermark se usa como contenedor; vaciarlo.
     if (watermark) { watermark.textContent = ''; watermark.style.display = 'none'; }
     const parent = (watermark && watermark.parentElement) || document.body;
-
-    _wmPaintAll(parent);
-
-    // Mantener todo dentro del área visible al redimensionar / pantalla completa.
-    _wmResizeHandler = () => { try { _wmClampAll(parent); } catch {} };
+    _wmCanvas = document.createElement('canvas');
+    _wmCanvas.id = 'wm-canvas';
+    Object.assign(_wmCanvas.style, {
+        position: 'absolute', top: '0', left: '0', width: '100%', height: '100%',
+        zIndex: '20', pointerEvents: 'none',
+    });
+    parent.appendChild(_wmCanvas);
+    _wmCtx = _wmCanvas.getContext('2d');
+    for (const def of WM_DEFS) delete _wmPositions[def.key];
+    _wmRedrawCanvas();
+    for (const def of WM_DEFS) {
+        const timer = setInterval(() => {
+            try {
+                const st = _wmMarkStyle(def.key);
+                if (!st.on) return;
+                const text = _wmValue(def.key);
+                const w = _wmCanvas.parentElement?.clientWidth || window.innerWidth;
+                const h = _wmCanvas.parentElement?.clientHeight || window.innerHeight;
+                _wmCtx.font = `${st.weight} ${st.size}px monospace`;
+                const measured = _wmCtx.measureText(text);
+                _wmRandomPos(def.key, w, h, measured.width, st.size * 1.4);
+                _wmRedrawCanvas();
+            } catch {}
+        }, def.rotateMs);
+        _wmTimers.push(timer);
+    }
+    _wmResizeHandler = () => { try { _wmRedrawCanvas(); } catch {} };
     window.addEventListener('resize', _wmResizeHandler);
-
-    // Abrir el canal de tamaño de píxeles en tiempo real (idempotente).
+    _wmIntegrityTimer = setInterval(_wmCheckIntegrity, 2000);
     subscribeWmConfig();
 }
 
-// ── Tamaño de píxeles en tiempo real (SSE) ─────────────────────────────────
-// Abre un canal persistente al backend; cuando el admin cambia tamaño/color/
-// grosor desde el panel, llega un evento `config` y se re-renderizan las marcas
-// sin recargar el video.
 function subscribeWmConfig() {
-    if (_wmSSE) return;                              // ya suscrito
-    if (typeof EventSource === 'undefined') return;  // sin soporte
-    if (!STATE.apiBase || !STATE.auth) return;       // sin datos para autenticar
+    if (_wmSSE) return;
+    if (typeof EventSource === 'undefined') return;
+    if (!STATE.apiBase || !STATE.auth) return;
     const courseId = STATE.wmCourseId || '__default__';
+    // El servidor deduce el productor del curso/video y envía la config efectiva
+    // (predeterminado ← productor ← curso), por eso también se manda el videoId.
     const url = String(STATE.apiBase).replace(/\/+$/, '')
         + '/api/watermark/stream/' + encodeURIComponent(courseId)
         + '?token=' + encodeURIComponent(STATE.mediaToken || STATE.auth)
-        + '&os='    + encodeURIComponent(_WM_OS_KEY);
+        + '&os='    + encodeURIComponent(_WM_OS_KEY)
+        + (STATE.videoId ? '&v=' + encodeURIComponent(STATE.videoId) : '');
     try {
         const es = new EventSource(url);
         _wmSSE = es;
@@ -1112,18 +1136,18 @@ function subscribeWmConfig() {
             try {
                 const full = JSON.parse(e.data);
                 _wmConfig = full[_WM_OS_KEY] || full || _wmConfig;
-                const parent = (watermark && watermark.parentElement) || document.body;
-                _wmPaintAll(parent);                 // ◄◄ re-render sin recargar
+                _wmRedrawCanvas();
             } catch {}
         });
-        es.onerror = () => { /* EventSource reintenta solo; conserva el último tamaño */ };
+        es.onerror = () => {};
     } catch {}
 }
 
 function stopWatermark() {
     if (STATE.wmTimer) { clearInterval(STATE.wmTimer); STATE.wmTimer = null; }
     while (_wmTimers.length) { try { clearInterval(_wmTimers.pop()); } catch {} }
-    while (_wmEls.length) { try { _wmEls.pop().remove(); } catch {} }
+    if (_wmIntegrityTimer) { clearInterval(_wmIntegrityTimer); _wmIntegrityTimer = null; }
+    if (_wmCanvas) { try { _wmCanvas.remove(); } catch {} _wmCanvas = null; _wmCtx = null; }
     if (_wmResizeHandler) { try { window.removeEventListener('resize', _wmResizeHandler); } catch {} _wmResizeHandler = null; }
     if (_wmSSE) { try { _wmSSE.close(); } catch {} _wmSSE = null; }
 }
@@ -1200,7 +1224,7 @@ async function apiFetch(path, method = 'GET', body = null) {
     // Agregar firma HMAC en las llamadas críticas de reproducción
     const isPlaybackEndpoint = path.startsWith('/api/playback/resolve') || path.startsWith('/api/playback/t/');
     if (isPlaybackEndpoint && window.vcbPlayer?.computeAppSig) {
-        const ts  = Date.now().toString();
+        const ts  = (window.vcbPlayer?.getServerTime ? await window.vcbPlayer.getServerTime() : Date.now()).toString();
         const sig = await window.vcbPlayer.computeAppSig('resolve:' + ts);
         headers['X-CDP-Ts']  = ts;
         headers['X-CDP-Sig'] = sig;

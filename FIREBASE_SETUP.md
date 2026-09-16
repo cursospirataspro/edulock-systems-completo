@@ -1,4 +1,4 @@
-# Firebase — 100% proyecto edulock-systems-oficial (sin Santana)
+# Firebase — 100% proyecto edulock-systems-oficial
 
 Todo el código quedó apuntando a **tu** proyecto real `edulock-systems-oficial`
 (número de proyecto `61528672386`, cuenta `edulocksystemsoficial@gmail.com`).
@@ -10,9 +10,9 @@ Todo el código quedó apuntando a **tu** proyecto real `edulock-systems-oficial
 | Config web (login Google/email) en `admin.html`, `remote-admin.html`, `served-admin.html`, `player-app/renderer/auth.html` | apiKey `AIzaSyASI4Qa_GVmylE4QjkkzTdSNxLt1NgXSu4`, senderId `61528672386`, appId `1:61528672386:web:742bd1ab09f2d47c900c9b` | ✅ |
 | `google-services.json` (APK) | tu archivo oficial de Downloads (`edulock-systems-oficial`, `61528672386`) | ✅ |
 | `.env` → `FIREBASE_PROJECT_ID` | `edulock-systems-oficial` | ✅ |
-| Service account de Santana (`santana-fx-player-9b6f0`) | **eliminado** | ✅ |
+| Service account del proyecto anterior | **eliminado** | ✅ |
 
-Ya **no queda nada** apuntando a `santana-fx-player-9b6f0` ni al proyecto `635936221331`.
+Ya **no queda nada** apuntando al proyecto anterior ni al proyecto `635936221331`.
 
 ## Lo único que falta hacer TÚ (no se puede generar por código)
 

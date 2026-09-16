@@ -12,7 +12,7 @@
     --card:    #171717;
     --border:  #333333;
     --accent:  #c72b24;
-    --accent2: #7b2fd1;
+    --accent2: #a1121b;
     --text:    #f5f5f5;
     --muted:   #9ca3af;
     --red:     #ef4444;
@@ -104,15 +104,15 @@
   .play-btn:hover { transform: scale(1.06); }
   .play-circle {
     width: 72px; height: 72px;
-    background: rgba(245, 158, 11, .92);
+    background: var(--accent);
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 0 40px rgba(245,158,11,.4);
+    box-shadow: 0 0 40px rgba(216,31,42,.4);
     transition: background .2s, box-shadow .2s;
   }
   .play-btn:hover .play-circle {
     background: var(--accent2);
-    box-shadow: 0 0 60px rgba(245,158,11,.6);
+    box-shadow: 0 0 60px rgba(216,31,42,.6);
   }
   .play-circle svg { margin-left: 5px; }
 
@@ -120,7 +120,7 @@
   .play-spinner {
     display: none;
     width: 72px; height: 72px;
-    border: 4px solid rgba(245,158,11,.3);
+    border: 4px solid rgba(216,31,42,.3);
     border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin .8s linear infinite;
@@ -155,8 +155,8 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: rgba(245,158,11,.1);
-    border: 1px solid rgba(245,158,11,.25);
+    background: rgba(216,31,42,.1);
+    border: 1px solid rgba(216,31,42,.25);
     color: var(--accent);
     font-size: 12px;
     font-weight: 600;
@@ -191,10 +191,11 @@
     cursor: pointer;
     display: flex; align-items: center; justify-content: center; gap: 8px;
     transition: background .2s, transform .1s;
+    text-decoration: none;
   }
-  .btn-play:hover { background: var(--accent2); }
+  .btn-play:hover { background: var(--accent2); text-decoration: none; }
   .btn-play:active { transform: scale(.97); }
-  .btn-play:disabled { opacity: .6; cursor: default; }
+  .btn-play[aria-disabled="true"] { opacity: .6; cursor: default; pointer-events: none; }
 
   .btn-download {
     background: transparent;
@@ -251,7 +252,7 @@
 </div>
 
 <div class="card">
-  <div class="thumb-wrap" id="thumbWrap" onclick="onPlayClick()">
+  <div class="thumb-wrap" id="thumbWrap" onclick="document.getElementById('btnPlay').click()">
     <div class="thumb-placeholder" id="thumbPlaceholder">
       <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
         <rect width="80" height="80" rx="16" fill="#1e1e2e"/>
@@ -281,15 +282,16 @@
       Este video está protegido contra copia. Para verlo, debe instalar <strong>Edulock Systems Player</strong>.
     </p>
     <div class="actions">
-      <button class="btn-play" id="btnPlay" onclick="onPlayClick()" disabled>
+      <a class="btn-play" id="btnPlay" href="#" onclick="return onPlayClick(event)" aria-disabled="true">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3 2l12 6-12 6V2z"/></svg>
         Reproducir
-      </button>
+      </a>
       <a class="btn-download" id="btnDownload" href="/download">
         ⬇ Instalar Player
       </a>
     </div>
     <div class="status-msg" id="statusMsg"></div>
+    <a class="status-msg" id="manualOpen" href="#" style="color:var(--accent);font-weight:600;text-decoration:underline">¿No se abrió? Haz clic aquí para abrir el reproductor</a>
   </div>
 </div>
 
@@ -297,157 +299,189 @@
 
 <script>
 (function() {
-  const publicCode = location.pathname.split('/cover/')[1]?.trim();
+  var publicCode = location.pathname.split('/cover/')[1];
+  if (publicCode) publicCode = publicCode.trim();
   if (!publicCode) { showError('Código de video no encontrado.'); return; }
 
-  let downloadUrl = '/download';
+  var downloadUrl = '/download';
+  var deepLink = null;
+  var launchToken = null;
 
-  // Cargar metadata pública
+  function prefetchLaunch() {
+    fetch('/api/public/video/' + publicCode + '/launch', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        deepLink = d.deepLink || null;
+        launchToken = d.launchToken || null;
+        if (d.downloadUrl) {
+          downloadUrl = d.downloadUrl;
+          document.getElementById('btnDownload').href = downloadUrl;
+        }
+        if (deepLink) {
+          var btn = document.getElementById('btnPlay');
+          btn.href = deepLink;
+          btn.removeAttribute('aria-disabled');
+        }
+      })
+      .catch(function() {});
+  }
+
   fetch('/api/public/video/' + publicCode)
-    .then(r => r.json())
-    .then(d => {
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
       if (d.error) { showError(d.error); return; }
       document.title = d.title + ' — Edulock Systems Player';
       document.getElementById('videoTitle').textContent = d.title;
       if (d.theme === 'light') {
-        const style = document.documentElement.style;
+        var style = document.documentElement.style;
         style.setProperty('--bg', '#f4f4f5'); style.setProperty('--card', '#ffffff');
         style.setProperty('--border', '#d4d4d8'); style.setProperty('--text', '#18181b'); style.setProperty('--muted', '#52525b');
       }
       if (d.description) {
-        const description = document.createElement('p');
-        description.textContent = d.description;
-        description.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);line-height:1.5;margin:12px 0';
-        document.getElementById('videoTitle').after(description);
+        var desc = document.createElement('p');
+        desc.textContent = d.description;
+        desc.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);line-height:1.5;margin:12px 0';
+        document.getElementById('videoTitle').after(desc);
       }
-
-      // Thumbnail real del video
       if (d.thumbnailUrl) {
-        const wrap = document.getElementById('thumbWrap');
-        const img  = document.getElementById('thumbImg');
-        const placeholder = document.getElementById('thumbPlaceholder');
+        var wrap = document.getElementById('thumbWrap');
+        var img  = document.getElementById('thumbImg');
+        var placeholder = document.getElementById('thumbPlaceholder');
         img.src = d.thumbnailUrl;
         img.alt = d.title;
-        img.onload = () => {
+        img.onload = function() {
           placeholder.style.display = 'none';
           img.style.display = 'block';
           wrap.classList.add('has-thumb');
         };
-        img.onerror = () => { img.style.display = 'none'; };
+        img.onerror = function() { img.style.display = 'none'; };
       }
-
-      // Badge de duración
       if (d.duration) {
-        const badge = document.getElementById('durationBadge');
+        var badge = document.getElementById('durationBadge');
         badge.textContent = d.duration;
         badge.style.display = 'block';
       }
-
       if (d.downloadUrl) downloadUrl = d.downloadUrl;
       document.getElementById('btnDownload').href = d.downloadUrl || '/download';
-      document.getElementById('btnPlay').disabled = false;
+
+      prefetchLaunch();
     })
-    .catch(() => showError('No se pudo cargar la información del video.'));
+    .catch(function() { showError('No se pudo cargar la información del video.'); });
 
-  function onPlayClick() {
-    const btn = document.getElementById('btnPlay');
-    const playCircle = document.getElementById('playCircle');
-    const spinner = document.getElementById('playSpinner');
+  function onPlayClick(evt) {
+    if (evt) evt.preventDefault();
+    var btn = document.getElementById('btnPlay');
+    var playCircle = document.getElementById('playCircle');
+    var spinner = document.getElementById('playSpinner');
 
-    btn.disabled = true;
+    if (!deepLink) {
+      btn.setAttribute('aria-disabled', 'true');
+      playCircle.style.display = 'none';
+      spinner.style.display = 'block';
+      setStatus('Preparando reproductor…', 'loading');
+
+      fetch('/api/public/video/' + publicCode + '/launch', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          deepLink = d.deepLink || null;
+          launchToken = d.launchToken || null;
+          if (d.downloadUrl) {
+            downloadUrl = d.downloadUrl;
+            document.getElementById('btnDownload').href = downloadUrl;
+          }
+          resetBtn();
+          if (deepLink) {
+            btn.href = deepLink;
+            btn.removeAttribute('aria-disabled');
+            setStatus('Listo. Haz clic en "Reproducir" para abrir el reproductor.', 'loading');
+          } else {
+            setStatus('Error: no se pudo preparar la reproducción.', 'error');
+          }
+        })
+        .catch(function() {
+          resetBtn();
+          setStatus('Error al preparar. Intenta de nuevo.', 'error');
+        });
+      return false;
+    }
+
     playCircle.style.display = 'none';
     spinner.style.display = 'block';
-    setStatus('Iniciando reproductor...', '');
+    document.getElementById('manualOpen').classList.remove('show');
+    setStatus('Abriendo Edulock Systems Player… Si Chrome pregunta, pulsa "Abrir".', 'loading');
 
-    fetch('/api/public/video/' + publicCode + '/launch', { method: 'POST' })
-      .then(r => r.json())
-      .then(d => {
-        if (d.error) { resetBtn(); showError(d.error); return; }
+    startPolling(launchToken);
+    setTimeout(function() { prefetchLaunch(); }, 2000);
 
-        const { deepLink, downloadUrl: dlUrl, launchToken } = d;
-        downloadUrl = dlUrl || downloadUrl;
-        document.getElementById('btnDownload').href = downloadUrl;
+    // Navegar ESTA pestaña al protocolo, de forma síncrona dentro del clic.
+    // Chrome/Edge/Safari muestran su diálogo "¿Abrir Edulock Systems Player?" y
+    // la página no se descarga. Un window.open o un iframe pierden el gesto de
+    // usuario y el navegador descarta el lanzamiento en silencio.
+    window.location.href = deepLink;
+    return false;
+  }
 
-        setStatus('Abriendo Edulock Systems Player…', 'loading');
+  function startPolling(lt) {
+    var done = false, sawBlur = false;
+    var markBlur = function() { sawBlur = true; };
+    var onVis = function() { if (document.hidden) sawBlur = true; };
+    window.addEventListener('blur', markBlur);
+    window.addEventListener('pagehide', markBlur);
+    document.addEventListener('visibilitychange', onVis);
+    var startedAt = Date.now();
+    var MAX_WAIT = 15000;
 
-        // Intentar abrir el protocolo cdp://
-        const iframe = document.createElement('iframe');
-        iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';
-        document.body.appendChild(iframe);
-        iframe.src = deepLink;
-
-        // ── DETECCIÓN PRECISA ──────────────────────────────────────────────
-        // Señal REAL: el reproductor hace "check-in" al servidor apenas abre el
-        // enlace (POST /api/public/launch/checkin). Consultamos ese estado por
-        // el launchToken. Como respaldo (reproductores antiguos que aún no
-        // reportan), detectamos si el navegador perdió el foco (indicio de que
-        // una app nativa se abrió).
-        let done = false, sawBlur = false;
-        const markBlur = () => { sawBlur = true; };
-        const onVis = () => { if (document.hidden) sawBlur = true; };
-        window.addEventListener('blur', markBlur);
-        window.addEventListener('pagehide', markBlur);
-        document.addEventListener('visibilitychange', onVis);
-
-        const startedAt = Date.now();
-        const MAX_WAIT = 12000;   // 12s: cubre arranque en frío del reproductor
-
-        const cleanup = () => {
-          window.removeEventListener('blur', markBlur);
-          window.removeEventListener('pagehide', markBlur);
-          document.removeEventListener('visibilitychange', onVis);
-          try { document.body.removeChild(iframe); } catch (_) {}
-        };
-
-        const finish = (state) => {
-          if (done) return; done = true;
-          clearInterval(poller);
-          cleanup();
-          resetBtn();
-          if (state === 'opened') {
-            setStatus('✓ Reproductor abierto. Si no ves el video, revisa la ventana del reproductor.', 'success');
-          } else if (state === 'maybe') {
-            // El navegador perdió el foco pero no llegó el check-in (reproductor antiguo).
-            setStatus('El reproductor se está abriendo. Si no ves el video en unos segundos, revisa su ventana o inícialo manualmente.', 'success');
-          } else {
-            // Ni check-in ni cambio de foco → casi seguro no está instalado.
-            setStatus('No se detectó el reproductor instalado. Descárgalo con el botón de abajo; si ya lo tienes, ábrelo manualmente e inicia sesión.', 'error');
-            const dl = document.getElementById('btnDownload');
-            dl.style.outline = '2px solid var(--accent)';
-            dl.style.borderColor = 'var(--accent)';
-          }
-        };
-
-        const poller = setInterval(() => {
-          if (done) return;
-          if (Date.now() - startedAt > MAX_WAIT) {
-            finish(sawBlur ? 'maybe' : 'not_installed');
-            return;
-          }
-          if (!launchToken) return; // sin token no hay check-in; esperamos al timeout
-          fetch('/api/public/launch/status?lt=' + encodeURIComponent(launchToken))
-            .then(r => r.json())
-            .then(s => {
-              if (s && s.opened) finish('opened');
-              else if (s && s.expired) finish(sawBlur ? 'maybe' : 'not_installed');
-            })
-            .catch(() => {});
-        }, 800);
-      })
-      .catch(() => { resetBtn(); showError('Error al iniciar. Intenta de nuevo.'); });
+    var cleanup = function() {
+      window.removeEventListener('blur', markBlur);
+      window.removeEventListener('pagehide', markBlur);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+    var finish = function(state) {
+      if (done) return; done = true;
+      clearInterval(poller);
+      cleanup();
+      resetBtn();
+      if (state === 'opened') {
+        setStatus('Reproductor abierto. Si no ves el video, revisa la ventana del reproductor.', 'success');
+      } else if (state === 'maybe') {
+        setStatus('El reproductor se está abriendo. Si no ves el video, revisa su ventana o inícialo manualmente.', 'success');
+      } else {
+        setStatus('No se detectó el reproductor. Si ya lo tienes instalado, usa el enlace de abajo; si no, descárgalo.', 'error');
+        var manual = document.getElementById('manualOpen');
+        if (deepLink) { manual.href = deepLink; manual.classList.add('show'); }
+        var dl = document.getElementById('btnDownload');
+        dl.style.outline = '2px solid var(--accent)';
+        dl.style.borderColor = 'var(--accent)';
+      }
+    };
+    var poller = setInterval(function() {
+      if (done) return;
+      if (Date.now() - startedAt > MAX_WAIT) {
+        finish(sawBlur ? 'maybe' : 'not_installed');
+        return;
+      }
+      if (!lt) return;
+      fetch('/api/public/launch/status?lt=' + encodeURIComponent(lt))
+        .then(function(r) { return r.json(); })
+        .then(function(s) {
+          if (s && s.opened) finish('opened');
+          else if (s && s.expired) finish(sawBlur ? 'maybe' : 'not_installed');
+        })
+        .catch(function() {});
+    }, 800);
   }
 
   function resetBtn() {
-    const btn = document.getElementById('btnPlay');
-    const playCircle = document.getElementById('playCircle');
-    const spinner = document.getElementById('playSpinner');
-    btn.disabled = false;
+    var btn = document.getElementById('btnPlay');
+    var playCircle = document.getElementById('playCircle');
+    var spinner = document.getElementById('playSpinner');
+    btn.removeAttribute('aria-disabled');
     playCircle.style.display = 'flex';
     spinner.style.display = 'none';
   }
 
   function setStatus(msg, type) {
-    const el = document.getElementById('statusMsg');
+    var el = document.getElementById('statusMsg');
     el.textContent = msg;
     el.className = 'status-msg show' + (type ? ' ' + type : '');
   }
@@ -455,10 +489,9 @@
   function showError(msg) {
     document.getElementById('videoTitle').textContent = 'Video no disponible';
     setStatus(msg, 'error');
-    document.getElementById('btnPlay').disabled = true;
+    document.getElementById('btnPlay').setAttribute('aria-disabled', 'true');
   }
 
-  // Hacer onPlayClick global para el onclick del thumb
   window.onPlayClick = onPlayClick;
 })();
 </script>

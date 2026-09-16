@@ -156,7 +156,7 @@ class LicenseActivity : AppCompatActivity() {
 
     private fun showStatus(message: String, isError: Boolean) {
         statusView.text = message
-        statusView.setTextColor(getColor(if (isError) R.color.error else R.color.accent_bright))
+        statusView.setTextColor(getColor(if (isError) R.color.error else R.color.text_primary))
         statusView.visibility = View.VISIBLE
     }
 
