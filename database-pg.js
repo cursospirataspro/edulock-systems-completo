@@ -704,6 +704,7 @@ async function initDb() {
         updated_at TEXT NOT NULL
     )`);
     await q(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS bunny_token_key TEXT`);
+    await q(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS bunny_previous_libraries JSONB NOT NULL DEFAULT '[]'::jsonb`);
     await q(`CREATE TABLE IF NOT EXISTS stream_operations (
         id TEXT PRIMARY KEY,
         actor_key TEXT NOT NULL,
@@ -1636,6 +1637,13 @@ module.exports.setCourseBunnyLibrary = async (courseId, { libraryId, libraryKey,
     await q(`UPDATE courses SET bunny_library_id=$1, bunny_library_key=$2, bunny_pull_zone=$3,
              bunny_token_key=CASE WHEN bunny_library_id IS DISTINCT FROM $1 THEN $4 ELSE COALESCE($4,bunny_token_key) END WHERE id=$5`,
         [String(libraryId), libraryKey || null, pullZone || null, tokenKey || null, courseId]);
+};
+
+// Keeps the reference of a library the course stopped using (e.g. the Bunny account changed).
+// Nothing is deleted remotely; the previous classes keep their addresses and can be restored by hand.
+module.exports.archiveCourseBunnyLibrary = async (courseId, info) => {
+    const entry = { libraryId: info?.libraryId || null, libraryKey: info?.libraryKey || null, pullZone: info?.pullZone || null, tokenKey: info?.tokenKey || null, reason: info?.reason || null, archivedAt: new Date().toISOString() };
+    await q(`UPDATE courses SET bunny_previous_libraries = COALESCE(bunny_previous_libraries, '[]'::jsonb) || $2::jsonb WHERE id=$1`, [courseId, JSON.stringify([entry])]);
 };
 
 module.exports.getCourseBunny = async (courseId) => {

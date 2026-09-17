@@ -2259,27 +2259,47 @@ app.post('/api/bunny/save-account-key', requireAdmin, async (req, res) => {
     res.json({ ok: true });
 });
 
-/** GET /api/bunny/token-key — Estado del Token Authentication Key de Bunny */
+// Comprueba una Account API Key contra la API de cuenta de Bunny. Nunca devuelve la clave.
+async function verifyBunnyAccountKey(key) {
+    try {
+        const user = await bunnyJson('GET', 'api.bunny.net', '/user', key, null);
+        if (!user || typeof user !== 'object' || !(user.Id || user.Email)) return { ok: false };
+        let libraries = null;
+        try { const list = await bunnyJson('GET', 'api.bunny.net', '/videolibrary?page=1&perPage=1', key, null); libraries = Number(list?.TotalItems ?? (list?.Items || []).length); } catch {}
+        const email = String(user.Email || '');
+        return { ok: true, summary: { email: email.replace(/^(.{2}).*(@.*)$/, '$1…$2'), accountDisabled: user.AccountDisabled === true, cardVerified: user.CardVerified === true,
+            billingFreeUntil: user.BillingFreeUntilDate || null, libraries } };
+    } catch { return { ok: false }; }
+}
+
+/** GET /api/bunny/token-key — Estado de la clave de Bunny (cuenta y firma) */
 app.get('/api/bunny/token-key', requireAdmin, async (req, res) => {
     try {
+        const accountKey = await getBunnyAccountKey();
         const dbKey = await db.getConfig('bunny_token_key');
-        if (dbKey) return res.json({ source: 'db' });
-        if (BUNNY_TOKEN_KEY) return res.json({ source: 'env' });
-        const hasAccountKey = !!(await getBunnyAccountKey());
-        res.json({ source: 'none', autoDiscovery: hasAccountKey });
+        const fingerprint = accountKey ? crypto.createHash('sha256').update(accountKey).digest('hex').slice(0, 8) : null;
+        res.json({ source: dbKey ? 'db' : BUNNY_TOKEN_KEY ? 'env' : 'none', autoDiscovery: !!accountKey,
+            accountConfigured: !!accountKey, accountFingerprint: fingerprint, manualTokenKey: !!dbKey });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-/** POST /api/bunny/token-key — Guarda el Token Authentication Key de Bunny en DB */
+/** POST /api/bunny/token-key — Guarda la clave pegada en Seguridad. Si es una Account API Key válida
+ *  se guarda como clave de cuenta (bibliotecas, colecciones, subidas y firma automática); si no, como
+ *  Token Authentication Key manual. Así el panel funciona con la clave principal de cualquier cuenta. */
 app.post('/api/bunny/token-key', requireAdmin, async (req, res) => {
-    const { tokenKey } = req.body || {};
-    const value = (tokenKey || '').trim();
-    if (value) {
+    try {
+        const value = String((req.body || {}).tokenKey || '').trim();
+        if (!value) { await db.setConfig('bunny_token_key', ''); return res.json({ ok: true, kind: 'cleared' }); }
+        const account = await verifyBunnyAccountKey(value);
+        if (account.ok) {
+            await db.setConfig('bunny_account_key', value);
+            await db.setConfig('bunny_token_key', '');
+            _tokenKeyCache.clear();
+            return res.json({ ok: true, kind: 'account', account: account.summary });
+        }
         await db.setConfig('bunny_token_key', value);
-    } else {
-        await db.setConfig('bunny_token_key', '');
-    }
-    res.json({ ok: true });
+        res.json({ ok: true, kind: 'token' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 /** POST /api/bunny/sync-token-keys — Auto-descubre y guarda los Token Auth Keys de todas las bibliotecas */

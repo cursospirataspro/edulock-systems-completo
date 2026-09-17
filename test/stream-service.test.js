@@ -411,3 +411,89 @@ test('transport timeout destroys its request and rejects instead of hanging', as
     await assert.rejects(transport.json('GET', 'api.bunny.net', '/videolibrary', 'synthetic'), { code: 'BUNNY_TIMEOUT' });
     assert.equal(request.destroyed, true);
 });
+
+test('a course whose library belongs to another Bunny account gets a fresh library and collections in the current account', async () => {
+    const { service, transport, db } = setup();
+    const foreign = status => Object.assign(new Error(`El servicio de video respondió HTTP ${status}.`),
+        { code: 'BUNNY_HTTP_ERROR', statusCode: 502, retryable: false, httpStatus: status, provider: { status, errorKey: 'videoLibrary.notAccessible', field: null, message: 'not accessible' } });
+    db.state.library = { libraryId: '900', libraryKey: 'old-library-key', pullZone: 'old.b-cdn.net', tokenKey: 'old-token' };
+    db.state.resources.set(`course:${COURSE}`, { remote_name: 'old', remote_id: '900', state: 'ready' });
+    db.state.resources.set(`module:${MODULE}`, { remote_name: 'old module', remote_id: 'old-collection', state: 'ready' });
+    db.state.collection = 'old-collection';
+    const archived = []; db.archiveCourseBunnyLibrary = async (id, info) => archived.push({ id, ...info });
+    db.getModulesByCourse = async () => [{ id: MODULE }];
+    const original = transport.json.bind(transport);
+    let accountValid = false;
+    transport.json = async (method, host, apiPath, key, body) => {
+        if (apiPath.startsWith('/videolibrary/900')) throw foreign(403);
+        if (apiPath.startsWith('/videolibrary?page=1&perPage=1') && !accountValid) throw foreign(401);
+        return original(method, host, apiPath, key, body);
+    };
+    // An invalid account key must not touch anything: the account check (401) is what gets reported.
+    await assert.rejects(service.ensureCourseLibrary({ courseId: COURSE, actor: ADMIN }), error => error.httpStatus === 401 && error.stage === 'library-verify');
+    assert.equal(db.state.library.libraryId, '900'); assert.equal(archived.length, 0); assert.equal(db.state.collection, 'old-collection');
+    // A valid key that cannot see the saved library: new library in this account, modules reset, nothing deleted remotely.
+    accountValid = true;
+    const library = await service.ensureCourseLibrary({ courseId: COURSE, actor: ADMIN });
+    assert.equal(library.libraryId, '101'); assert.equal(library.pullZone, 'synthetic.b-cdn.net'); assert.equal(library.drm, true);
+    assert.equal(db.state.library.libraryId, '101');
+    assert.deepEqual(archived, [{ id: COURSE, libraryId: '900', libraryKey: 'old-library-key', pullZone: 'old.b-cdn.net', tokenKey: 'old-token', reason: 'HTTP 403' }]);
+    assert.equal(String(db.state.resources.get(`course:${COURSE}`).remote_id), '101');
+    assert.equal(db.state.collection, null); assert.equal(db.state.resources.has(`module:${MODULE}`), false);
+    assert.equal(transport.state.calls.filter(c => c.method === 'POST' && c.path === '/videolibrary').length, 1);
+    assert.equal(transport.state.calls.some(c => c.method === 'DELETE'), false, 'nothing is ever deleted in Bunny');
+    const collection = await service.ensureModuleCollection({ courseId: COURSE, moduleId: MODULE, actor: ADMIN });
+    assert.equal(collection, COLLECTION);
+    assert.equal(transport.state.calls.filter(c => c.method === 'POST' && c.path === '/library/101/collections').length, 1, 'the module gets a collection in the new library');
+    // The second call is served from the verified cache without re-provisioning.
+    const again = await service.ensureCourseLibrary({ courseId: COURSE, actor: ADMIN });
+    assert.equal(again.libraryId, '101');
+    assert.equal(transport.state.calls.filter(c => c.method === 'POST' && c.path === '/videolibrary').length, 1);
+});
+
+test('a pending collection sync for a class that is not in the current library is cleared instead of retried forever', async () => {
+    const { service, transport, db } = setup();
+    transport.state.libraries.push({ Id: 101, Name: 'Prueba', ApiKey: 'synthetic-library-key', PullZoneId: 102, StorageZoneId: 103 });
+    transport.state.collections.push({ guid: COLLECTION, name: 'Módulo sintético [module:' + MODULE + ']' });
+    db.state.library = { libraryId: '101', libraryKey: 'synthetic-library-key', pullZone: 'synthetic.b-cdn.net', tokenKey: null, drm: true };
+    db.state.collection = COLLECTION;
+    const OTHER = '00000000-0000-4000-8000-000000000099';
+    const original = transport.json.bind(transport);
+    transport.json = async (method, host, apiPath, key, body) => {
+        if (apiPath === `/library/101/videos/${OTHER}`) throw Object.assign(new Error('HTTP 404'), { code: 'BUNNY_HTTP_ERROR', statusCode: 502, httpStatus: 404, provider: { status: 404, errorKey: 'video.notFound', field: null, message: 'not found' } });
+        return original(method, host, apiPath, key, body);
+    };
+    const cleared = [];
+    db.getPendingCollectionSyncs = async () => [{ videoId: OTHER, courseId: COURSE, moduleId: MODULE }];
+    db.setCollectionSyncPending = async (id, pending) => cleared.push([id, pending]);
+    const result = await service.reconcileVideoCollections({ limit: 5 });
+    assert.equal(result.synced, 0); assert.equal(result.errors.length, 1);
+    assert.deepEqual(cleared, [[OTHER, false]], 'the flag is cleared so the reconcile loop stops retrying');
+});
+
+test('a just-created library is not used until the Stream API accepts its key', async () => {
+    const waits = [];
+    const { service, transport, db } = setup({ wait: async ms => { waits.push(ms); } });
+    const original = transport.json.bind(transport);
+    let denials = 2;
+    transport.json = async (method, host, apiPath, key, body) => {
+        if (host === 'video.bunnycdn.com' && apiPath.startsWith('/library/101/collections?page=1&itemsPerPage=1') && denials > 0) {
+            denials--; throw Object.assign(new Error('HTTP 401'), { code: 'BUNNY_HTTP_ERROR', statusCode: 502, httpStatus: 401, provider: { status: 401, errorKey: null, field: null, message: 'Authentication has been denied for this request.' } });
+        }
+        return original(method, host, apiPath, key, body);
+    };
+    const library = await service.ensureCourseLibrary({ courseId: COURSE, actor: ADMIN });
+    assert.equal(library.libraryId, '101'); assert.deepEqual(waits, [3000, 3000], 'waited twice before the key was accepted');
+    assert.equal(denials, 0);
+    // A library that already existed is never probed: no extra wait on later calls.
+    waits.length = 0; db.state.library = { ...db.state.library, libraryKey: 'synthetic-library-key', pullZone: 'synthetic.b-cdn.net' };
+    await service.ensureCourseLibrary({ courseId: COURSE, actor: ADMIN }); assert.deepEqual(waits, []);
+    // Still denied after the bounded retries: a retryable error instead of a misleading collection failure.
+    const fresh = setup({ wait: async () => {} });
+    const o2 = fresh.transport.json.bind(fresh.transport);
+    fresh.transport.json = async (method, host, apiPath, key, body) => {
+        if (host === 'video.bunnycdn.com' && apiPath.startsWith('/library/101/collections?page=1')) throw Object.assign(new Error('HTTP 401'), { code: 'BUNNY_HTTP_ERROR', statusCode: 502, httpStatus: 401, provider: { status: 401, errorKey: null, field: null, message: 'denied' } });
+        return o2(method, host, apiPath, key, body);
+    };
+    await assert.rejects(fresh.service.ensureCourseLibrary({ courseId: COURSE, actor: ADMIN }), { code: 'BUNNY_LIBRARY_KEY_PENDING', retryable: true, stage: 'library-activate' });
+});

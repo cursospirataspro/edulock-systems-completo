@@ -1843,19 +1843,20 @@
 
             <div class="card">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-                    <h3 style="margin:0">� Token Authentication Key de Bunny</h3>
+                    <h3 style="margin:0">🔑 Clave de Bunny (Account API Key)</h3>
                     <span id="btk-source" style="font-size:0.78rem;color:var(--c-muted)"></span>
                 </div>
                 <p style="font-size:0.8rem;color:var(--c-muted);margin:6px 0 10px;line-height:1.5">
-                    Firma de URLs del CDN de Bunny. Puedes usar <b>Auto-sync</b> para que el sistema obtenga las claves automáticamente
-                    usando tu Account API Key (funciona para todas las bibliotecas), o pegarla manualmente.
+                    Pega aquí la <b>Account API Key</b> de tu cuenta de Bunny (Account Settings → API). Con esa sola clave la plataforma crea la biblioteca
+                    de cada curso, la colección de cada módulo, sube los videos y obtiene sola la clave de firma del CDN. Si cambias de cuenta, los cursos
+                    nuevos y las subidas nuevas usan la cuenta nueva automáticamente. <b>Auto-sync</b> solo refresca las claves de firma de las bibliotecas ya vinculadas.
                 </p>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
                     <button class="btn" type="button" onclick="syncBunnyTokenKeys()" id="btk-sync-btn" style="background:#7c3aed;white-space:nowrap">Auto-sync todas las bibliotecas</button>
                     <span style="color:var(--c-muted);font-size:0.78rem">— o pegar manualmente:</span>
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
-                    <input type="password" id="btk-input" placeholder="Token Auth Key manual (opcional)" autocomplete="off"
+                    <input type="password" id="btk-input" placeholder="Account API Key de Bunny (o Token Auth Key manual)" autocomplete="off"
                         style="flex:1;min-width:260px;padding:8px 10px;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:0.85rem">
                     <button class="btn btn-ghost" type="button" onclick="const i=$('btk-input');i.type=i.type==='password'?'text':'password'">👁</button>
                     <button class="btn" type="button" onclick="saveBunnyTokenKey()">Guardar manual</button>
@@ -4179,10 +4180,12 @@ async function loadBunnyTokenKeyStatus() {
     if (!src) return;
     try {
         const d = await api('GET', '/api/bunny/token-key');
-        if (d.source === 'db')       src.innerHTML = '<span style="color:#4ade80">✓ Configurada (auto-sync o manual)</span>';
-        else if (d.source === 'env') src.innerHTML = '<span style="color:#ffb454">Usando respaldo de env var</span>';
-        else if (d.autoDiscovery)    src.innerHTML = '<span style="color:#ffb454">Sin configurar — usa "Auto-sync" para obtenerlas</span>';
-        else                          src.innerHTML = '<span style="color:#ff6b6b">Sin configurar — configura la Account API Key primero</span>';
+        const parts = [];
+        if (d.accountConfigured) parts.push('<span style="color:#4ade80">✓ Account API Key activa (huella ' + (d.accountFingerprint || '') + ') — firma automática</span>');
+        else parts.push('<span style="color:#ff6b6b">Sin Account API Key — pégala aquí</span>');
+        if (d.manualTokenKey) parts.push('<span style="color:#ffb454">· clave de firma manual guardada</span>');
+        else if (d.source === 'env') parts.push('<span style="color:#ffb454">· firma de respaldo por env var</span>');
+        src.innerHTML = parts.join(' ');
     } catch { src.textContent = ''; }
 }
 
@@ -4209,11 +4212,20 @@ async function saveBunnyTokenKey() {
     const status = $('btk-status');
     if (!input) return;
     const tokenKey = input.value.trim();
-    if (tokenKey && !confirm('¿Guardar esta Token Key? Si es incorrecta, los videos darán error 403 hasta corregirla.')) return;
-    if (!tokenKey && !confirm('Campo vacío: se volverá a usar la clave de respaldo de Render. ¿Continuar?')) return;
+    if (tokenKey && !confirm('¿Guardar esta clave? Se comprobará contra Bunny antes de activarla.')) return;
+    if (!tokenKey && !confirm('Campo vacío: se borra la clave de firma manual (la Account API Key no cambia). ¿Continuar?')) return;
     try {
-        await api('POST', '/api/bunny/token-key', { tokenKey });
-        if (status) { status.textContent = '✓ Guardado — activo en menos de 1 minuto'; status.style.color = '#4ade80'; }
+        const d = await api('POST', '/api/bunny/token-key', { tokenKey });
+        if (status) {
+            if (d.kind === 'account') {
+                const a = d.account || {};
+                status.textContent = '✓ Account API Key verificada y guardada (' + (a.email || 'cuenta') + ', ' + (a.libraries ?? '?') + ' bibliotecas' +
+                    (a.accountDisabled ? ', CUENTA DESHABILITADA en Bunny' : '') + (a.cardVerified ? '' : ', tarjeta sin verificar') + '). Activa de inmediato.';
+                status.style.color = a.accountDisabled ? '#ff6b6b' : '#4ade80';
+                if (typeof loadBunnyAccountKey === 'function') loadBunnyAccountKey();
+            } else if (d.kind === 'token') { status.textContent = '✓ Guardada como clave de firma manual (no es una Account API Key válida)'; status.style.color = '#ffb454'; }
+            else { status.textContent = '✓ Clave de firma manual borrada'; status.style.color = '#4ade80'; }
+        }
         input.value = '';
         loadBunnyTokenKeyStatus();
     } catch (e) {
