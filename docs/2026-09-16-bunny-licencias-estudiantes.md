@@ -99,3 +99,14 @@ Comandos y entorno:
 - Respaldos previos: `/root/backups/reproductor-code-2026-09-16-pre-licencias-estudiantes.tgz` y `/root/backups/campus_drm-2026-09-16-pre-licencias-estudiantes.dump`.
 - Desplegado en `/opt/reproductor`, migración aplicada, `pm2 restart reproductor`, servicio `online`.
 - Reversión: restaurar el tgz y ejecutar `migrations/20260916_licencias_permanentes.down.sql`.
+
+## 10. Registro automático: fin de "Solicitudes de registro" (2026-09-16, tarde)
+
+**Decisión del propietario:** ninguna cuenta espera aprobación del administrador. El registro crea la cuenta al instante y el acceso al contenido lo decide exclusivamente la licencia del curso (una licencia activa por sesión, dispositivos según el límite del administrador).
+
+- Servidor: `POST /api/auth/register-request` ahora crea/vincula la cuenta al momento (`db.enrollFirebaseStudent`, aprobada) y responde `approved`; `POST /api/auth/firebase-login` usa la misma inscripción automática y ya no escribe filas `auto_approved`. Retiradas: `GET /api/auth/check-device`, `GET/POST/DELETE /api/admin/registrations*`. El contador "pendientes" del panel queda en 0. `lib/account-auth.js` conserva solo la consulta de estado de cuenta (sin lecturas de solicitudes); el `login()` muerto se eliminó.
+- Panel admin: desaparecen la sección "Solicitudes de Registro", sus filtros, el modal de aprobación, el rechazo/eliminación y el distintivo de pendientes en "Alumnos". Suspender/restaurar alumnos sigue en su gestión habitual.
+- Reproductor de PC (`player-app`, versión 1.1.1): la pestaña Registrarse crea la cuenta Firebase, la inscribe en Edulock y pasa directo a la pantalla de licencia. Botón "Crear cuenta"; sin mensajes de solicitud pendiente/rechazada; IPC de solicitudes retirado. Paleta de acceso pasada a rojo/negro/blanco.
+- APK (versión 1.1.2, código 112): el registro crea la cuenta y continúa con el inicio de sesión automático hacia la pantalla de licencia. Botón "Crear cuenta"; sin estados pendientes.
+- Datos: la tabla `registration_requests` se conserva como histórico; no se borra nada. Quien tenía una solicitud pendiente solo necesita iniciar sesión: su cuenta se crea sola y luego activa su licencia.
+- Tests: `test/player-handshake.test.js` y `test/account-auth.test.js` reescritos a la política automática; `tests/full-validation.mjs` y `tests/live-functional.mjs` exigen ahora la ausencia de las rutas de aprobación.

@@ -1969,26 +1969,6 @@ async function reportSecurityEvent(event, deviceId, details = {}) {
     } catch { /* silencioso — no afecta al usuario */ }
 }
 
-ipcMain.handle('auth-check-device', async (_e, deviceId) => {
-    try {
-        const apiBase = getConfig().API_BASE;
-        const res = await httpFetch(`${apiBase}/api/auth/check-device?deviceId=${encodeURIComponent(deviceId)}`);
-        return normalizeAuthResponse(res);
-    } catch (err) {
-        return connectionFailure();
-    }
-});
-
-ipcMain.handle('auth-register-request', async (_e, data) => {
-    try {
-        const apiBase = getConfig().API_BASE;
-        const res = await httpFetch(`${apiBase}/api/auth/register-request`, { method: 'POST' }, data);
-        return normalizeAuthResponse(res);
-    } catch (err) {
-        return connectionFailure();
-    }
-});
-
 ipcMain.handle('auth-firebase-login', async (_e, data) => {
     try {
         const apiBase = getConfig().API_BASE;

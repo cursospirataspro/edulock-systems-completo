@@ -107,10 +107,10 @@ describe('3. server.js — funciones y rutas', () => {
     // NUEVAS rutas
     it('POST /api/session/activate-license', () => assert.ok(serverCode.includes("'/api/session/activate-license'")));
 
-    // Verificar que rutas existentes NO se rompieron
-    it('GET /api/admin/registrations', () => assert.ok(serverCode.includes("'/api/admin/registrations'")));
-    it('POST /api/admin/registrations/:id/approve', () => assert.ok(serverCode.includes("'/api/admin/registrations/:id/approve'")));
-    it('POST /api/admin/registrations/:id/reject', () => assert.ok(serverCode.includes("'/api/admin/registrations/:id/reject'")));
+    // Sin aprobación manual: las rutas de solicitudes de registro no existen
+    it('sin GET /api/admin/registrations', () => assert.ok(!serverCode.includes("'/api/admin/registrations'")));
+    it('sin POST /api/admin/registrations/:id/approve', () => assert.ok(!serverCode.includes("'/api/admin/registrations/:id/approve'")));
+    it('sin POST /api/admin/registrations/:id/reject', () => assert.ok(!serverCode.includes("'/api/admin/registrations/:id/reject'")));
     it('PUT /api/admin/students/:id/suspend', () => assert.ok(serverCode.includes("'/api/admin/students/:id/suspend'")));
     it('POST /api/admin/students/:id/reset-devices', () => assert.ok(serverCode.includes("'/api/admin/students/:id/reset-devices'")));
 
@@ -121,7 +121,7 @@ describe('3. server.js — funciones y rutas', () => {
 
     // Flujo de auto-registro
     it('Auto-registro en firebase-login', () => assert.ok(serverCode.includes('Auto-registered student')));
-    it('auto_approved en registro', () => assert.ok(serverCode.includes("'auto_approved'")));
+    it('registro automático sin solicitudes', () => assert.ok(serverCode.includes('enrollFirebaseStudent') && !serverCode.includes("'auto_approved'")));
 
     // One-license-per-session
     it('hasLicense: false en Stage 1 JWT', () => assert.ok(serverCode.includes('hasLicense: false')));
@@ -180,7 +180,7 @@ describe('4. database-pg.js — exports', () => {
         'createStudent', 'findStudentById', 'findStudentByEmail',
         'getStudentByFirebaseUid', 'linkFirebaseUid',
         'updateStudentApprovalStatus',
-        'createRegistrationRequest', 'getRegistrationRequestByDevice', 'updateRegistrationRequest',
+        'enrollFirebaseStudent',
         'registerOrValidateDevice',
         'loadCatalog', 'getAllCourses', 'getCourseById',
         'createLicense', 'getLicenseByKeyHash', 'getLicenseById',

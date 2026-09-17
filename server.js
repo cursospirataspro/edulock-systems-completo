@@ -2508,7 +2508,8 @@ function bunnyApiRequest(path, { hostname = 'video.bunnycdn.com', extraHeaders =
 
 /**
  * POST /api/auth/register-request
- * El player envía una solicitud de registro (queda en estado 'pending').
+ * Registro automático: crea la cuenta del alumno al instante (sin aprobación).
+ * El acceso al contenido lo decide la licencia del curso.
  * Body: { email, name, deviceId, deviceModel, deviceName, firebaseUid?, 
  *         deviceSerial?, osVersion?, osVersionCode?, cpuCores?, totalRam?, androidId?, buildFingerprint?, brand?, manufacturer?, fcmToken? }
  */
@@ -2518,21 +2519,6 @@ app.post('/api/auth/register-request', async (req, res) => {
         if (error.registrationStatus) return res.status(error.status || 403).json({ error: error.message, code: error.code, status: error.registrationStatus });
         sendAccessError(res, error);
     }
-});
-
-/**
- * GET /api/auth/check-device?deviceId=XXX
- * Consulta el estado de la solicitud para un dispositivo específico.
- */
-app.get('/api/auth/check-device', async (req, res) => {
-    if (!dbReady) return res.status(503).json({ error: 'DB no disponible' });
-    const { deviceId } = req.query;
-    if (!deviceId) return res.status(400).json({ error: 'deviceId requerido' });
-    try {
-        const req2 = await db.getRegistrationRequestByDevice(deviceId);
-        if (!req2) return res.json({ status: 'none' });
-        res.json({ status: req2.status, email: req2.email, name: req2.name, requestId: req2.id });
-    } catch { return res.status(503).json({ status: 'error', code: 'DB_UNAVAILABLE', error: 'No se pudo consultar el registro. Intenta de nuevo.', registrationAllowed: false }); }
 });
 
 /**
@@ -2642,27 +2628,11 @@ app.post('/api/auth/firebase-login', authRateLimit, async (req, res) => {
     }
 
     if (!student) {
-        // Auto-registro: crear estudiante automáticamente (sin aprobación manual)
-        const newId = uuidv4();
-        const autoStudentId = email.split('@')[0] + '_' + Date.now().toString(36);
-        student = await db.createStudent({
-            id: newId, email, studentId: autoStudentId,
-            name: decoded.name || email.split('@')[0],
-            active: true, allowedVideos: [],
-        });
-        await db.linkFirebaseUid(newId, uid).catch(() => {});
-        await db.updateStudentApprovalStatus(newId, 'approved').catch(() => {});
-        if (deviceId) {
-            await db.createRegistrationRequest({
-                email, name: decoded.name || email.split('@')[0],
-                deviceId, deviceModel: deviceModel || '', deviceName: deviceName || '', firebaseUid: uid,
-            }).catch(() => {});
-            await db.updateRegistrationRequest(
-                (await db.getRegistrationRequestByDevice(deviceId).catch(() => null))?.id,
-                { status: 'auto_approved', reviewedBy: 'system' }
-            ).catch(() => {});
-        }
-        console.log(`[firebase-login] Auto-registered student: ${email} (${newId})`);
+        // Registro automático: la cuenta se crea aprobada al instante, sin solicitud ni
+        // aprobación del administrador. El acceso al contenido lo decide la licencia.
+        const enrolled = await db.enrollFirebaseStudent({ uid, email, name: decoded.name || '' });
+        student = enrolled.student;
+        if (enrolled.created) console.log(`[firebase-login] Auto-registered student: ${email} (${student.id})`);
     }
 
     const approvalStatus = student.approval_status || 'approved';
@@ -2706,46 +2676,6 @@ app.post('/api/auth/firebase-login', authRateLimit, async (req, res) => {
     );
 
     res.json({ status: 'approved', role: 'student', token, expiresIn: STUDENT_JWT_EXPIRES, requiresLicense: true });
-});
-
-/**
- * GET /api/admin/registrations?status=pending
- * Lista solicitudes de registro. Requiere admin.
- */
-app.get('/api/admin/registrations', requireAdmin, async (req, res) => {
-    if (!dbReady) return res.status(503).json({ error: 'DB no disponible' });
-    const { status } = req.query;
-    const rows = await db.getRegistrationRequests(status || null);
-    res.json({ registrations: rows });
-});
-
-/**
- * POST /api/admin/registrations/:id/approve
- * Aprueba una solicitud y crea/actualiza el estudiante con los cursos asignados.
- * Body: { courseIds: ['abc','def'], notes? }
- */
-app.post('/api/admin/registrations/:id/approve', requireAdmin, async (req, res) => {
-    if (!dbReady) return res.status(503).json({ error: 'DB no disponible', code: 'DB_UNAVAILABLE' });
-    try {
-        const result = await db.approveRegistrationAtomic({ requestId: req.params.id,
-            courseIds: req.body?.courseIds ?? [], notes: req.body?.notes ?? null,
-            maxDevices: req.body?.maxDevices ?? 1, reviewedBy: req.user.sub || 'admin' });
-        invalidateStudentStatus(result.studentId);
-        res.json(result);
-    } catch (error) { sendAccountError(res, error); }
-});
-
-/**
- * POST /api/admin/registrations/:id/reject
- * Rechaza una solicitud.
- * Body: { notes? }
- */
-app.post('/api/admin/registrations/:id/reject', requireAdmin, async (req, res) => {
-    if (!dbReady) return res.status(503).json({ error: 'DB no disponible' });
-    const { id } = req.params;
-    const { notes } = req.body || {};
-    await db.updateRegistrationRequest(id, { status: 'rejected', reviewedBy: 'admin', notes: notes || null });
-    res.json({ ok: true });
 });
 
 /**
@@ -4312,7 +4242,7 @@ app.get('/api/dashboard/stats', requireAdmin, async (req, res) => {
             db.pool.query("SELECT COUNT(*) AS n FROM catalog WHERE status='ready'").catch(() => ({ rows: [{ n: 0 }] })),
             db.pool.query('SELECT COUNT(*) AS n FROM audit_log WHERE event_type IS NULL').catch(() => ({ rows: [{ n: 0 }] })),
             db.pool.query('SELECT COUNT(*) AS n FROM suspicious_activity WHERE reviewed=0').catch(() => ({ rows: [{ n: 0 }] })),
-            db.pool.query("SELECT COUNT(*) AS n FROM registration_requests WHERE status='pending'").catch(() => ({ rows: [{ n: 0 }] })),
+            Promise.resolve({ rows: [{ n: 0 }] }), // ya no existen solicitudes de registro: el acceso lo decide la licencia
             db.pool.query(`
                 SELECT
                     al.user_id AS uid,
@@ -4409,16 +4339,7 @@ app.delete('/api/playback/progress/:studentId/:videoId', requireAdmin, async (re
     res.json({ ok: true });
 });
 
-/**
- * DELETE /api/admin/registrations/:id  [ADMIN]
- * Elimina una solicitud de registro permanentemente.
- */
-app.delete('/api/admin/registrations/:id', requireAdmin, async (req, res) => {
-    const id = parseInt(req.params.id, 10);
-    if (!id || isNaN(id)) return res.status(400).json({ error: 'id inválido' });
-    await db.pool.query('DELETE FROM registration_requests WHERE id=$1', [id]).catch(() => {});
-    res.json({ ok: true });
-});
+
 
 /**
  * GET /api/students/:id/progress  [ADMIN]

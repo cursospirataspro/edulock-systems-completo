@@ -589,7 +589,7 @@
         <nav>
             <a class="active" data-page="dashboard">Dashboard</a>
             <a data-page="catalog">Catalogo</a>
-            <a data-page="students">Alumnos <span id="nav-pending-badge" style="display:none;background:#e63946;color:#fff;border-radius:10px;padding:1px 6px;font-size:0.7rem;margin-left:4px;vertical-align:middle"></span></a>
+            <a data-page="students">Alumnos</a>
             <a data-page="playback-audit">Auditoría <span id="nav-unreviewed-badge" style="display:none;background:#e63946;color:#fff;border-radius:10px;padding:1px 6px;font-size:0.7rem;margin-left:4px;vertical-align:middle"></span></a>
             <a data-page="leak">Detectar Fuga</a>
             <a data-page="watermark">Marcas de agua</a>
@@ -1116,36 +1116,6 @@
                 <p id="students-count" style="font-size:0.75rem;color:var(--c-muted);margin-top:8px"></p>
             </div>
 
-            <!-- ---- SOLICITUDES DE REGISTRO (fusionado desde Aprobación de Usuarios) ---- -->
-            <h2 style="margin-top:28px">Solicitudes de Registro</h2>
-            <p class="subtitle">Gestiona las solicitudes de registro y los accesos por curso de cada alumno.</p>
-
-            <!-- Filtro de estado -->
-            <div class="card" style="padding:12px 20px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                <strong>Filtrar:</strong>
-                <button class="btn-filter active" data-status="">Todas</button>
-                <button class="btn-filter" data-status="pending">Pendientes</button>
-                <button class="btn-filter" data-status="approved">Aprobadas</button>
-                <button class="btn-filter" data-status="rejected">Rechazadas</button>
-                <button class="btn-filter" data-status="suspended">Suspendidas</button>
-                <button id="btn-refresh-registrations" style="margin-left:auto">🔄 Actualizar</button>
-            </div>
-
-            <div class="card">
-                <div class="table-wrap">
-                    <table id="registrations-table">
-                        <thead>
-                            <tr>
-                                <th>Email</th><th>Nombre</th><th>Dispositivo</th><th>Modelo</th><th>Fecha</th><th>Estado</th><th>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="registrations-body">
-                            <tr><td colspan="7" style="color:var(--c-muted)">Cargando...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
             <!-- Gestión de cursos por alumno -->
             <div class="card" id="student-courses-card" style="display:none">
                 <h3>Cursos de: <span id="sc-student-name"></span></h3>
@@ -1449,7 +1419,6 @@
             </div>
         </div>
 
-        <!-- ---- APROBACIÓN DE USUARIOS: fusionada dentro de la página Alumnos (Solicitudes de Registro) ---- -->
 
         <!-- ---- LICENCIAS Y VENTAS ---- -->
         <div class="page" id="page-licenses">
@@ -2161,16 +2130,7 @@ document.querySelectorAll('nav a').forEach(a => {
         if (a.dataset.page === 'security')       loadSecurity();
         if (a.dataset.page === 'licenses')       loadLicensesPage();
         if (a.dataset.page === 'producers')      { loadProducers(); loadProducerRequests(); }
-        if (a.dataset.page === 'students') {
-            loadStudents();
-            loadRegistrations();
-            // Polling tiempo real: recargar solicitudes cada 15s mientras la pestaña está activa
-            if (_registrationsAutoRefreshTimer) clearInterval(_registrationsAutoRefreshTimer);
-            _registrationsAutoRefreshTimer = setInterval(loadRegistrations, 15_000);
-        } else {
-            // Detener polling al salir de la pestaña
-            if (_registrationsAutoRefreshTimer) { clearInterval(_registrationsAutoRefreshTimer); _registrationsAutoRefreshTimer = null; }
-        }
+        if (a.dataset.page === 'students')       loadStudents();
     });
 });
 
@@ -4166,7 +4126,6 @@ function init() {
 // Estado de la página
 let _paCurrentStudent = null;
 let _progressAutoRefreshTimer = null;
-let _registrationsAutoRefreshTimer = null;
 
 function switchPaTab(tab) {
     document.querySelectorAll('.pa-tab').forEach(b => b.classList.remove('pa-tab-active'));
@@ -4699,14 +4658,6 @@ async function deleteProgressEntry(studentId, videoId) {
     } catch (err) { alert('Error: ' + err.message); }
 }
 
-async function deleteRegistration(id) {
-    if (!confirm('¿Eliminar esta solicitud de registro permanentemente?')) return;
-    try {
-        await api('DELETE', '/api/admin/registrations/' + id);
-        loadRegistrations();
-    } catch (err) { alert('Error: ' + err.message); }
-}
-
 async function loadStudentDevicesAdmin() {
     const studentId = ($('device-student-filter')?.value || '').trim();
     if (!studentId) { alert('Ingresa el email o ID del alumno'); return; }
@@ -4921,134 +4872,6 @@ async function saveSecurityWhitelist() {
 // ================================================================
 //  APROBACIÓN DE USUARIOS
 // ================================================================
-let _regStatusFilter = '';
-let _scStudentId = null;
-let _availableCourses = [];
-
-document.querySelectorAll('.btn-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.btn-filter').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        _regStatusFilter = btn.dataset.status || '';
-        loadRegistrations();
-    });
-});
-
-$('btn-refresh-registrations') && $('btn-refresh-registrations').addEventListener('click', () => loadRegistrations());
-
-const STATUS_LABELS = {
-    pending:   '<span style="color:#f5a623">⏳ Pendiente</span>',
-    approved:  '<span style="color:#4caf50">✅ Aprobado</span>',
-    rejected:  '<span style="color:#e63946">❌ Rechazado</span>',
-    suspended: '<span style="color:#9e9e9e">🚫 Suspendido</span>',
-};
-
-async function loadRegistrations() {
-    const tbody = $('registrations-body');
-    if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--c-muted)">Cargando...</td></tr>';
-    try {
-        const url = _regStatusFilter ? `/api/admin/registrations?status=${_regStatusFilter}` : '/api/admin/registrations';
-        const data = await api('GET', url);
-        const rows = data.registrations || [];
-        if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="7" style="color:var(--c-muted)">Sin resultados</td></tr>';
-            return;
-        }
-        tbody.innerHTML = rows.map(r => `
-            <tr>
-                <td>${escHtml(r.email)}</td>
-                <td>${escHtml(r.name || '—')}</td>
-                <td style="font-size:0.75rem;max-width:120px;overflow:hidden;text-overflow:ellipsis">${escHtml(r.device_name || r.device_id || '—')}</td>
-                <td style="font-size:0.75rem">${escHtml(r.device_model || '—')}</td>
-                <td style="font-size:0.75rem">${(r.requested_at||'').slice(0,10)}</td>
-                <td>${STATUS_LABELS[r.status] || r.status}</td>
-                <td style="white-space:nowrap">
-                    ${r.status === 'pending' || r.status === 'rejected' ? `<button onclick="openApproveModal('${r.id}','${escHtml(r.email)}')">Aprobar</button> ` : ''}
-                    ${r.status === 'pending' ? `<button onclick="rejectRegistration('${r.id}')" style="background:var(--c-danger,#e63946)">Rechazar</button> ` : ''}
-                    ${r.status === 'approved' ? `<button onclick="manageStudentCourses('${r.email}')">Cursos</button> ` : ''}
-                    ${r.status === 'approved' ? `<button onclick="suspendStudent('${r.email}',true)" style="background:#555">Suspender</button> ` : ''}
-                    ${r.status === 'suspended' ? `<button onclick="suspendStudent('${r.email}',false)">Restaurar</button> ` : ''}
-                    <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#ff6b6b;color:#ff6b6b" onclick="deleteRegistration('${r.id}')">🗑</button>
-                </td>
-            </tr>`).join('');
-    } catch(e) {
-        tbody.innerHTML = `<tr><td colspan="7" style="color:#e63946">Error: ${escHtml(e.message)}</td></tr>`;
-    }
-}
-
-async function openApproveModal(regId, email) {
-    // Cargar cursos disponibles
-    try {
-        const data = await api('GET', '/api/courses');
-        _availableCourses = data.courses || [];
-    } catch { _availableCourses = []; }
-
-    const courseCheckboxes = _availableCourses.length
-        ? _availableCourses.map(c =>
-            `<label style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--c-bg-card);border-radius:4px;cursor:pointer">
-                <input type="checkbox" value="${escHtml(c.id)}" checked>
-                ${escHtml(c.name || c.title || c.id)}
-            </label>`).join('')
-        : '<p style="color:var(--c-muted)">No hay cursos cargados.</p>';
-
-    const notes = prompt(`Aprobar solicitud de ${email}\n\nNotas (opcional):`);
-    if (notes === null) return; // cancelled
-
-    // Mostrar modal de cursos
-    const modal = document.createElement('div');
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:9999';
-    modal.innerHTML = `
-        <div style="background:var(--c-bg-card,#1e1e2e);border-radius:12px;padding:24px;max-width:480px;width:90%;max-height:80vh;overflow-y:auto">
-            <h3 style="margin-top:0">Cursos para ${escHtml(email)}</h3>
-            <p style="color:var(--c-muted);font-size:0.85rem">Selecciona los cursos a los que tendrá acceso:</p>
-            <div id="modal-course-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
-                ${courseCheckboxes}
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-                <label style="font-size:0.9rem">Dispositivos permitidos:</label>
-                <input type="number" id="modal-max-devices" min="1" max="99" value="1" style="width:80px;padding:8px;background:var(--c-surface2,#2a2a3a);border:1px solid var(--c-border,#444);border-radius:6px;color:var(--c-text,#fff)">
-                <span style="font-size:0.72rem;color:var(--c-muted)">Exacto. Si intentan usar más, se bloquea.</span>
-            </div>
-            <div style="display:flex;gap:8px;justify-content:flex-end">
-                <button id="modal-cancel" style="background:var(--c-bg-card)">Cancelar</button>
-                <button id="modal-approve">Aprobar y asignar</button>
-            </div>
-        </div>`;
-    document.body.appendChild(modal);
-
-    modal.querySelector('#modal-cancel').onclick = () => modal.remove();
-    modal.querySelector('#modal-approve').onclick = async () => {
-        const courseIds = [...modal.querySelectorAll('#modal-course-list input:checked')].map(el => el.value);
-        const maxDevices = Math.max(1, parseInt(modal.querySelector('#modal-max-devices').value, 10) || 1);
-        try {
-            await api('POST', `/api/admin/registrations/${regId}/approve`, { courseIds, notes: notes || null, maxDevices });
-            modal.remove();
-            loadRegistrations();
-        } catch(e) { alert('Error: ' + e.message); }
-    };
-}
-
-async function rejectRegistration(regId) {
-    const notes = prompt('Motivo del rechazo (opcional):');
-    if (notes === null) return;
-    try {
-        await api('POST', `/api/admin/registrations/${regId}/reject`, { notes });
-        loadRegistrations();
-    } catch(e) { alert('Error: ' + e.message); }
-}
-
-async function suspendStudent(email, suspend) {
-    const student = await findStudentByEmailAdmin(email);
-    if (!student) return alert('Alumno no encontrado');
-    const action = suspend ? 'suspender' : 'restaurar';
-    if (!confirm(`¿${action.charAt(0).toUpperCase()+action.slice(1)} al alumno ${email}?`)) return;
-    try {
-        await api('PUT', `/api/admin/students/${student.id}/suspend`, { suspend });
-        loadRegistrations();
-    } catch(e) { alert('Error: ' + e.message); }
-}
-
 async function manageStudentCourses(email) {
     const student = await findStudentByEmailAdmin(email);
     if (!student) return alert('Alumno no encontrado');
@@ -5217,11 +5040,8 @@ loadDashboard = (function(_orig) {
 
             // Refrescar badges en paralelo
             const unreviewedBadge = $('nav-unreviewed-badge');
-            const pendingBadge    = $('nav-pending-badge');
             if (stats.unreviewedCount > 0) { unreviewedBadge.textContent = stats.unreviewedCount; unreviewedBadge.style.display = 'inline'; }
             else unreviewedBadge.style.display = 'none';
-            if (stats.pendingCount > 0) { pendingBadge.textContent = stats.pendingCount; pendingBadge.style.display = 'inline'; }
-            else pendingBadge.style.display = 'none';
         } catch (err) { console.error(err); }
     };
 })(loadDashboard);

@@ -21,8 +21,6 @@ import com.edulock.player.api.ApiClient
 import com.edulock.player.api.data.AccountStatusRequest
 import com.edulock.player.api.data.FirebaseLoginRequest
 import com.edulock.player.api.data.LoginResponse
-import com.edulock.player.api.data.RegistrationRequest
-import com.edulock.player.api.data.RegistrationResponse
 import com.edulock.player.utils.ActivationStore
 import com.edulock.player.utils.DeviceFingerprintAdvanced
 import com.edulock.player.utils.NotificationPermissionHelper
@@ -37,6 +35,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.UserProfileChangeRequest
 import com.google.gson.Gson
 import java.io.IOException
 import java.util.concurrent.ExecutionException
@@ -440,9 +439,7 @@ class LoginActivity : AppCompatActivity() {
     private fun loginFailureMessage(httpCode: Int, response: LoginResponse?): String = when {
         httpCode >= 500 -> "El servicio de acceso no está disponible. Intenta nuevamente."
         httpCode == 429 -> "Demasiados intentos. Espera un momento e intenta nuevamente."
-        response?.status == "pending" -> "Tu solicitud está pendiente de aprobación."
         response?.status == "suspended" -> "Tu cuenta está suspendida. Contacta al administrador."
-        response?.status == "rejected" -> "Tu solicitud fue rechazada. Contacta al administrador."
         response?.code == "ACCOUNT_SYNC_REQUIRED" || response?.status == "account_sync_required" ->
             "Tu cuenta está registrada, pero requiere una revisión del administrador. No necesitas registrarte otra vez."
         response?.status == "approved" -> "El servidor no entregó una sesión válida. Intenta nuevamente."
@@ -450,6 +447,8 @@ class LoginActivity : AppCompatActivity() {
             ?: "No se pudo validar tu acceso. Intenta nuevamente."
     }
 
+    // Registro automático: la cuenta de Edulock se crea al instante al iniciar sesión con
+    // Firebase. No hay solicitud ni aprobación del administrador; el acceso lo decide la licencia.
     private suspend fun performRegistration(email: String, name: String, password: String) {
         val auth = FirebaseAuth.getInstance()
         val user = pendingRegistrationUser ?: try {
@@ -461,43 +460,12 @@ class LoginActivity : AppCompatActivity() {
             } else throw error
         }
         if (user == null) { showStatus("No se pudo verificar tu cuenta. Intenta nuevamente."); return }
+        if (name.isNotBlank() && user.displayName != name) {
+            try { awaitFirebase(user.updateProfile(UserProfileChangeRequest.Builder().setDisplayName(name).build())) } catch (_: Exception) { }
+        }
         preserveRegistrationUser(user)
-        submitRegistrationRequest(user, name)
-    }
-
-    private suspend fun submitRegistrationRequest(user: FirebaseUser, name: String) {
-        val token = awaitFirebase(user.getIdToken(true)).token
-        if (token.isNullOrBlank()) { showStatus("No se pudo verificar tu cuenta. Intenta nuevamente."); return }
-        val info = withContext(Dispatchers.IO) { DeviceFingerprintAdvanced.captureFullDeviceInfo(this@LoginActivity) }
-        if (info.deviceId.isBlank()) { showStatus("No se pudo identificar este dispositivo. Intenta nuevamente."); return }
-        val email = user.email.orEmpty()
-        val http = apiService.registerRequest(RegistrationRequest(
-            email = email, name = name, idToken = token, firebaseUid = user.uid,
-            deviceId = info.deviceId, deviceModel = info.deviceModel, deviceSerial = info.deviceSerial,
-            osVersion = info.osVersion, totalRam = info.totalRam,
-            fcmToken = getSharedPreferences("edulock_fcm", Context.MODE_PRIVATE).getString("fcm_token", ""),
-            cpuCores = info.cpuCores, buildFingerprint = info.buildFingerprint, brand = info.brand,
-            manufacturer = info.manufacturer, androidId = info.androidId, osVersionCode = info.osVersionCode
-        ))
-        val response = readResponse(http, RegistrationResponse::class.java)
-        if (http.isSuccessful && response?.status == "approved") {
-            completeFirebaseLogin(user)
-            return
-        }
-        if (http.isSuccessful && response?.status == "pending") {
-            getSharedPreferences("edulock_registration", Context.MODE_PRIVATE).edit()
-                .putString("registration_status", "pending").putString("registration_email", email)
-                .putString("device_id", info.deviceId).putString("request_id", response.requestId)
-                .putLong("registration_timestamp", System.currentTimeMillis()).apply()
-            showStatus("Solicitud enviada. El administrador revisará tu acceso.")
-            return
-        }
-        showStatus(when {
-            http.code() >= 500 -> "No se pudo confirmar la solicitud. Tu cuenta se conserva; intenta nuevamente."
-            response?.status == "rejected" -> "Tu solicitud fue rechazada. Contacta al administrador."
-            response?.status == "suspended" -> "Tu cuenta está suspendida. Contacta al administrador."
-            else -> response?.error?.take(300) ?: "No se pudo confirmar la solicitud. Intenta nuevamente."
-        })
+        showStatus("Creando tu cuenta en Edulock...")
+        completeFirebaseLogin(user)
     }
 
     private fun <T> readResponse(http: Response<T>, type: Class<T>): T? =

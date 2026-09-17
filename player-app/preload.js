@@ -50,9 +50,7 @@ contextBridge.exposeInMainWorld('vcbPlayer', {
 
     // ── Auth / Registro ──────────────────────────────────────────────────────
     // Enviar solicitud de registro al servidor
-    registerRequest: (data) => ipcRenderer.invoke('auth-register-request', data),
     // Verificar estado de la cuenta para este dispositivo
-    checkDeviceStatus: (deviceId) => ipcRenderer.invoke('auth-check-device', deviceId),
     // Verificar token Firebase con el servidor y obtener sesión
     firebaseLogin: (data) => ipcRenderer.invoke('auth-firebase-login', data),
     checkAccountStatus: (data) => ipcRenderer.invoke('auth-account-status', { email: data?.email }),

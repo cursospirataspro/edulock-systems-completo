@@ -971,6 +971,29 @@ module.exports.resolveFirebaseAccount = async ({ uid, email, emailVerified } = {
     });
 };
 
+// Registro automático (sin solicitud ni aprobación del administrador): la cuenta se
+// crea aprobada al primer acceso verificado por Firebase. El acceso al contenido lo
+// decide exclusivamente la licencia del curso.
+module.exports.enrollFirebaseStudent = async ({ uid, email, name = '' } = {}) => {
+    const identity = normalizeAccountIdentity({ uid, email });
+    return transaction(async client => {
+        await lockAccountIdentity(client, identity);
+        let student = await accountStudents(client, identity);
+        if (student) {
+            if (!student.firebase_uid) {
+                student = (await client.query('UPDATE students SET firebase_uid=$1 WHERE id=$2 RETURNING *', [identity.uid, student.id])).rows[0];
+            }
+            return { student: rowToStudent(student), created: false };
+        }
+        const now = new Date().toISOString();
+        const displayName = String(name || '').trim().slice(0, 100) || identity.email.split('@')[0];
+        const row = (await client.query(`INSERT INTO students (id,email,student_id,name,active,allowed_videos,created_at,firebase_uid,approval_status)
+            VALUES($1,$2,$3,$4,1,$5,$6,$7,'approved') RETURNING *`,
+            [uuid4(), identity.email, identity.email.split('@')[0] + '_' + Date.now().toString(36), displayName, serializeAllowedVideos([]), now, identity.uid])).rows[0];
+        return { student: rowToStudent(row), created: true };
+    });
+};
+
 module.exports.findStudentByEmail = async (email) => {
     const res = await q('SELECT * FROM students WHERE LOWER(TRIM(email)) = LOWER(TRIM($1)) LIMIT 1', [email]);
     return rowToStudent(res.rows[0]);

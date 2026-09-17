@@ -6,11 +6,10 @@ const { createPlayerHandshake } = require('../lib/player-handshake');
 function fixture() {
     const state = { events: [], student: { sub: 'student-a', email: 'a@example.test', deviceId: 'device-a', allowedVideos: ['course-a'], student: { max_devices: 2 } },
         video: { videoId: 'video-a', courseId: 'course-a', status: 'ready', sourceType: 'bunny' }, edu: null,
-        license: { id: 'license-a', student_id: null, course_id: 'course-a', status: 'free' }, registration: null, reject: null };
+        license: { id: 'license-a', student_id: null, course_id: 'course-a', status: 'free' }, owner: null, enrolled: null, reject: null };
     const db = {
-        getRegistrationRequestByDevice: async () => state.registration,
-        updateRegistrationName: async () => {},
-        createRegistrationRequest: async data => { state.registration = { ...data, firebase_uid: data.firebaseUid, id: 'registration-a', status: 'pending' }; return 'registration-a'; },
+        findStudentByDeviceId: async () => state.owner || null,
+        enrollFirebaseStudent: async data => { state.enrolled = { ...data }; return { student: { id: 'student-new', email: data.email, active: 1, approval_status: 'approved' }, created: true }; },
         getLicenseByKeyHash: async () => state.license,
         claimAndActivateLicenseAtomic: async data => { state.events.push(['activate', data]); return { ok: true, activationId: 'activation-a', license: { ...state.license, student_id: data.studentId }, maxDevices: 2, expiresAt: null }; },
         getEduByVideo: async () => { state.events.push(['edu']); return state.edu; },
@@ -36,17 +35,19 @@ function fixture() {
     return { state, db, options, service: createPlayerHandshake(options), req: { user: state.student, headers: {}, ip: '127.0.0.1' } };
 }
 
-test('registration trusts verified Firebase identity and forwards no password', async () => {
+test('registration creates the account immediately from the verified Firebase identity, with no approval and no password forwarded', async () => {
     const f = fixture();
-    const result = await f.service.register({ idToken: 'firebase-valid', deviceId: 'device-a', email: 'victim@example.test', firebaseUid: 'victim', password: 'must-not-forward' });
-    assert.equal(result.requestId, 'registration-a'); assert.equal(f.state.registration.email, 'a@example.test');
-    assert.equal(f.state.registration.firebaseUid, 'firebase-a'); assert.equal('password' in f.state.registration, false);
+    const result = await f.service.register({ idToken: 'firebase-valid', deviceId: 'device-a', name: 'Alumno', email: 'victim@example.test', firebaseUid: 'victim', password: 'must-not-forward' });
+    assert.equal(result.status, 'approved'); assert.equal(result.created, true); assert.equal(result.studentId, 'student-new');
+    assert.equal(f.state.enrolled.email, 'a@example.test'); assert.equal(f.state.enrolled.uid, 'firebase-a'); assert.equal(f.state.enrolled.name, 'Alumno');
+    assert.equal('password' in f.state.enrolled, false); assert.equal(JSON.stringify(result).includes('pending'), false);
 });
-test('registration rejects invalid Firebase token and an existing device owned by someone else', async () => {
+test('registration rejects invalid Firebase token and a device already bound to another account', async () => {
     const f = fixture();
     await assert.rejects(f.service.register({ idToken: 'invalid', deviceId: 'device-a' }), { code: 'INVALID_FIREBASE_TOKEN' });
-    f.state.registration = { email: 'another@example.test', status: 'approved' };
+    f.state.owner = { id: 'student-b', email: 'another@example.test' };
     await assert.rejects(f.service.register({ idToken: 'firebase-valid', deviceId: 'device-a' }), { code: 'DEVICE_TAKEN' });
+    assert.equal(f.state.enrolled, null, 'no account is created for a taken device');
 });
 test('a free serial requires student login and uses only the atomic activation operation', async () => {
     const f = fixture(); f.req.body = { licenseKey: 'AAAA-BBBB-CCCC-DDDD', deviceId: 'device-a' };

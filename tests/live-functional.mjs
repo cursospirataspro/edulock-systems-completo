@@ -355,10 +355,10 @@ describe('11. Playback progress', () => {
 //  12. ADMIN REGISTRATIONS
 // ════════════════════════════════════════════════════════════════════
 
-describe('12. Registrations', () => {
-    it('GET /api/admin/registrations → lista', async () => {
+describe('12. Registrations (retirado: registro automático por licencia)', () => {
+    it('GET /api/admin/registrations ya no existe', async () => {
         const r = await api('GET', '/api/admin/registrations', null, adminToken);
-        assert.ok([200, 204].includes(r.status));
+        assert.equal(r.status, 404);
     });
 });
 
@@ -490,7 +490,7 @@ describe('20. Bunny config', () => {
 describe('21. Producer isolation', () => {
     it('Producer no puede acceder endpoints de admin', async () => {
         if (!producerToken) return;
-        const r = await api('GET', '/api/admin/registrations', null, producerToken);
+        const r = await api('GET', '/api/admin/students', null, producerToken);
         assert.ok([401, 403].includes(r.status));
     });
 
