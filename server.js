@@ -5816,11 +5816,15 @@ app.post('/api/stream/courses/:courseId/modules/:moduleId/collection',requireAdm
 app.post('/api/producer/stream/upload',requireProducer,upload.single('video'),receiveStreamUpload);
 app.get('/api/producer/stream/status/:videoId',requireProducer,streamStatus);
 app.get('/api/producer/stream/operations/:operationId',requireProducer,streamOperation);
-let streamReconciling=false;
+let streamReconciling=false, collectionReconcileAt=0;
 const streamReconcileTimer=setInterval(async()=>{
     if(!dbReady||streamReconciling)return;
     streamReconciling=true;
-    try {await streamService.reconcilePending({limit:20});} catch(e){console.warn('[stream/reconcile]',e.message);}finally{streamReconciling=false;}
+    try {
+        await streamService.reconcilePending({limit:20});
+        // Cada 10 minutos: módulos de cualquier productor guardados sin colección.
+        if(Date.now()-collectionReconcileAt>10*60*1000){collectionReconcileAt=Date.now();await streamService.reconcileCollections({limit:20});}
+    } catch(e){console.warn('[stream/reconcile]',e.message);}finally{streamReconciling=false;}
 },15000);
 streamReconcileTimer.unref();
 process.once('SIGTERM',()=>{

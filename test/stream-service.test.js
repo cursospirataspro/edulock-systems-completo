@@ -52,6 +52,7 @@ function fakeDb() {
         async updateCatalogEntry(entry) { Object.assign(state.catalog.get(entry.videoId), entry); },
         async moveVideoToModule(id, moduleId) { state.catalog.get(id).moduleId = moduleId; },
         async getPendingStreamVideos() { return [...state.catalog.values()].filter(v => v.status === 'processing').map(v => v.videoId); },
+        async getModulesWithoutCollection() { return state.library?.libraryId && !state.collection ? [{ moduleId: MODULE, courseId: COURSE }] : []; },
     };
 }
 
@@ -246,6 +247,19 @@ test('a stored collection id that no longer exists remotely is verified and rebu
     assert.equal(transport.state.calls.filter(c => c.method === 'POST' && c.path === '/library/101/collections').length, 2);
     assert.equal(transport.state.libraries.length, 1);
     assert.equal(db.state.collection, COLLECTION);
+});
+
+test('background reconciliation creates the collection of a module saved without one, for any producer', async () => {
+    const { service, transport, db } = setup();
+    await service.ensureCourseLibrary({ courseId: COURSE, actor: { producerId: 'producer-one' } });
+    assert.equal(db.state.collection, null);
+    transport.state.rejectCollection = 'collection.invalidName';
+    assert.equal((await service.reconcileCollections()).errors[0].code, 'BUNNY_HTTP_ERROR');
+    transport.state.rejectCollection = null;
+    assert.deepEqual(await service.reconcileCollections(), { repaired: 1, errors: [] });
+    assert.equal(db.state.collection, COLLECTION);
+    assert.deepEqual(await service.reconcileCollections(), { repaired: 0, errors: [] }, 'nothing left to repair');
+    assert.equal(transport.state.collections.length, 1);
 });
 
 test('a video created for a module is confirmed inside that collection', async t => {

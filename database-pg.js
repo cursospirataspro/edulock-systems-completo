@@ -1648,6 +1648,16 @@ module.exports.updateStreamOperation = async (id, fields) => {
     return (await q(`UPDATE stream_operations SET ${sets.join(', ')} WHERE id=$${values.length} RETURNING *`, values)).rows[0] || null;
 };
 
+// Modules whose course already has a Bunny library but that still lack a collection
+// (e.g. the collection step failed when the module was created).
+module.exports.getModulesWithoutCollection = async (limit = 20) => {
+    const count = Math.max(1, Math.min(100, Number(limit) || 20));
+    return (await q(`SELECT m.id AS module_id, m.course_id FROM modules m
+        JOIN courses co ON co.id=m.course_id
+        WHERE m.bunny_collection_id IS NULL AND co.bunny_library_id IS NOT NULL
+        ORDER BY m.created_at ASC LIMIT $1`, [count])).rows.map(r => ({ moduleId: r.module_id, courseId: r.course_id }));
+};
+
 module.exports.getPendingStreamVideos = async (limit = 20) => {
     const count = Math.max(1, Math.min(100, Number(limit) || 20));
     return (await q(`SELECT c.video_id FROM catalog c
