@@ -195,3 +195,47 @@ Correcciones menores de este barrido: `POST /api/auth/login-email` ya no cae al 
 - Se comprobó el proceso completo de firma con un certificado **temporal y autofirmado** (sujeto "PRUEBA DE PIPELINE, no distribuir", vigencia 2 días), compilando a una carpeta aparte: `electron-builder` firmó con sello de tiempo el ejecutable, `elevate.exe`, el desinstalador, el Setup NSIS y el Portable, y después `scripts/sign-evs.js` aplicó la firma VMP. `Get-AuthenticodeSignature` mostró la firma y el sello en los tres binarios (estado `UnknownError`, esperado para una CA no confiable).
 - Después de la prueba se eliminaron el certificado del almacén, el `.pfx` y la carpeta de prueba; los instaladores publicados (dist y `/downloads/`) no cambiaron.
 - Lo único que falta es un certificado emitido por una Autoridad Certificadora a nombre de Edulock Systems (Azure Trusted Signing ~10 USD/mes, o certificado OV/EV 100–500 USD/año). Guía de compra y conexión al build en `player-app/FIRMA_AUTHENTICODE.md`. Con el certificado puesto (`CSC_LINK`/`CSC_KEY_PASSWORD`, `certificateSubjectName` o `azureSignOptions`), `npm run build:win` firma solo; no hace falta cambiar código.
+
+## 15. Panel del productor: Proyectos → Abrir formación → Contenido (2026-09-17, rama `feature/panel-productor-contenido`)
+
+**Qué se pidió:** reorganizar el panel del productor (`productor.html`) sin rehacer la protección ni deshacer correcciones previas. Ruta nueva: PROYECTOS → ABRIR FORMACIÓN → CONTENIDO → MÓDULOS / SUBMÓDULOS / CLASES. Identidad negro / gris oscuro / rojo intacta. No hizo falta recompilar el reproductor de PC ni la APK: solo cambian servidor y web.
+
+### 15.1 Resumen por requisito
+
+| # | Requisito | Estado | Dónde |
+|---|-----------|--------|-------|
+| 1 | Alcance y reutilización (sin formularios ocultos, sin rutas de admin desde el productor) | Hecho | `productor.html`, `public/js/producer-workspace.js`, `public/js/producer-tree.js` (nuevo), `public/css/producer-workspace.css`, `public/js/resource-editor.js`, `lib/producer-content.js`, `lib/stream-service.js`, `server.js`, `database-pg.js`, tests |
+| 2 | Proyectos: cabecera y estadísticas se mantienen; sin "Buscar proyectos"; título "Mis formaciones"; tarjetas con nombre, instructor, resumen y descripción; Configuración y "Abrir proyecto" funcionando (también en la tarjeta activa); estado compartido con Licencias/Estudiantes | Hecho | `renderProjects`, `openProject` |
+| 3 | "+ Nuevo proyecto" en ventana (nombre obligatorio, instructor = autor, descripción opcional, Cancelar/Crear); descripción persistida en `settings.description`; sin curso/biblioteca duplicados al reintentar; protección de doble clic | Hecho | `newProjectDialog`; `POST /api/stream/courses` acepta `description` |
+| 4 | Eliminados de Proyectos: "Organizar el proyecto", "Recursos de los módulos", formularios de crear curso/módulo, "Módulos y listas del proyecto" (reubicados en Contenido) | Hecho | `productor.html` |
+| 5 | "Videos y listas" pasa a "Contenido": migas Proyectos › Curso › Contenido, un solo selector de curso, "+ Nuevo módulo", un solo árbol, estado vacío, la URL identifica el curso (`#videos/<id>`), atrás/recargar funcionan, respuestas obsoletas descartadas; sin "Oculto" ni casillas | Hecho | `navigate`, `renderContent` |
+| 6 | Ventana de módulo/submódulo solo con "Título"; orden automático (`MAX(sort_order)+10`); filas con expandir/plegar, arrastre, crear submódulo, añadir clase, renombrar, borrar con confirmación, menú; jerarquía por `parentId` sin ciclos; una colección de Bunny por módulo | Hecho | `moduleDialog`, `moduleMenu`, `database-pg.createModule`, `canReparent` |
+| 7 | Aspecto del árbol: sangría, iconos, estados, contadores y distintivos reales de adjuntos; grupo "Sin módulo" | Hecho | `producer-tree.js`, DTO con `attachments` y `collectionSyncPending` |
+| 8 | Orden por arrastre (sin ↑↓); mover clases entre módulos por arrastre y "Mover a…"; persistencia; `/reorder` valida el conjunto completo del contenedor (`CONTENT_ORDER_CHANGED`); restauración si falla; alternativa táctil y de teclado (Alt+↑/↓) | Hecho | `createTreeView`, `producer-content.reorder` |
+| 9 | Nueva clase: video desde el equipo (flujo existente), adjuntos por enlace; sin "URL del video", "Duración", "Desactivar protecciones" ni "Subir archivo" para PDF; editar no exige resubir | Hecho | `#class-dialog`, `editVideo` |
+| 10 | Subida y seguimiento intactos (estados en la fila, panel "Subidas pendientes", cerrar la ventana no cancela) | Hecho | `runUpload`, `renderUploadJobs` |
+| 11 | Recursos nuevos solo por enlace; PDFs históricos conservados; sin cambios silenciosos de protección | Hecho | `resource-editor.js` (`allowUpload:false`) |
+| 12 | Enlace de la clase en ventana (título, enlace solo lectura, Copiar, Abrir, Cerrar) con `publicCode`/sublink; sin bloque permanente "Enlace para tus alumnos" ni "Insertar portada"; funciones de lista en el menú del módulo | Hecho | `showClassLink`, `moduleMenu` |
+| 13 | Coherencia con Bunny al mover videos: `collectionId` actualizado por API (sin resubir), estado pendiente y recuperable (`catalog.collection_sync_pending`, reconciliación cada 15 s), sin borrados en cascada, solo Frankfurt, sin opciones de pago | Hecho | `stream-service.syncVideoCollection` / `reconcileVideoCollections`, `producer-content.updateVideo` |
+| 14 | Diseño, reglas y regresiones previas conservadas (licencias sin vencimiento, estudiantes, límites de dispositivos solo admin, una licencia por sesión, etc.) | Hecho | suite completa en verde salvo lo preexistente |
+| 15 | Pruebas obligatorias | Ver 15.3 | |
+| 16 | Entrega: rama, resumen, capturas antes/después, migración con respaldo, verificado local vs desplegado, sin datos sensibles | Este apartado | |
+
+### 15.2 Migración y despliegue
+
+- Migración automática al arrancar: `ALTER TABLE catalog ADD COLUMN IF NOT EXISTS collection_sync_pending BOOLEAN NOT NULL DEFAULT FALSE` (aditiva, sin pérdida de datos). Reversión: `ALTER TABLE catalog DROP COLUMN collection_sync_pending` y volver al código anterior.
+- Respaldo del código anterior en el VPS: `/root/backups/reproductor-code-2026-09-17-pre-panel-contenido.tgz`. Despliegue con `pm2 restart reproductor`; columna presente; pruebas Postgres en el VPS 44/44.
+
+### 15.3 Pruebas
+
+- **Local:** suite completa 375/385 (los 10 restantes son los mismos de antes: 7 suites Postgres sin base local y 3 tests del motor PDF). Nuevos: `test/producer-tree.test.js` (5), `producer-content-postgres.test.js` (+2: reorden por contenedor; movimiento de clase Bunny pendiente/sincronizada), `stream-service.test.js` (+1: `syncVideoCollection` sin resubir y reconciliación). Ajustados: `frontend-stream`, `producer-dialogs`, `producer-workspace-ui`.
+- **Navegador contra el fixture (`test/frontend-fixture.cjs`, Electron):** Proyectos sin buscador ni bloques antiguos; ventana de nuevo proyecto con descripción persistida y sin doble envío; "Abrir proyecto" → `#videos/<id>` con migas; atrás/adelante; estado vacío; ventanas de módulo/submódulo solo con título; reorden por teclado y por arrastre (misma lista, entre contenedores, módulos hermanos) persistido vía `/reorder`; "Mover a…"; ventana de enlace; ventana de clase con solo módulo/título/archivo/descripción; edición sin resubir; editor de recursos solo enlace; subida sintética hasta "Listo" con descripción guardada; subida fallida en "Subidas pendientes"; sin errores de consola. Capturas (escritorio y móvil) en la carpeta de trabajo de la sesión: antes-*, despues-*, modales-*, menu-*, enlace-*.
+- **Producción (VPS, productor QA temporal, sin tocar cursos ni alumnos reales):** inicio de sesión, Proyectos, nuevo proyecto, Abrir proyecto, módulo y submódulo desde la interfaz nueva: OK (7/10 pasos). La subida real de una clase desde la ventana nueva y los pasos que dependen de ella **no pudieron completarse** (ver 15.4); la subida fallida quedó correctamente en "Subidas pendientes". Datos QA eliminados de la base al terminar (sin tocar nada en Bunny).
+
+### 15.4 Bloqueo externo: la cuenta de Bunny quedó deshabilitada al terminar el periodo de prueba
+
+Comprobado el 2026-09-17 a las 20:39 UTC con la API de cuenta de Bunny: `AccountDisabled: true`, `BillingFreeUntilDate: 2026-09-17T20:22:59`, `CardVerified: false`, `Balance: 0`, `TrialBalance: 20`. Desde ese momento:
+- Crear bibliotecas devuelve `400 user.insufficient_balance` ("Your account is not currently allowed to add new zones"); la API de Stream responde `401` con las claves de todas las bibliotecas existentes.
+- El CDN responde `403` ("suspended or not configured") a los videos ya publicados: la prueba de reproducción del alumno en el VPS pasa 5/7 y falla en la lista HLS (`502`). **Los alumnos no pueden reproducir hasta que se reactive la cuenta.** El 2026-09-16 la misma prueba pasaba 13/13.
+- No lo causa el código: el mismo servidor sirve el resto de la plataforma (inicio de sesión, licencias, portada, handshake) con normalidad.
+- Qué hacer: en el panel de Bunny, verificar la tarjeta o cargar saldo (el crédito de prueba de 20 USD no se está aplicando). Al reactivarse, las subidas pendientes y la reconciliación de colecciones se reanudan solas; no hay que redesplegar.
