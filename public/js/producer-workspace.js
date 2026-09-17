@@ -125,13 +125,13 @@
     m.playlistUrl?{label:'Actualizar lista',run:async()=>{await req('PATCH','/modules/'+encodeURIComponent(m.id),{playlistPublished:true});message('app-msg','Lista actualizada.','ok');await refreshProjects();}}:null,
     m.playlistUrl?{label:'Insertar lista en tu sitio',run:()=>showEmbed(m.name,m.playlistUrl,p)}:null,
     m.playlistUrl?{label:'Retirar enlace de la lista',run:()=>confirmAction('Retirar enlace de la lista','El enlace de esta lista dejará de estar disponible. Sus clases y licencias se conservan.',async()=>{await req('PATCH','/modules/'+encodeURIComponent(m.id),{playlistPublished:false});await refreshProjects();},'Retirar enlace')}:null,
-    {label:'Eliminar módulo',danger:true,run:()=>confirmAction('Eliminar módulo','Sólo se puede eliminar un módulo vacío. Mueve primero sus clases, recursos y submódulos. No se borra nada en Bunny.',async()=>{try{await req('DELETE','/modules/'+encodeURIComponent(m.id));}catch(error){if(error.code==='CONTENT_HAS_DEPENDENCIES')throw new Error('El módulo tiene contenido: mueve o elimina primero sus clases, submódulos y recursos.');throw error;}await loadCourses(activeId());await refreshProjects();},'Eliminar módulo')}]);}
+    {label:'Eliminar módulo',danger:true,run:()=>confirmAction('Eliminar módulo','Sólo se puede eliminar un módulo vacío. Mueve primero sus clases, recursos y submódulos. No se borra nada en el servicio de video.',async()=>{try{await req('DELETE','/modules/'+encodeURIComponent(m.id));}catch(error){if(error.code==='CONTENT_HAS_DEPENDENCIES')throw new Error('El módulo tiene contenido: mueve o elimina primero sus clases, submódulos y recursos.');throw error;}await loadCourses(activeId());await refreshProjects();},'Eliminar módulo')}]);}
   function classMenu(v,anchor){showMenu(anchor,[
     {label:'Editar clase',run:()=>editVideo(v)},
     {label:'Recursos (enlaces)',run:()=>openResourceEditor('video',v.videoId,v.title)},
     {label:'Mover a…',run:()=>moveClassDialog(v)},
     {label:'Enlace de la clase',disabled:v.status!=='ready',run:()=>showClassLink(v)},
-    {label:'Quitar del catálogo',danger:true,run:()=>confirmAction('Quitar clase del catálogo','La clase dejará de aparecer en el catálogo. El archivo de origen se conserva en tu servicio de video; esta acción no libera ese almacenamiento ni borra nada en Bunny.',async()=>{await req('DELETE','/videos/'+encodeURIComponent(v.videoId));await refreshProjects();},'Quitar clase')}]);}
+    {label:'Quitar del catálogo',danger:true,run:()=>confirmAction('Quitar clase del catálogo','La clase dejará de aparecer en el catálogo. El archivo de origen se conserva en tu servicio de video; esta acción no libera ese almacenamiento ni borra nada en el servicio de video.',async()=>{await req('DELETE','/videos/'+encodeURIComponent(v.videoId));await refreshProjects();},'Quitar clase')}]);}
   async function showClassLink(v,b){const link=await mkSublink(v.videoId,b);if(!link)return;showLink(v.title,link,'Enlace de Edulock que abre la clase protegida en el reproductor. Volver a generarlo devuelve el mismo enlace.');refreshProjects().catch(()=>{});}
   function moduleChoices(p,{exclude=new Set(),root='Nivel principal'}={}){const names=new Map((p?.modules||[]).map(m=>[m.id,m]));return [{value:'',label:root},...(p?.modules||[]).filter(m=>!exclude.has(m.id)).map(m=>({value:m.id,label:moduleOptionLabel(m,names)}))];}
   // Módulo y submódulo: solo título. El padre viene de la fila desde la que se abrió.
@@ -142,7 +142,7 @@
       if(module){await req('PATCH','/modules/'+encodeURIComponent(module.id),{name:d.name.trim()});await loadCourses(p.id);await refreshProjects();message('app-msg','Módulo actualizado.','ok');return;}
       const {module:created,warning}=await createModule(p.id,{name:d.name,parentId:parent?.id||null});
       if(parent&&treeView)treeView.toggle(parent.id,true);
-      await refreshProjects();message('app-msg',warning?('Módulo «'+created.name+'» creado. La colección de Bunny queda pendiente: '+warning):'Módulo «'+created.name+'» creado.',warning?'warn':'ok');
+      await refreshProjects();message('app-msg',warning?('Módulo «'+created.name+'» creado. La colección del servicio de video queda pendiente: '+(window.hideProvider?window.hideProvider(warning):warning)):'Módulo «'+created.name+'» creado.',warning?'warn':'ok');
     },module?'Guardar':'Crear');}
   function moveModuleDialog(m){const p=current();const modules=p?.modules||[];const invalid=new Set([m.id,...T.descendantIds(modules,m.id)]);
     showDialog('Mover módulo','<p class="muted">Un módulo no puede quedar dentro de sí mismo ni de sus submódulos. Su contenido se traslada con él.</p><div class="form-grid">'+field('parentId','Colocar dentro de',m.parentId||'','select',{choices:moduleChoices(p,{exclude:invalid}),wide:true})+'</div>',async d=>{

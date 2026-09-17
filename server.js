@@ -5217,7 +5217,7 @@ app.post('/api/producer/upload', requireProducer, upload.single('video'), async 
         if (!EDU_MASTER_KEY || EDU_MASTER_KEY.length < 32) { cleanup(); return res.status(500).json({ error: 'Servidor sin EDU_MASTER_KEY' }); }
         if (!req.file) return res.status(400).json({ error: 'Archivo de video requerido' });
         const { zone, key, host, pull } = await getBunnyStorageConfig();
-        if (!zone || !key) { cleanup(); return res.status(400).json({ error: 'La plataforma aún no tiene Bunny Storage configurado. Contacta al administrador.' }); }
+        if (!zone || !key) { cleanup(); return res.status(400).json({ error: 'La plataforma aún no tiene el almacenamiento de video configurado. Contacta al administrador.' }); }
 
         const pid       = req.producer.id;
         const title     = ((req.body && req.body.title) || req.file.originalname || 'Video').slice(0, 120);

@@ -2660,6 +2660,7 @@ function fillStreamModuleSelect() {
 function createStreamUploadController(options) {
     const { api: request, prefix, storageKey, getToken, onUpdate, onJobsChanged } = options;
     const delay = options.delay || (ms => new Promise(resolve => setTimeout(resolve, ms)));
+    const neutral = options.neutralize || (text => text); // panels may hide the provider name in messages
     const maxPolls = options.maxPolls || 200;
     const watchEvery = options.watchEvery || 3000;
     let busy = false;
@@ -2690,7 +2691,7 @@ function createStreamUploadController(options) {
     function describeFailure(status) {
         const parts = [status.error || 'El video no pudo procesarse.'];
         if (status.stageLabel) parts.push('Etapa: ' + status.stageLabel + '.');
-        if (status.providerMessage) parts.push('Bunny: ' + status.providerMessage + '.');
+        if (status.providerMessage) parts.push('Servicio de video: ' + neutral(status.providerMessage) + '.');
         if (status.action) parts.push(status.action);
         return parts.join(' ');
     }
@@ -2699,13 +2700,13 @@ function createStreamUploadController(options) {
         if (status.ready === true) return { phase: 'ready', label: 'Video listo para compartir.', percent: 100 };
         const phase = String(status.phase || '').toLowerCase();
         if (phase === 'reserved' || phase === 'creating') return {
-            phase: 'preparing', label: 'Preparando la biblioteca del curso y la colección del módulo en Bunny.', percent: null
+            phase: 'preparing', label: 'Preparando la biblioteca del curso y la colección del módulo en el servicio de video.', percent: null
         };
         if (/upload|transfer|sending/.test(phase)) return {
-            phase: 'server-upload', label: 'Transfiriendo el archivo del servidor a Bunny.', percent: progress(status.uploadPercent)
+            phase: 'server-upload', label: 'Transfiriendo el archivo del servidor al servicio de video.', percent: progress(status.uploadPercent)
         };
         if (/processing|encoding|transcod/.test(phase) || typeof status.encodeProgress === 'number') return {
-            phase: 'processing', label: 'Bunny está procesando el video; aún no está listo.', percent: progress(status.encodeProgress)
+            phase: 'processing', label: 'El servicio de video está procesando la clase; aún no está lista.', percent: progress(status.encodeProgress)
         };
         return { phase: 'pending', label: 'Esperando confirmación del servidor. El video aún no está listo.', percent: null };
     }
@@ -2775,7 +2776,7 @@ function createStreamUploadController(options) {
             };
             xhr.upload.onload = () => {
                 changed(job, { phase: 'server-upload' }, {
-                    phase: 'preparing', label: 'Archivo recibido en el servidor. Preparando biblioteca y colección; después se transfiere a Bunny.', percent: null
+                    phase: 'preparing', label: 'Archivo recibido en el servidor. Preparando biblioteca y colección; después se transfiere al servicio de video.', percent: null
                 });
                 startWatch();
             };
@@ -2788,7 +2789,7 @@ function createStreamUploadController(options) {
                 if (xhr.status < 200 || xhr.status >= 300) {
                     const parts = [data.error || ('No se aceptó la subida (HTTP ' + xhr.status + ').')];
                     if (data.stageLabel) parts.push('Etapa: ' + data.stageLabel + '.');
-                    if (data.provider && data.provider.message) parts.push('Bunny: ' + data.provider.message + '.');
+                    if (data.provider && data.provider.message) parts.push('Servicio de video: ' + neutral(data.provider.message) + '.');
                     const error = problem(parts.join(' '), 'UPLOAD_REJECTED', job);
                     error.status = xhr.status;
                     changed(job, { failed: true, retryable: data.retryable !== false, phase: 'failed', stage: data.stage || null, stageLabel: data.stageLabel || null, error: parts.join(' ') });

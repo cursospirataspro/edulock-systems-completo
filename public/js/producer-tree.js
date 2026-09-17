@@ -76,7 +76,7 @@
     function classRow(video, listNode) {
       const row = el('li', 'tree-row tree-class'); row.dataset.videoId = video.videoId; row.dataset.kind = 'video';
       const [label, tone] = statusLabel(video.status);
-      row.innerHTML = '<span class="tree-grip" tabindex="0" role="button" aria-label="Arrastrar para ordenar (Alt+↑/↓ con teclado)"></span><span class="tree-icon video" aria-hidden="true">▶</span><span class="tree-title"></span><span class="pill ' + tone + '">' + html(label) + '</span>' + (video.attachments ? '<span class="tree-badge" title="' + html(video.attachments) + ' adjunto(s)">📎 ' + html(video.attachments) + '</span>' : '') + (video.collectionSyncPending ? '<span class="tree-badge warn" title="Colección de Bunny pendiente de sincronizar">Bunny pendiente</span>' : '');
+      row.innerHTML = '<span class="tree-grip" tabindex="0" role="button" aria-label="Arrastrar para ordenar (Alt+↑/↓ con teclado)"></span><span class="tree-icon video" aria-hidden="true">▶</span><span class="tree-title"></span><span class="pill ' + tone + '">' + html(label) + '</span>' + (video.attachments ? '<span class="tree-badge" title="' + html(video.attachments) + ' adjunto(s)">📎 ' + html(video.attachments) + '</span>' : '') + (video.collectionSyncPending ? '<span class="tree-badge warn" title="Colección de video pendiente de sincronizar">Sincronización pendiente</span>' : '');
       row.querySelector('.tree-title').textContent = video.title || 'Clase';
       const acts = el('div', 'tree-actions');
       acts.append(btn('Enlace', 'ghost small', b => actions.classLink(video, b), video.status === 'ready' ? 'Enlace de la clase' : 'Disponible cuando la clase esté lista'));

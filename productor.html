@@ -46,7 +46,7 @@
   details{margin-top:12px} summary{cursor:pointer;color:var(--c-text);padding:6px 0}
   @media(max-width:600px){.wrap{padding:12px}.card{padding:14px}.brand{flex-wrap:wrap}.job{align-items:flex-start;flex-direction:column}table{min-width:520px}}
 </style>
-<link rel="stylesheet" href="/css/producer-workspace.css?v=20260917-contenido">
+<link rel="stylesheet" href="/css/producer-workspace.css?v=20260917-neutral">
 </head>
 <body>
 
@@ -133,7 +133,7 @@
   <div class="form-grid">
     <label class="form-field wide">Módulo o submódulo de destino<select id="up-module"><option value="">Sin módulo</option></select><span class="muted" id="up-module-status"></span></label>
     <label class="form-field wide">Título de la clase<input id="up-title" maxlength="160" placeholder="Ej: Clase 1 — Bienvenida"></label>
-    <label class="form-field wide">Archivo de video (desde tu equipo)<input id="up-file" type="file" accept="video/*"><span class="muted">Etapas: envío al servidor → biblioteca y colección → transferencia a Bunny → procesamiento → listo. El enlace se habilita cuando la clase está lista.</span></label>
+    <label class="form-field wide">Archivo de video (desde tu equipo)<input id="up-file" type="file" accept="video/*"><span class="muted">Etapas: envío al servidor → biblioteca y colección → transferencia al servicio de video → procesamiento → listo. El enlace se habilita cuando la clase está lista.</span></label>
     <label class="form-field wide">Descripción breve (opcional)<textarea id="up-description" rows="2" maxlength="2000" placeholder="Se muestra en la portada de la clase."></textarea></label>
   </div>
   <div id="up-progress" class="hidden" role="status" aria-live="polite"><div class="row" style="justify-content:space-between"><span id="up-label" class="muted"></span><span id="up-pct" class="muted"></span></div><div class="progress-track"><div id="up-bar" class="progress-bar"></div></div></div>
@@ -151,6 +151,7 @@
 function createStreamUploadController(options) {
     const { api: request, prefix, storageKey, getToken, onUpdate, onJobsChanged } = options;
     const delay = options.delay || (ms => new Promise(resolve => setTimeout(resolve, ms)));
+    const neutral = options.neutralize || (text => text); // panels may hide the provider name in messages
     const maxPolls = options.maxPolls || 200;
     const watchEvery = options.watchEvery || 3000;
     let busy = false;
@@ -181,7 +182,7 @@ function createStreamUploadController(options) {
     function describeFailure(status) {
         const parts = [status.error || 'El video no pudo procesarse.'];
         if (status.stageLabel) parts.push('Etapa: ' + status.stageLabel + '.');
-        if (status.providerMessage) parts.push('Bunny: ' + status.providerMessage + '.');
+        if (status.providerMessage) parts.push('Servicio de video: ' + neutral(status.providerMessage) + '.');
         if (status.action) parts.push(status.action);
         return parts.join(' ');
     }
@@ -190,13 +191,13 @@ function createStreamUploadController(options) {
         if (status.ready === true) return { phase: 'ready', label: 'Video listo para compartir.', percent: 100 };
         const phase = String(status.phase || '').toLowerCase();
         if (phase === 'reserved' || phase === 'creating') return {
-            phase: 'preparing', label: 'Preparando la biblioteca del curso y la colección del módulo en Bunny.', percent: null
+            phase: 'preparing', label: 'Preparando la biblioteca del curso y la colección del módulo en el servicio de video.', percent: null
         };
         if (/upload|transfer|sending/.test(phase)) return {
-            phase: 'server-upload', label: 'Transfiriendo el archivo del servidor a Bunny.', percent: progress(status.uploadPercent)
+            phase: 'server-upload', label: 'Transfiriendo el archivo del servidor al servicio de video.', percent: progress(status.uploadPercent)
         };
         if (/processing|encoding|transcod/.test(phase) || typeof status.encodeProgress === 'number') return {
-            phase: 'processing', label: 'Bunny está procesando el video; aún no está listo.', percent: progress(status.encodeProgress)
+            phase: 'processing', label: 'El servicio de video está procesando la clase; aún no está lista.', percent: progress(status.encodeProgress)
         };
         return { phase: 'pending', label: 'Esperando confirmación del servidor. El video aún no está listo.', percent: null };
     }
@@ -266,7 +267,7 @@ function createStreamUploadController(options) {
             };
             xhr.upload.onload = () => {
                 changed(job, { phase: 'server-upload' }, {
-                    phase: 'preparing', label: 'Archivo recibido en el servidor. Preparando biblioteca y colección; después se transfiere a Bunny.', percent: null
+                    phase: 'preparing', label: 'Archivo recibido en el servidor. Preparando biblioteca y colección; después se transfiere al servicio de video.', percent: null
                 });
                 startWatch();
             };
@@ -279,7 +280,7 @@ function createStreamUploadController(options) {
                 if (xhr.status < 200 || xhr.status >= 300) {
                     const parts = [data.error || ('No se aceptó la subida (HTTP ' + xhr.status + ').')];
                     if (data.stageLabel) parts.push('Etapa: ' + data.stageLabel + '.');
-                    if (data.provider && data.provider.message) parts.push('Bunny: ' + data.provider.message + '.');
+                    if (data.provider && data.provider.message) parts.push('Servicio de video: ' + neutral(data.provider.message) + '.');
                     const error = problem(parts.join(' '), 'UPLOAD_REJECTED', job);
                     error.status = xhr.status;
                     changed(job, { failed: true, retryable: data.retryable !== false, phase: 'failed', stage: data.stage || null, stageLabel: data.stageLabel || null, error: parts.join(' ') });
@@ -346,6 +347,9 @@ let _lastKeys = [], _courses = [], _modules = [], _me = null, _stream = null;
 let _courseRequest = 0;
 let _licensePage = 1, _licenseRequest = 0;
 const $ = id => document.getElementById(id);
+// The producer panel never names the video provider: texts that come from the provider (warnings, provider reasons) are neutralised before display; names typed by the producer are left untouched.
+function hideProvider(text) { return String(text == null ? '' : text).replace(/\bbunny(?:\.net|cdn|\s*stream|\s*storage)?\b/gi, 'el servicio de video'); }
+window.hideProvider = hideProvider;
 function message(id, text, kind = 'muted') { $(id).textContent = text; $(id).className = kind; }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c])); }
 let _resourceEditor = null;
@@ -432,7 +436,7 @@ async function showApp() {
     try {
         await refreshProfile();
         $('login').classList.add('hidden'); $('app').classList.remove('hidden');
-        _stream = createStreamUploadController({ api, prefix:'/api/producer/stream', getToken: () => TOKEN,
+        _stream = createStreamUploadController({ api, prefix:'/api/producer/stream', getToken: () => TOKEN, neutralize: hideProvider,
             storageKey:'edulock-producer-stream:' + (_me.id || _me.email),
             onUpdate: showUploadProgress, onJobsChanged: renderUploadJobs });
         await loadCourses();
@@ -445,7 +449,7 @@ async function showApp() {
 function provisionMessage(data, noun) {
     const item = data.course || data.module || data;
     const warning = data.warning || data.bunnyWarning || item.bunnyWarning || item.provisioningWarning;
-    return warning ? `${noun} guardado. La preparación en Bunny está pendiente: ${warning}. No necesitas volver a crearlo.` : `${noun} guardado.`;
+    return warning ? `${noun} guardado. La preparación en el servicio de video está pendiente: ${hideProvider(warning)}. No necesitas volver a crearlo.` : `${noun} guardado.`;
 }
 async function loadCourses(preferredId) {
     const previous = preferredId || $('up-course').value;
@@ -493,7 +497,7 @@ async function createCourse({ name, author = '', description = '' }) {
     const course = data.course || data;
     await loadCourses(course.id);
     const warnings = [];
-    if (data.warning || course.bunnyWarning || course.provisioningWarning) warnings.push('La preparación en Bunny está pendiente: ' + (data.warning || course.bunnyWarning || course.provisioningWarning) + '. No necesitas volver a crearlo.');
+    if (data.warning || course.bunnyWarning || course.provisioningWarning) warnings.push('La preparación en el servicio de video está pendiente: ' + hideProvider(data.warning || course.bunnyWarning || course.provisioningWarning) + '. No necesitas volver a crearlo.');
     if (course.settingsWarning) warnings.push(course.settingsWarning);
     return { course, warnings };
 }
@@ -525,7 +529,7 @@ function renderUploadJobs(jobs) {
         const text = document.createElement('div');
         const title = document.createElement('strong'); title.textContent = job.title; text.append(title);
         const detail = document.createElement('div'); detail.className = job.failed ? 'err' : 'muted';
-        detail.textContent = job.failed ? (job.error || 'Requiere revisión.') : 'Pendiente de confirmación.'; text.append(detail);
+        detail.textContent = job.failed ? hideProvider(job.error || 'Requiere revisión.') : 'Pendiente de confirmación.'; text.append(detail);
         const actions = document.createElement('div'); actions.className = 'actions';
         const follow = document.createElement('button'); follow.type = 'button'; follow.className = 'btn ghost'; follow.textContent = 'Continuar seguimiento';
         follow.disabled = !!(_stream && _stream.isBusy()); follow.onclick = () => resumeUpload(job.operationId); actions.append(follow);
@@ -549,7 +553,7 @@ async function retryUpload(job) {
 function streamErrorText(error) {
     const parts = [error.message];
     if (error.stageLabel) parts.push('Etapa: ' + error.stageLabel + '.');
-    if (error.provider && error.provider.message) parts.push('Bunny: ' + error.provider.message + '.');
+    if (error.provider && error.provider.message) parts.push('Servicio de video: ' + hideProvider(error.provider.message) + '.');
     return parts.join(' ');
 }
 function renderModuleCollectionStatus() {
@@ -557,8 +561,8 @@ function renderModuleCollectionStatus() {
     const moduleId = $('up-module').value, module = _modules.find(m => m.id === moduleId);
     box.replaceChildren();
     if (!module) { box.textContent = moduleId ? '' : 'Sin módulo: la clase queda en la biblioteca del curso, fuera de toda colección.'; return; }
-    if (module.bunnyCollectionId) { box.textContent = 'Colección de Bunny confirmada para este módulo.'; return; }
-    box.textContent = 'Este módulo aún no tiene colección en Bunny. Se creará al subir la clase o puedes prepararla ahora. ';
+    if (module.bunnyCollectionId) { box.textContent = 'Colección de video confirmada para este módulo.'; return; }
+    box.textContent = 'Este módulo aún no tiene colección en el servicio de video. Se creará al subir la clase o puedes prepararla ahora. ';
     const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ghost small'; b.textContent = 'Preparar colección';
     b.onclick = () => repairModuleCollection($('up-course').value, module.id, b); box.append(b);
 }
@@ -567,7 +571,7 @@ async function repairModuleCollection(courseId, moduleId, button) {
     try {
         const data = await api('POST', '/api/producer/courses/' + encodeURIComponent(courseId) + '/modules/' + encodeURIComponent(moduleId) + '/collection', {});
         const module = _modules.find(m => m.id === moduleId); if (module) module.bunnyCollectionId = data.collectionId;
-        message('app-msg', 'Colección confirmada en Bunny para el módulo.', 'ok'); renderModuleCollectionStatus();
+        message('app-msg', 'Colección confirmada en el servicio de video para el módulo.', 'ok'); renderModuleCollectionStatus();
     } catch (error) { message('app-msg', streamErrorText(error), 'err'); }
     finally { if (button) button.disabled = false; }
 }
@@ -644,7 +648,7 @@ $('up-module').addEventListener('change', renderModuleCollectionStatus);
 // Workspace starts after its navigation and controllers are ready.
 
 </script>
-<script src="/js/producer-tree.js?v=20260917-contenido"></script>
-<script src="/js/producer-workspace.js?v=20260917-contenido"></script>
+<script src="/js/producer-tree.js?v=20260917-neutral"></script>
+<script src="/js/producer-workspace.js?v=20260917-neutral"></script>
 </body>
 </html>

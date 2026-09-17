@@ -68,14 +68,14 @@ test('failed status wins over a contradictory ready flag', async () => {
 test('a rejected stage is explained with stage, provider reason and next action, and stays retryable', async () => {
     const h = harness({ statuses:[{ ready:false, failed:true, retryable:true, phase:'reserved', stage:'library-protect', stageLabel:'Protección de la biblioteca (DRM básico)',
         error:'Falló la etapa «Protección de la biblioteca (DRM básico)».', providerMessage:'Cannot have Token Authentication and Basic DRM enabled at the same time', action:'Corrige la causa y vuelve a seleccionar el archivo.' }] });
-    await assert.rejects(h.controller.upload(input), error => error.code === 'UPLOAD_FAILED' && /Etapa: Protección de la biblioteca/.test(error.message) && /Bunny: Cannot have Token/.test(error.message) && /Corrige la causa/.test(error.message));
+    await assert.rejects(h.controller.upload(input), error => error.code === 'UPLOAD_FAILED' && /Etapa: Protección de la biblioteca/.test(error.message) && /Servicio de video: Cannot have Token/.test(error.message) && /Corrige la causa/.test(error.message));
     const job = h.controller.getJobs()[0];
     assert.equal(job.retryable, true); assert.equal(job.stage, 'library-protect'); assert.match(job.error, /Etapa/);
     assert.equal(h.views.at(-1).phase, 'failed');
 });
 test('a server-side stage rejection of the upload request records the failure on the job without claiming a video', async () => {
     const h = harness({ responses:[{ http:502, error:'Bunny respondió HTTP 400.', code:'BUNNY_HTTP_ERROR', stage:'library-protect', stageLabel:'Protección de la biblioteca (DRM básico)', provider:{ status:400, errorKey:'VideoLibrary.TokenAuthAndDrmConflict', message:'Cannot have Token Authentication and Basic DRM enabled at the same time' }, retryable:false }] });
-    await assert.rejects(h.controller.upload(input), error => error.code === 'UPLOAD_REJECTED' && /Etapa: Protección/.test(error.message) && /Bunny: Cannot have/.test(error.message));
+    await assert.rejects(h.controller.upload(input), error => error.code === 'UPLOAD_REJECTED' && /Etapa: Protección/.test(error.message) && /Servicio de video: Cannot have/.test(error.message));
     const job = h.controller.getJobs()[0];
     assert.equal(job.failed, true); assert.equal(job.videoId, undefined); assert.equal(job.stage, 'library-protect');
 });

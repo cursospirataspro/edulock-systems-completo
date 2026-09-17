@@ -259,3 +259,11 @@ Observaciones:
 - Limpieza: productor, curso, módulos, clase, recurso y operaciones QA borrados de la base; la biblioteca 756021 (1 clip de 2 MB) se conserva en Bunny, como todas las anteriores. Reproductor cerrado en la PC.
 
 **Lo que sigue pendiente y depende del propietario:** los cursos ya existentes siguen atados a bibliotecas de la cuenta antigua, que sigue deshabilitada: "duramxn 21 xxx" (biblioteca 755206, 1 video, 1 licencia activa de 20), "prueba" (749820, 1 video, 1 licencia activa) y "pepe tradinf" (755280, sin videos). Esos videos no se reproducen hasta que se reactive la cuenta antigua (verificar tarjeta o cargar saldo) o se vuelvan a subir en los cursos desde el panel nuevo. El servidor no crea bibliotecas nuevas para cursos que ya tienen una guardada, así que no hay riesgo de duplicados ni de huérfanos.
+
+### 15.6 El panel del productor no nombra al proveedor de video (2026-09-17)
+
+Pedido del propietario: ningún mensaje del panel del productor debe decir "Bunny". Cambios, sin tocar la lógica:
+- Mensajes del servidor que llegan al productor (`lib/stream-service.js`, `lib/producer-content.js`, ruta `/api/producer/upload`): "Bunny respondió HTTP 400" → "El servicio de video respondió HTTP 400", "La colección de Bunny queda pendiente" → "La colección del servicio de video queda pendiente", etapas de subida, etc.
+- Panel (`productor.html`, `producer-workspace.js`, `producer-tree.js`): etiquetas de etapas, avisos de módulo/curso, confirmaciones de borrado y el distintivo "Bunny pendiente" (ahora "Sincronización pendiente"). El controlador de subida compartido con `admin.html` recibe un gancho `neutralize` (el panel de administración conserva el mismo texto neutro; el test que exige que ambos controladores sean idénticos sigue en verde).
+- Red de seguridad: `hideProvider()` reemplaza cualquier mención del proveedor **solo en textos que vienen del proveedor** (razones de fallo, avisos de aprovisionamiento); los nombres que escribe el productor no se alteran.
+- Verificado en el fixture local: módulo con aviso de proveedor → mensaje "Módulo «…» creado. La colección del servicio de video queda pendiente: …" sin la palabra Bunny; suite completa 375/385 (los mismos 10 preexistentes). Versión de assets `?v=20260917-neutral`.
