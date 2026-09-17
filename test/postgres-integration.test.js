@@ -147,15 +147,20 @@ test('producer revocation is isolated, audited once and immediately denies its c
     for (const [videoId, courseId] of [[videoA, courseA], [videoB, courseB]]) await db.addToCatalog({ videoId, courseId, producerId: owner, title: 'Synthetic revocation test', status: 'ready' });
     assert.equal((await db.claimAndActivateLicenseAtomic(activationInput(serialA.hash, user, device))).ok, true);
     assert.equal((await db.claimAndActivateLicenseAtomic(activationInput(serialB.hash, user, device))).ok, true);
-    const policy = createAccessPolicy({ db }), claims = { sub: user, deviceId: device };
+    const policy = createAccessPolicy({ db });
+    const claims = { sub: user, deviceId: device, licenseId: serialA.id, courseId: courseA, allowedVideos: [courseA] };
+    const claimsB = { sub: user, deviceId: device, licenseId: serialB.id, courseId: courseB, allowedVideos: [courseB] };
     await policy.authorizeVideo(claims, videoA, device);
-    await policy.authorizeVideo(claims, videoB, device);
+    await policy.authorizeVideo(claimsB, videoB, device);
+    // One license per session: the course A session never plays course B, and vice versa.
+    await assert.rejects(policy.authorizeVideo(claims, videoB, device), { code: 'COURSE_NOT_IN_SESSION' });
+    await assert.rejects(policy.authorizeVideo(claimsB, videoA, device), { code: 'COURSE_NOT_IN_SESSION' });
     await assert.rejects(db.revokeProducerLicense({ producerId: other, licenseId: serialA.id }), { code: 'LICENSE_NOT_FOUND' });
     assert.equal((await db.getLicenseById(serialA.id)).status, 'active');
     assert.equal((await db.revokeProducerLicense({ producerId: owner, licenseId: serialA.id })).alreadyRevoked, false);
     assert.equal((await db.revokeProducerLicense({ producerId: owner, licenseId: serialA.id })).alreadyRevoked, true);
     await assert.rejects(policy.authorizeVideo(claims, videoA, device), { code: 'LICENSE_REQUIRED' });
-    await policy.authorizeVideo(claims, videoB, device);
+    await policy.authorizeVideo(claimsB, videoB, device);
     assert.equal((await db.getLicenseById(serialB.id)).status, 'active');
     assert.equal(await db.countActiveActivationsByLicense(serialA.id), 0);
     assert.equal(await db.countActiveActivationsByLicense(serialB.id), 1);
@@ -180,10 +185,11 @@ test('producer batches are permanent: expiry is refused, stored dates never bloc
     const videoId = id('videos');
     await db.addToCatalog({ videoId, courseId, producerId: owner, title: 'Synthetic permanent test', status: 'ready' });
     const policy = createAccessPolicy({ db });
-    await policy.authorizeVideo({ sub: user, deviceId: device }, videoId, device);
+    const sessionClaims = { sub: user, deviceId: device, licenseId: serials[0].id, courseId, allowedVideos: [courseId] };
+    await policy.authorizeVideo(sessionClaims, videoId, device);
     // A legacy stored date must not lock the student out: the right to the course is permanent.
     await db.pool.query('UPDATE licenses SET expires_at=$1 WHERE lot_id=$2 AND producer_id=$3', ['2020-01-01T00:00:00.000Z', lotId, owner]);
-    await policy.authorizeVideo({ sub: user, deviceId: device }, videoId, device);
+    await policy.authorizeVideo(sessionClaims, videoId, device);
     assert.equal((await db.claimAndActivateLicenseAtomic(activationInput(serials[1].hash, user, device))).ok, true);
     const lots = await db.getLotsByProducer(owner);
     assert.equal(Number(lots[0].free_count), 0); assert.equal(Number(lots[0].used_count), 2); assert.equal(lots[0].expired_count, undefined);

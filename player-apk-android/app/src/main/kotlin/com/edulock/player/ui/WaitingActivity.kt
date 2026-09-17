@@ -433,10 +433,12 @@ class WaitingActivity : AppCompatActivity() {
     // ── Sesión / utilidades ───────────────────────────────────────────────────
 
     private fun onLogout() {
-        ActivationStore.clear(this)
-        getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
-        startActivity(Intent(this, LoginActivity::class.java))
-        finishAffinity()
+        // Cierra la sesión en el servidor y localmente; la licencia y el dispositivo se conservan.
+        logoutBtn.isEnabled = false
+        com.edulock.player.utils.SessionManager.logout(this) {
+            startActivity(Intent(this, LoginActivity::class.java))
+            finishAffinity()
+        }
     }
 
     private fun sendStartupCheckin() {

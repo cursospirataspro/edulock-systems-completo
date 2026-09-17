@@ -1,0 +1,54 @@
+OK   [prep] claves QA creadas sin vencimiento
+OK   [A registro] el alumno no existía antes
+OK   [A registro] firebase-login crea la cuenta al instante (sin solicitud ni aprobación) — HTTP 200 status=approved
+OK   [A registro] fila de alumno automática y aprobada
+OK   [A registro] no se creó ninguna solicitud de registro pendiente
+OK   [A registro] token de sesión limitada (hasLicense=false, sin licencia ni curso)
+OK   [A registro] catálogo vacío: pide licencia — HTTP 200
+OK   [A registro] enlace permanente público disponible — HTTP 200
+OK   [A registro] sin licencia no hay contenido (identidad ≠ autorización) — HTTP 403 LICENSE_REQUIRED "Activa una licencia de este curso en tu dispositivo."
+OK   [B licencia] activación por /api/session/activate-license — HTTP 200 reused=false
+OK   [B licencia] token de contenido atado a licencia+curso+dispositivo+sesión
+OK   [B licencia] licencia libre → activa y ligada al alumno, sin vencimiento
+OK   [B licencia] sesión de contenido abierta en el servidor
+OK   [B licencia] activación única (licencia, dispositivo)
+OK   [B licencia] catálogo muestra solo el curso de la licencia — HTTP 200 cursos=1
+OK   [C reproducción] resolve-perm con la sesión de contenido — HTTP 200
+OK   [C reproducción] lista maestra + lista de calidad + primer segmento vía servidor — manifest HTTP 200  segmentos=3 bytes=517008
+INFO pista de audio anunciada en el video de demostración: no (el archivo original no la trae; el pipeline de audio se comprobó aparte)
+OK   [C reproducción] validación local de la activación (arranque del reproductor) — HTTP 200
+OK   [C reproducción] renovar token con la sesión abierta conserva la licencia y la sesión — HTTP 200
+OK   [D cerrar sesión] logout en el servidor — HTTP 200 ended=1
+OK   [D cerrar sesión] el token de contenido anterior ya no reproduce — HTTP 401 SESSION_ENDED "Tu sesión de contenido terminó. Ingresa tu licencia de nuevo."
+OK   [D cerrar sesión] el token anterior tampoco se puede renovar — HTTP 401 SESSION_ENDED "Tu sesión de contenido terminó. Ingresa tu licencia de nuevo."
+OK   [D cerrar sesión] catálogo cerrado con el token anterior — HTTP 401 SESSION_ENDED "Tu sesión de contenido terminó. Ingresa tu licencia de nuevo."
+OK   [D cerrar sesión] licencia, activación y dispositivo se conservan (no se libera cupo ni se borra nada)
+OK   [D cerrar sesión] la sesión de contenido quedó terminada con motivo logout
+OK   [E reingreso] inicio de sesión de nuevo → sesión limitada, pide licencia — HTTP 200
+OK   [E reingreso] sin volver a ingresar la licencia no hay contenido — HTTP 403 LICENSE_REQUIRED "Activa una licencia de este curso en tu dispositivo."
+OK   [E reingreso] misma clave, mismo equipo: reactivación idempotente (reused) — HTTP 200 reused=true
+OK   [E reingreso] el mismo equipo sigue contando una sola vez para la licencia
+OK   [E reingreso] vuelve a reproducir — HTTP 200
+OK   [1 un curso por sesión] licencia del productor QA (curso B) activa en el mismo equipo — HTTP 200
+OK   [1 un curso por sesión] con la sesión del curso B, el curso A se niega — HTTP 403 COURSE_NOT_IN_SESSION "Este video pertenece a otro curso. Cierra sesión e ingresa la licencia"
+OK   [1 un curso por sesión] la sesión anterior (curso A) quedó reemplazada en este equipo — HTTP 401 SESSION_ENDED "Tu sesión de contenido terminó. Ingresa tu licencia de nuevo."
+OK   [1 un curso por sesión] catálogo de la sesión B muestra solo el curso B — HTTP 200
+OK   [2 alumno del productor] el alumno aparece en Estudiantes del productor QA (licencia ligada + vínculo productor↔alumno)
+OK   [2 alumno del productor] regresar al curso A con su clave vuelve a funcionar sin consumir cupo — HTTP 200
+OK   [3 dispositivos por licencia] segundo equipo inicia sesión (el cupo global antiguo ya no bloquea) — HTTP 200 status=approved
+OK   [3 dispositivos por licencia] licencia A (máx. 2) activa en el segundo equipo — HTTP 200
+OK   [3 dispositivos por licencia] mientras el equipo 1 sigue reproduciendo, el equipo 2 espera (una reproducción activa por cuenta) — HTTP 429 SESSION_LIMIT_EXCEEDED "Ya tienes una reproducción activa. Cierra el otro video para continuar"
+OK   [3 dispositivos por licencia] tercer equipo rechazado por el límite de la licencia (2) — login3 HTTP 200 · activación HTTP 403 DEVICE_LIMIT_EXCEEDED "Dispositivos máximos alcanzados. Contacta al administrador."
+OK   [3 dispositivos por licencia] la licencia sigue con exactamente 2 activaciones
+OK   [3 dispositivos por licencia] con el cupo lleno, el primer equipo reactiva sin problema (mismo equipo = una vez) — HTTP 200
+OK   [4 logout por equipo] cerrar sesión en el equipo 1 libera la reproducción y no afecta la sesión del equipo 2 — HTTP 200 / equipo2 HTTP 200
+OK   [5 clave reservada] clave reservada a otro correo: rechazada sin consumir cupo ni asignarse — HTTP 403 LICENSE_OWNER_MISMATCH "Esta licencia pertenece a otra cuenta."
+OK   [6 clave de otro alumno] otra cuenta no puede usar una clave ya ligada — HTTP 403 LICENSE_OWNER_MISMATCH "Esta licencia pertenece a otra cuenta."
+OK   [7 activación doble simultánea] dos activaciones simultáneas del mismo equipo → ambas OK y una sola activación — HTTP 200 / HTTP 200
+OK   [8 token manipulado] un token que declare otro curso con la misma licencia no reproduce — HTTP 403 COURSE_NOT_IN_SESSION "Este video pertenece a otro curso. Cierra sesión e ingresa la licencia"
+OK   [9 flujo antiguo] las rutas de solicitudes de registro ya no existen — HTTP 404 "No encontrado"
+OK   [9 flujo antiguo] todas las licencias QA siguen sin vencimiento tras activarse
+OK   [10 versión] servidor responde versión de reproductores — HTTP 200 latest=1.1.2 min=1.0.0
+INFO cuenta Firebase QA eliminada
+limpieza: alumnos qa restantes=0 productores qa restantes=0 licencias qa restantes=0
+RESUMEN: 50/50 pasos correctos

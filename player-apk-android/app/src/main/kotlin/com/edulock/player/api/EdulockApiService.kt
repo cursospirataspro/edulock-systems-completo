@@ -283,6 +283,17 @@ interface EdulockApiService {
         @Body request: SessionActivateLicenseRequest
     ): Response<SessionActivateLicenseResponse>
 
+    /**
+     * POST /api/auth/logout
+     * Cierra la sesión de contenido en el servidor. La licencia, el dispositivo y el contador
+     * de activaciones se conservan; al volver a entrar se pide la licencia de nuevo.
+     */
+    @POST("api/auth/logout")
+    suspend fun logout(
+        @Header("Authorization") authorization: String,
+        @Body request: LogoutRequest
+    ): Response<okhttp3.ResponseBody>
+
     // ════════════════════════════════════════════════════════════════════════════════
     // REPRODUCCIÓN POR ENLACE cdp:// (paridad con el reproductor PC)
     // El mismo enlace cdp://play?t=... / cdp://play?p=... abre el PC o el APK.

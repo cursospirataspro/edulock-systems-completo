@@ -6,6 +6,12 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.gson.JsonParser
 import com.edulock.player.api.ApiClient
 import com.edulock.player.api.data.FirebaseLoginRequest
+import com.edulock.player.api.data.LogoutRequest
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.resume
@@ -48,6 +54,30 @@ object SessionManager {
         }
         prefs.edit().putString("jwt_token", renewed).putLong("login_timestamp", System.currentTimeMillis()).apply()
         renewed
+    }
+
+    /**
+     * Cierre de sesión: avisa al servidor (mejor esfuerzo, máx. 4 s) para invalidar la sesión de
+     * contenido y luego borra token y activación locales. La licencia, el dispositivo y el contador
+     * de activaciones se conservan en el servidor: al volver a entrar se pide la licencia otra vez.
+     */
+    fun logout(context: Context, onDone: () -> Unit) {
+        val appContext = context.applicationContext
+        CoroutineScope(Dispatchers.IO).launch {
+            val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val token = prefs.getString("jwt_token", "") ?: ""
+            if (token.isNotBlank()) {
+                try {
+                    withTimeoutOrNull(4000L) {
+                        val deviceId = try { DeviceFingerprintAdvanced.captureFullDeviceInfo(appContext).deviceId } catch (_: Exception) { null }
+                        ApiClient.getService().logout("Bearer $token", LogoutRequest(deviceId))
+                    }
+                } catch (_: Exception) { }
+            }
+            ActivationStore.clear(appContext)
+            prefs.edit().clear().apply()
+            withContext(Dispatchers.Main) { onDone() }
+        }
     }
 
     fun clearBackendToken(context: Context) {

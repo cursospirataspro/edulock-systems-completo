@@ -11,7 +11,7 @@ module.exports = async ({ appOutDir, electronPlatformName }) => {
     const executable = process.env.EVS_VMP_EXECUTABLE || 'evs-vmp';
     for (const command of ['sign-pkg', 'verify-pkg']) {
         execFileSync(executable, ['--no-ask', command, '--streaming', appOutDir], {
-            stdio: 'inherit', windowsHide: true, timeout: 120000,
+            stdio: 'inherit', windowsHide: true, timeout: 20 * 60 * 1000, // la subida a Castlabs (~220 MB) tarda más de 2 min en esta conexión
         });
     }
     console.log('[EVS] Firma VMP streaming verificada antes de generar los instaladores.');

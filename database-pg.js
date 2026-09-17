@@ -657,6 +657,33 @@ async function initDb() {
         )
     `).catch(() => {});
 
+    // Sesiones de contenido: una licencia (y por tanto un curso) por sesión de reproductor.
+    // Cerrar sesión termina la fila (ended_at) sin tocar activations/devices/licenses.
+    await q(`
+        CREATE TABLE IF NOT EXISTS content_sessions (
+            id            TEXT PRIMARY KEY,
+            student_id    TEXT NOT NULL,
+            license_id    TEXT NOT NULL,
+            course_id     TEXT,
+            producer_id   TEXT,
+            device_id     TEXT NOT NULL,
+            activation_id TEXT,
+            created_at    TEXT NOT NULL,
+            last_seen     TEXT,
+            ended_at      TEXT,
+            ended_reason  TEXT
+        )
+    `).catch(() => {});
+    await q(`CREATE INDEX IF NOT EXISTS idx_content_sessions_open ON content_sessions(student_id, device_id) WHERE ended_at IS NULL`).catch(() => {});
+    // Cuentas históricas que esperaban aprobación manual: el acceso ya lo decide la licencia.
+    try {
+        const flag = (await q(`SELECT value FROM app_config WHERE key='migrated_pending_students_20260917'`)).rows[0];
+        if (!flag) {
+            await q(`UPDATE students SET approval_status='approved' WHERE approval_status='pending'`);
+            await q(`INSERT INTO app_config (key, value) VALUES ('migrated_pending_students_20260917','1') ON CONFLICT (key) DO NOTHING`);
+        }
+    } catch (e) { console.error('[schema] migración de cuentas pendientes:', e.message); }
+
     // License columns for unbound licenses and producer tracking
     await q(`ALTER TABLE licenses ALTER COLUMN student_id DROP NOT NULL`).catch(() => {});
     await q(`ALTER TABLE licenses ADD COLUMN IF NOT EXISTS batch_id TEXT`).catch(() => {});
@@ -1841,7 +1868,9 @@ module.exports.countActiveDevices = async (studentId) => {
     return parseInt(res.rows[0].n, 10);
 };
 
-module.exports.registerOrValidateDevice = async (studentId, fingerprint, meta = {}, maxDevicesFallback = 1) => {
+// enforceLimit=false: registra/valida el dispositivo (y respeta bloqueos explícitos) sin aplicar el
+// cupo global por alumno. Los dispositivos de contenido se cuentan por licencia (activations).
+module.exports.registerOrValidateDevice = async (studentId, fingerprint, meta = {}, maxDevicesFallback = 1, { enforceLimit = true } = {}) => {
     const now = new Date().toISOString();
     const client = await pool.connect();
     try {
@@ -1884,7 +1913,7 @@ module.exports.registerOrValidateDevice = async (studentId, fingerprint, meta = 
         }
 
         const activeCount = parseInt((await client.query("SELECT COUNT(*) as n FROM devices WHERE student_id=$1 AND status='active'", [studentId])).rows[0].n, 10);
-        if (activeCount >= effectiveLimit) {
+        if (enforceLimit && activeCount >= effectiveLimit) {
             await client.query('ROLLBACK');
             return { ok: false, device: null, reason: 'device_limit_exceeded', limit: effectiveLimit, activeCount };
         }
@@ -2877,8 +2906,9 @@ module.exports.claimAndActivateLicenseAtomic = async ({ licenseKeyHash, studentI
             const license = (await client.query('SELECT * FROM licenses WHERE license_key_hash=$1 FOR UPDATE', [licenseKeyHash])).rows[0];
             if (!license || !['free', 'active'].includes(license.status)) throw dbError('license_inactive', 'Licencia no activa.', 403);
             if (license.student_id && license.student_id !== studentId) throw dbError('license_owner_mismatch', 'Licencia asignada a otra cuenta.', 403);
-            if (license.status === 'active' && !license.student_id && license.customer_email &&
-                String(license.customer_email).trim().toLowerCase() !== String(student.email).trim().toLowerCase()) {
+            // Serial reservado a otro correo (customer_email/reserved_email): se rechaza sin consumir cupos.
+            const reservedTo = [license.customer_email, license.reserved_email].map(v => String(v || '').trim().toLowerCase()).filter(Boolean);
+            if (!license.student_id && reservedTo.length && !reservedTo.includes(String(student.email || '').trim().toLowerCase())) {
                 throw dbError('license_owner_mismatch', 'Licencia asignada a otra cuenta.', 403);
             }
             const now = new Date().toISOString();
@@ -2891,13 +2921,10 @@ module.exports.claimAndActivateLicenseAtomic = async ({ licenseKeyHash, studentI
             const alreadyActive = existing?.status === 'active' && (!existing.expires_at || Date.parse(existing.expires_at) > Date.now());
             if (!alreadyActive && activeCount >= limit) throw Object.assign(dbError('device_limit_exceeded', 'Cupo de activaciones alcanzado.', 403), { limit, activeCount });
 
+            // Los dispositivos se cuentan por licencia (arriba). El cupo global students.max_devices
+            // no bloquea una licencia válida; solo se respetan los bloqueos explícitos del dispositivo.
             const device = (await client.query('SELECT * FROM devices WHERE student_id=$1 AND fingerprint=$2', [studentId, deviceId])).rows[0];
             if (device?.status === 'blocked') throw dbError('device_blocked', 'Dispositivo bloqueado.', 403);
-            const deviceLimit = Math.max(1, Number(student.max_devices) || limit);
-            if (!device || device.status !== 'active') {
-                const deviceCount = Number((await client.query("SELECT COUNT(*) AS n FROM devices WHERE student_id=$1 AND status='active'", [studentId])).rows[0].n);
-                if (deviceCount >= deviceLimit) throw Object.assign(dbError('device_limit_exceeded', 'Cupo de dispositivos alcanzado.', 403), { limit: deviceLimit, activeCount: deviceCount });
-            }
             await grantLicenseCourse(client, student, license, initial.producer_id);
             const assigned = (await client.query(`UPDATE licenses SET status='active', student_id=$1,
                 customer_email=COALESCE(customer_email,$2), assigned_at=COALESCE(assigned_at,$3)
@@ -2915,13 +2942,48 @@ module.exports.claimAndActivateLicenseAtomic = async ({ licenseKeyHash, studentI
                 DO UPDATE SET activation_token_hash=EXCLUDED.activation_token_hash,status='active',last_used_at=EXCLUDED.last_used_at,
                 expires_at=EXCLUDED.expires_at,revoked_at=NULL,revoked_by=NULL`,
             [activationId, license.id, studentId, deviceId, activationTokenHash, now, activationExpiry]);
-            return { ok: true, license: assigned, activationId, reused: !!existing, expiresAt: activationExpiry, maxDevices: limit };
+            if (initial.producer_id) {
+                await client.query(`INSERT INTO producer_students (producer_id, student_id, linked_at, linked_via)
+                    VALUES ($1,$2,$3,'license_activation') ON CONFLICT DO NOTHING`, [initial.producer_id, studentId, now]);
+            }
+            return { ok: true, license: assigned, activationId, reused: !!existing, expiresAt: activationExpiry, maxDevices: limit,
+                producerId: initial.producer_id || null, courseId: assigned.course_id || null };
         });
     } catch (error) {
         if (error.statusCode) return { ok: false, reason: error.code, limit: error.limit, activeCount: error.activeCount };
         throw error;
     }
 };
+
+// ── Sesiones de contenido (una licencia por sesión) ─────────────────────────
+// Al abrir una sesión nueva en el mismo dispositivo se cierra la anterior ("replaced").
+module.exports.createContentSession = async ({ id, studentId, licenseId, courseId, producerId, deviceId, activationId }) => {
+    const now = new Date().toISOString();
+    return transaction(async client => {
+        await client.query(`UPDATE content_sessions SET ended_at=$1, ended_reason='replaced'
+            WHERE student_id=$2 AND device_id=$3 AND ended_at IS NULL`, [now, studentId, deviceId]);
+        await client.query(`INSERT INTO content_sessions(id,student_id,license_id,course_id,producer_id,device_id,activation_id,created_at,last_seen)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$8)`, [id, studentId, licenseId, courseId || null, producerId || null, deviceId, activationId || null, now]);
+        return { id, createdAt: now };
+    });
+};
+module.exports.getContentSession = async (id) => {
+    if (!id) return null;
+    return (await q('SELECT * FROM content_sessions WHERE id=$1', [id])).rows[0] || null;
+};
+// Termina sesiones de contenido del alumno: por id (sid), por dispositivo o todas. Devuelve cuántas cerró.
+// Nunca toca activations, devices ni licenses: el cupo del dispositivo se conserva.
+module.exports.endContentSessions = async ({ studentId, sid = null, deviceId = null, reason = 'logout' }) => {
+    if (!studentId) return 0;
+    const now = new Date().toISOString();
+    let res;
+    if (sid) res = await q(`UPDATE content_sessions SET ended_at=$1, ended_reason=$2 WHERE id=$3 AND student_id=$4 AND ended_at IS NULL`, [now, reason, sid, studentId]);
+    else if (deviceId) res = await q(`UPDATE content_sessions SET ended_at=$1, ended_reason=$2 WHERE student_id=$3 AND device_id=$4 AND ended_at IS NULL`, [now, reason, studentId, deviceId]);
+    else res = await q(`UPDATE content_sessions SET ended_at=$1, ended_reason=$2 WHERE student_id=$3 AND ended_at IS NULL`, [now, reason, studentId]);
+    return res.rowCount || 0;
+};
+module.exports.getOpenContentSessions = async (studentId) =>
+    (await q('SELECT * FROM content_sessions WHERE student_id=$1 AND ended_at IS NULL ORDER BY created_at DESC', [studentId])).rows;
 
 module.exports.touchActivation = async (activationId) => {
     await q(`UPDATE activations SET last_used_at=$1 WHERE id=$2`, [new Date().toISOString(), activationId]);

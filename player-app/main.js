@@ -2129,10 +2129,10 @@ ipcMain.handle('activation-activate-license', async (_e, { licenseKey, deviceId 
         const saved = session || {};
         fs.writeFileSync(SESSION_PATH, JSON.stringify({ ...saved, token: res.body.token }), 'utf8');
 
-        // Save activation state locally
+        // Save activation state locally (activationToken real: lo valida /api/license/validate-activation)
         activationStore.saveActivation({
-            activationId:    res.body.licenseId,
-            activationToken: res.body.token,
+            activationId:    res.body.activationId || res.body.licenseId,
+            activationToken: res.body.activationToken || res.body.token,
             licenseId:       res.body.licenseId,
             studentId:       saved.sub || '',
             courseId:        res.body.courseId || null,
@@ -2222,6 +2222,17 @@ ipcMain.on('auth-success', () => {
 
 // Cerrar sesión guardada (para logout explícito)
 ipcMain.on('logout', () => {
+    // Cierra la sesión de contenido también en el servidor (mejor esfuerzo): la licencia, el
+    // dispositivo y el contador de activaciones se conservan; al volver se pide la licencia.
+    try {
+        const session = readSavedSession();
+        if (session?.token) {
+            let deviceId = '';
+            try { deviceId = fs.readFileSync(path.join(app.getPath('userData'), 'device_id.txt'), 'utf8').trim(); } catch { /* sin id local */ }
+            Promise.resolve(httpFetch(`${getConfig().API_BASE}/api/auth/logout`,
+                { method: 'POST', headers: { Authorization: 'Bearer ' + session.token } }, { deviceId })).catch(() => {});
+        }
+    } catch { /* la limpieza local sigue igual */ }
     resourceWindows.invalidate('Se cerró la sesión.');
     clearEduBuffers();
     activationStore.clearActivation();

@@ -81,7 +81,7 @@ object LicenseManager {
                 // Save activation state locally
                 ActivationStore.save(
                     context,
-                    activationToken = newToken,
+                    activationToken = body.activationToken ?: newToken,
                     licenseId = body.licenseId,
                     studentId = null,
                     courseId = body.courseId,

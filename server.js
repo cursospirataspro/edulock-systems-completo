@@ -1240,10 +1240,15 @@ app.post('/api/auth/refresh', async (req, res) => {
         }
     }
     if (!isAccountToken(payload)) return res.status(403).json({ error: 'Inicia sesion para renovar tu cuenta.', code: 'ACCOUNT_TOKEN_REQUIRED' });
-    const { sub, username, admin, label, email, deviceId, allowedVideos, producer, producerId, hasLicense, licenseId, courseId, role } = payload;
+    const { sub, username, admin, label, email, deviceId, allowedVideos, producer, producerId, hasLicense, licenseId, courseId, role, sid } = payload;
+    if (sid) {
+        // Un token de contenido cuya sesión ya se cerró no se renueva: hay que ingresar la licencia otra vez.
+        const session = await db.getContentSession(sid).catch(() => null);
+        if (!session || session.ended_at) return res.status(401).json({ error: 'Tu sesión de contenido terminó. Ingresa tu licencia de nuevo.', code: 'SESSION_ENDED' });
+    }
     const expiresIn = admin ? JWT_EXPIRES : STUDENT_JWT_EXPIRES;
     const token = jwt.sign(
-        { sub, username, admin, label, email, deviceId, allowedVideos, producer, producerId, hasLicense, licenseId, courseId, role },
+        { sub, username, admin, label, email, deviceId, allowedVideos, producer, producerId, hasLicense, licenseId, courseId, role, sid },
         JWT_SECRET,
         { expiresIn, issuer: 'reproductor-cursos' }
     );
@@ -1265,101 +1270,37 @@ function hashLicenseKey(licenseKey) {
  * Body: { licenseKey, deviceId? }
  */
 app.post('/api/session/activate-license', requireAuth, async (req, res) => {
+    if (req.user.admin) return res.json({ status: 'admin', hasLicense: true, allowedVideos: ['*'] });
+    // Misma transacción que /api/license/activate: reclama el serial (libre → activo, ligado al alumno),
+    // vincula productor↔alumno, concede el curso, activa el dispositivo (cupo por licencia) y abre la
+    // sesión de contenido. Idempotente para el mismo (licencia, dispositivo).
+    if (req.body && !req.body.deviceId && req.user.deviceId && req.user.deviceId !== 'unknown') req.body.deviceId = req.user.deviceId;
+    try { res.json({ status: 'activated', ...(await playerHandshake.activate(req)) }); }
+    catch (error) { sendAccessError(res, error); }
+});
+
+/**
+ * POST /api/auth/logout
+ * Cierra la sesión de contenido en el servidor. Body opcional: { deviceId }.
+ * Conserva la licencia, el dispositivo y el contador de activaciones: al volver a entrar se
+ * pide la licencia de nuevo y el mismo equipo no consume un cupo adicional.
+ */
+app.post('/api/auth/logout', async (req, res) => {
+    const header = req.headers['authorization'] || '';
+    if (!header.startsWith('Bearer ')) return res.status(401).json({ error: 'No autorizado' });
+    let payload;
+    try { payload = jwt.verify(header.slice(7), JWT_SECRET, { ignoreExpiration: true }); }
+    catch { return res.status(401).json({ error: 'Token invalido' }); }
+    if (!payload?.sub || payload.admin === true || payload.role === 'producer' || payload.producer === true) return res.json({ ok: true, ended: 0 });
+    const deviceId = typeof req.body?.deviceId === 'string' && req.body.deviceId.trim() ? req.body.deviceId.trim().slice(0, 64) : (payload.deviceId || null);
     try {
-        if (req.user.admin) {
-            return res.json({ status: 'admin', hasLicense: true, allowedVideos: ['*'] });
-        }
-
-        const { licenseKey, deviceId: bodyDeviceId } = req.body || {};
-        if (!licenseKey) return res.status(400).json({ error: 'licenseKey requerido' });
-
-        const cleanKey = String(licenseKey).trim().toUpperCase().replace(/[\s-]/g, '');
-        if (!/^[A-Z0-9]{16}$/.test(cleanKey)) {
-            return res.status(400).json({ error: 'Formato de licencia inválido' });
-        }
-        const formatted = `${cleanKey.slice(0,4)}-${cleanKey.slice(4,8)}-${cleanKey.slice(8,12)}-${cleanKey.slice(12,16)}`;
-        const licenseKeyHash = hashLicenseKey(formatted);
-
-        const license = await db.getLicenseByKeyHash(licenseKeyHash);
-        if (!license) return res.status(401).json({ error: 'Licencia inválida o no encontrada' });
-        if (license.status !== 'active') return res.status(403).json({ error: 'Licencia inactiva o revocada' });
-
-        const studentId = req.user.sub;
-
-        // Auto-bind si la licencia no tiene alumno
-        if (!license.student_id) {
-            const bound = await db.bindLicenseToStudent(license.id, studentId);
-            if (!bound) return res.status(409).json({ error: 'Esta licencia ya fue asignada a otro usuario' });
-            if (license.producer_id) {
-                await db.linkProducerStudent(license.producer_id, studentId, 'license_activation');
-            }
-            if (license.course_id) {
-                await db.addStudentCourse(studentId, license.course_id, 'license');
-            }
-        } else if (license.student_id !== studentId) {
-            return res.status(403).json({ error: 'Esta licencia pertenece a otro usuario' });
-        }
-
-        // Device activation (if deviceId provided)
-        const effectiveDeviceId = bodyDeviceId || req.user.deviceId || 'unknown';
-        if (effectiveDeviceId && effectiveDeviceId !== 'unknown') {
-            const activationToken = crypto.randomBytes(32).toString('base64url');
-            const activationTokenHash = crypto.createHmac('sha256', process.env.JWT_SECRET || 'secret')
-                .update(activationToken).digest('hex');
-
-            const act = await db.activateDeviceAtomic({
-                licenseId: license.id,
-                studentId,
-                deviceId: effectiveDeviceId,
-                activationTokenHash,
-                maxAllowed: license.max_devices || 2,
-                expiresAt: null, // derecho permanente al curso; los plazos técnicos viven en sesiones/tokens
-            });
-
-            if (!act.ok) {
-                return res.status(403).json({
-                    error: `Límite de ${act.limit} dispositivos alcanzado.`,
-                    code: 'DEVICE_LIMIT_EXCEEDED',
-                });
-            }
-        }
-
-        // Compute allowed videos for this license's course
-        const courseId = license.course_id;
-        let allowedVideos = [];
-        if (courseId) {
-            allowedVideos = [courseId];
-        }
-
-        // Stage 2 JWT: acceso limitado a un curso
-        const token = jwt.sign(
-            {
-                sub: studentId,
-                email: req.user.email,
-                studentEmail: req.user.email,
-                deviceId: effectiveDeviceId,
-                approved: true,
-                role: 'student',
-                hasLicense: true,
-                licenseId: license.id,
-                courseId: courseId || null,
-                allowedVideos,
-            },
-            JWT_SECRET,
-            { expiresIn: '30d', issuer: 'reproductor-cursos' }
-        );
-
-        res.json({
-            status: 'activated',
-            token,
-            hasLicense: true,
-            licenseId: license.id,
-            courseId: courseId || null,
-            allowedVideos,
-        });
-    } catch (err) {
-        console.error('[session/activate-license] Error:', err.message);
-        res.status(500).json({ error: 'Error interno' });
+        let ended = await db.endContentSessions({ studentId: payload.sub, sid: payload.sid || null, deviceId: null, reason: 'logout' });
+        if (deviceId) ended += await db.endContentSessions({ studentId: payload.sub, deviceId, reason: 'logout' });
+        await db.pool.query('DELETE FROM active_sessions WHERE user_id=$1 AND ($2::text IS NULL OR device_id=$2 OR device_id IS NULL)', [payload.sub, deviceId]);
+        res.json({ ok: true, ended });
+    } catch (error) {
+        console.error('[auth/logout]', error.message);
+        res.status(503).json({ error: 'No se pudo cerrar la sesión en el servidor. Reintenta.' });
     }
 });
 
@@ -2641,10 +2582,12 @@ app.post('/api/auth/firebase-login', authRateLimit, async (req, res) => {
 
     // ── Bloqueo y registro de dispositivo ──
     if (deviceId) {
+        // Identidad ≠ autorización: iniciar sesión registra el equipo y respeta bloqueos explícitos,
+        // pero el cupo de dispositivos se aplica por licencia al activarla (no un tope global por alumno).
         const devResult = await db.registerOrValidateDevice(
             student.id, deviceId,
             { deviceName: deviceName || '', browser: browserStr, os: osStr, city: geoCity },
-            1
+            1, { enforceLimit: false }
         ).catch(() => ({ ok: true }));
         if (devResult.ok === false) {
             return res.status(403).json({

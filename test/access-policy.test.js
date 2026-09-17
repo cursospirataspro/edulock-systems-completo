@@ -16,7 +16,8 @@ test('module PDF rejects stale permissions, media-scoped tokens and another devi
  const f=fixture();
  for(const extra of [{videoId:'video-a'},{sessionId:'session-a'}])await assert.rejects(f.policy.authorizeResource({...f.claims,...extra},moduleResource(),'device-a'),{code:'LICENSE_REQUIRED'});
  await assert.rejects(f.policy.authorizeResource(f.claims,moduleResource(),'device-b'),{code:'DEVICE_MISMATCH'});
- f.state.student.allowedVideos=[];await assert.rejects(f.policy.authorizeResource({...f.claims,allowedVideos:['*']},moduleResource(),'device-a'),{code:'LICENSE_REQUIRED'});
+ await assert.rejects(f.policy.authorizeResource({...f.claims,licenseId:undefined,allowedVideos:['*']},moduleResource(),'device-a'),{code:'LICENSE_REQUIRED'});
+ await assert.rejects(f.policy.authorizeResource({...f.claims,allowedVideos:['*']},moduleResource(),'device-a'),{code:'LICENSE_REQUIRED'},'wildcard ignored: allowedVideos must name the course');
 });
 test('module PDF denies a deleted or suspended account and invalid targets',async()=>{
  const f=fixture();f.state.student.active=false;
@@ -37,8 +38,12 @@ function fixture() {
   licenses:[{id:'license-a',status:'active',course_id:'course-a',producer_id:'producer-a',producer_active:1,activation_status:'active',device_status:'active'}],
   sessions:[{session_id:'session-a',user_id:'student-a',video_id:'video-a'}]
  };
- const db = {findStudentById:async()=>state.student,getCatalogById:async()=>state.video,pool:{query:async(sql)=>({rows:sql.includes('FROM licenses')?state.licenses:state.sessions})}};
- return {state, policy:createAccessPolicy({db}), claims:{sub:'student-a',deviceId:'device-a'}};
+ state.contentSessions={'sid-a':{id:'sid-a',student_id:'student-a',license_id:'license-a',course_id:'course-a',device_id:'device-a',ended_at:null}};
+ const db = {findStudentById:async()=>state.student,getCatalogById:async()=>state.video,
+  getContentSession:async id=>state.contentSessions[id]||null,
+  pool:{query:async(sql,params)=>({rows:sql.includes('FROM licenses')?state.licenses.filter(l=>l.id===params[3]&&(l.course_id==null||l.course_id===params[2])):state.sessions})}};
+ // Token de contenido (etapa 2): identidad + licencia de ESTA sesión + curso + dispositivo + sesión de contenido.
+ return {state, policy:createAccessPolicy({db}), claims:{sub:'student-a',deviceId:'device-a',hasLicense:true,licenseId:'license-a',courseId:'course-a',allowedVideos:['course-a'],sid:'sid-a'}};
 }
 test('missing permissions and videoId claim alone never grant access',()=>{
  assert.equal(hasVideoAccess({sub:'a',videoId:'video-a'},'video-a','course-a'),false);
@@ -48,13 +53,50 @@ test('missing permissions and videoId claim alone never grant access',()=>{
 test('valid course license on its activated device grants playback',async()=>{
  const f=fixture(); const result=await f.policy.authorizeVideo(f.claims,'video-a','device-a');assert.equal(result.license.id,'license-a');
 });
-test('permissions come from current student, not stale wildcard JWT',async()=>{
- const f=fixture();f.state.student.allowedVideos=[];
- await assert.rejects(f.policy.authorizeVideo({...f.claims,allowedVideos:['*'],videoId:'video-a'},'video-a','device-a'),{code:'LICENSE_REQUIRED'});
+test('permissions come from the session license, never from a wildcard or student-wide JWT',async()=>{
+ const f=fixture();
+ // Wildcard en un token de alumno se ignora; sin licencia de sesión no hay contenido aunque el alumno tenga cursos.
+ await assert.rejects(f.policy.authorizeVideo({sub:'student-a',deviceId:'device-a',allowedVideos:['*']},'video-a','device-a'),{code:'LICENSE_REQUIRED'});
+ f.state.student.allowedVideos=['course-a','course-b'];
+ await assert.rejects(f.policy.authorizeVideo({sub:'student-a',deviceId:'device-a',hasLicense:false,allowedVideos:[]},'video-a','device-a'),{code:'LICENSE_REQUIRED'});
+ await assert.rejects(f.policy.authorizeVideo({sub:'student-a',deviceId:'device-a',allowedVideos:['course-a']},'video-a','device-a'),{code:'LICENSE_REQUIRED'});
+});
+test('one license per session: course B is denied under a course A session even if the student owns both',async()=>{
+ const f=fixture();
+ f.state.licenses.push({id:'license-b',status:'active',course_id:'course-b',producer_id:'producer-a',producer_active:1,activation_status:'active',device_status:'active'});
+ f.state.video={videoId:'video-b',courseId:'course-b',producerId:'producer-a'};
+ await assert.rejects(f.policy.authorizeVideo(f.claims,'video-b','device-a'),{code:'COURSE_NOT_IN_SESSION'});
+ await assert.rejects(f.policy.authorizeResource(f.claims,{...moduleResource(),courseId:'course-b'},'device-a'),{code:'COURSE_NOT_IN_SESSION'});
+ // Un token manipulado que declare el curso B pero la licencia A tampoco entra: la licencia debe ser la del curso.
+ await assert.rejects(f.policy.authorizeVideo({...f.claims,courseId:'course-b',allowedVideos:['course-b']},'video-b','device-a'),{code:'LICENSE_REQUIRED'});
+ // La sesión de la licencia B sí reproduce el curso B.
+ f.state.contentSessions['sid-b']={id:'sid-b',student_id:'student-a',license_id:'license-b',course_id:'course-b',device_id:'device-a',ended_at:null};
+ const ok=await f.policy.authorizeVideo({...f.claims,licenseId:'license-b',courseId:'course-b',allowedVideos:['course-b'],sid:'sid-b'},'video-b','device-a');
+ assert.equal(ok.license.id,'license-b');
+});
+test('logout ends the content session: the old token no longer plays, while license and activation stay untouched',async()=>{
+ const f=fixture();
+ f.state.contentSessions['sid-a'].ended_at='2026-09-17T00:00:00Z';
+ await assert.rejects(f.policy.authorizeVideo(f.claims,'video-a','device-a'),{code:'SESSION_ENDED',status:401});
+ await assert.rejects(f.policy.authorizeResource(f.claims,moduleResource(),'device-a'),{code:'SESSION_ENDED'});
+ assert.equal(f.state.licenses[0].status,'active'); assert.equal(f.state.licenses[0].activation_status,'active');
+ // Una sesión de otro alumno o de otra licencia tampoco sirve.
+ f.state.contentSessions['sid-a'].ended_at=null; f.state.contentSessions['sid-a'].student_id='student-b';
+ await assert.rejects(f.policy.authorizeVideo(f.claims,'video-a','device-a'),{code:'SESSION_ENDED'});
+ f.state.contentSessions['sid-a'].student_id='student-a'; f.state.contentSessions['sid-a'].license_id='license-b';
+ await assert.rejects(f.policy.authorizeVideo(f.claims,'video-a','device-a'),{code:'SESSION_ENDED'});
+ delete f.state.contentSessions['sid-a'];
+ await assert.rejects(f.policy.authorizeVideo(f.claims,'video-a','device-a'),{code:'SESSION_ENDED'});
+});
+test('a media token inherits the session license and cannot escape to another course',async()=>{
+ const f=fixture();
+ const media={sub:'student-a',deviceId:'device-a',videoId:'video-a',sessionId:'session-a',allowedVideos:['video-a'],licenseId:'license-a',courseId:'course-a',sid:'sid-a'};
+ assert.equal((await f.policy.authorizeSession(media,'session-a','device-a')).license.id,'license-a');
+ await assert.rejects(f.policy.authorizeVideo({...media,licenseId:undefined},'video-a','device-a'),{code:'LICENSE_REQUIRED'});
 });
 
 test('a first course link requests activation without granting access, while unscoped videos stay forbidden',async()=>{
- const f=fixture();f.state.student.allowedVideos=[];
+ const f=fixture();f.claims={sub:'student-a',deviceId:'device-a',hasLicense:false,allowedVideos:[]};
  await assert.rejects(f.policy.authorizeVideo(f.claims,'video-a','device-a'),{code:'LICENSE_REQUIRED'});
  f.state.video.courseId=null;await assert.rejects(f.policy.authorizeVideo(f.claims,'video-a','device-a'),{code:'VIDEO_FORBIDDEN'});
  f.state.video.courseId='course-a';await assert.rejects(f.policy.authorizeVideo({...f.claims,videoId:'video-b'},'video-a','device-a'),{code:'VIDEO_FORBIDDEN'});

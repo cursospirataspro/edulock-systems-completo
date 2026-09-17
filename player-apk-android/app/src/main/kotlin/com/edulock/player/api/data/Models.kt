@@ -317,6 +317,10 @@ data class SessionActivateLicenseRequest(
 data class SessionActivateLicenseResponse(
     val status: String? = null,
     val token: String? = null,
+    val activationToken: String? = null,
+    val activationId: String? = null,
+    val producerId: String? = null,
+    val sid: String? = null,
     val hasLicense: Boolean? = null,
     val licenseId: String? = null,
     val courseId: String? = null,
@@ -383,3 +387,6 @@ data class ResolveResponse(
     val watermarkConfig: com.google.gson.JsonElement? = null,
     val error: String? = null
 )
+
+/** POST /api/auth/logout — cierra la sesión de contenido en el servidor (conserva licencia y dispositivo). */
+data class LogoutRequest(val deviceId: String? = null)
