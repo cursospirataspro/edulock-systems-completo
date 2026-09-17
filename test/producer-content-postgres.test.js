@@ -146,6 +146,46 @@ test('atomic reordering validates the entire owned course and keeps previous ord
     await assert.rejects(service.reorder(f.producerId, { kind: 'modules', courseId: f.courseId, ids: [f.moduleId, randomUUID()] }), { code: 'CONTENT_ORDER_CHANGED' });
     assert.equal((await db.getModuleById(f.childId)).sortOrder, 10); assert.equal((await db.getModuleById(f.moduleId)).sortOrder, 20);
 });
+test('container reordering validates only the siblings of one parent or module and rejects foreign, duplicate or missing ids', async () => {
+    const f = await fixture();
+    const secondRoot = id('modules'); await db.createModule({ id: secondRoot, courseId: f.courseId, name: 'Second root', producerId: f.producerId });
+    assert.equal((await db.getModuleById(secondRoot)).sortOrder > (await db.getModuleById(f.moduleId)).sortOrder, true, 'a new module lands after its siblings automatically');
+    const childBefore = (await db.getModuleById(f.childId)).sortOrder;
+    const result = await service.reorder(f.producerId, { kind: 'modules', courseId: f.courseId, parentId: null, ids: [secondRoot, f.moduleId] });
+    assert.equal(result.count, 2); assert.equal(result.parentId, null);
+    assert.equal((await db.getModuleById(secondRoot)).sortOrder, 10); assert.equal((await db.getModuleById(f.moduleId)).sortOrder, 20); assert.equal((await db.getModuleById(f.childId)).sortOrder, childBefore);
+    assert.equal((await service.reorder(f.producerId, { kind: 'modules', courseId: f.courseId, parentId: f.moduleId, ids: [f.childId] })).count, 1);
+    await assert.rejects(service.reorder(f.producerId, { kind: 'modules', courseId: f.courseId, parentId: f.moduleId, ids: [f.childId, secondRoot] }), { code: 'CONTENT_ORDER_CHANGED' });
+    await assert.rejects(service.reorder(f.producerId, { kind: 'modules', courseId: f.courseId, parentId: null, ids: [f.moduleId] }), { code: 'CONTENT_ORDER_CHANGED' });
+    await assert.rejects(service.reorder(f.producerId, { kind: 'modules', courseId: f.courseId, parentId: f.secondCourse, ids: [f.childId] }), { code: 'CONTENT_NOT_FOUND' });
+    await assert.rejects(service.reorder(f.producerId, { kind: 'modules', courseId: f.courseId, parentId: null, ids: [f.moduleId, f.moduleId] }), { code: 'CONTENT_INVALID_ORDER' });
+    await assert.rejects(service.reorder(f.producerId, { kind: 'modules', courseId: f.courseId, moduleId: null, ids: [f.moduleId] }), { code: 'CONTENT_INVALID_ORDER' });
+    const otherVideo = id('catalog'); await db.addToCatalog({ videoId: otherVideo, title: 'Other', courseId: f.courseId, producerId: f.producerId, status: 'ready', sourceType: 'local' });
+    assert.equal((await service.reorder(f.producerId, { kind: 'videos', courseId: f.courseId, moduleId: f.moduleId, ids: [f.videoId] })).count, 1);
+    await assert.rejects(service.reorder(f.producerId, { kind: 'videos', courseId: f.courseId, moduleId: f.moduleId, ids: [f.videoId, otherVideo] }), { code: 'CONTENT_ORDER_CHANGED' });
+    assert.equal((await service.reorder(f.producerId, { kind: 'videos', courseId: f.courseId, moduleId: null, ids: [otherVideo] })).count, 1, 'videos without module form their own container');
+    await assert.rejects(service.reorder(randomUUID(), { kind: 'videos', courseId: f.courseId, moduleId: f.moduleId, ids: [f.videoId] }), { code: 'CONTENT_PRODUCER_UNAVAILABLE' });
+});
+test('moving a Bunny class between modules marks the provider collection as pending and clears it once synced', async () => {
+    const f = await fixture();
+    const bunnyVideo = id('catalog'); await db.addToCatalog({ videoId: bunnyVideo, title: 'Bunny', courseId: f.courseId, producerId: f.producerId, status: 'ready', sourceType: 'bunny', bunnyUrl: 'https://vz-test.b-cdn.net/x/playlist.m3u8' });
+    const synced = [];
+    const withSync = createProducerContent({ db, generatePublicCode: id => id.replaceAll('-', ''), syncCollection: async input => { synced.push(input); if (input.moduleId === f.childId) throw new Error('proveedor caido'); } });
+    const moved = await withSync.updateVideo(f.producerId, bunnyVideo, { moduleId: f.moduleId });
+    assert.equal(moved.moduleId, f.moduleId); assert.equal(moved.collectionSyncPending, false); assert.equal(moved.providerWarning, null);
+    assert.deepEqual(synced.at(-1), { producerId: f.producerId, videoId: bunnyVideo, courseId: f.courseId, moduleId: f.moduleId });
+    assert.equal((await db.getPendingCollectionSyncs(50)).some(p => p.videoId === bunnyVideo), false, 'nothing pending after a successful sync');
+    const failed = await withSync.updateVideo(f.producerId, bunnyVideo, { moduleId: f.childId });
+    assert.equal(failed.moduleId, f.childId, 'the Edulock move is kept even if the provider fails'); assert.equal(failed.collectionSyncPending, true); assert.match(failed.providerWarning, /reintentar/);
+    assert.equal((await db.getPendingCollectionSyncs(50)).some(p => p.videoId === bunnyVideo), false, 'courses without a Bunny library are not reconciled');
+    await db.setCourseBunnyLibrary(f.courseId, { libraryId: '999', libraryKey: 'k', pullZone: 'vz-test.b-cdn.net', tokenKey: null });
+    assert.equal((await db.getPendingCollectionSyncs(50)).some(p => p.videoId === bunnyVideo && p.moduleId === f.childId), true);
+    await db.setCollectionSyncPending(bunnyVideo, false);
+    const renamed = await withSync.updateVideo(f.producerId, bunnyVideo, { title: 'Renamed' });
+    assert.equal(renamed.providerWarning, undefined, 'a title change never touches the provider'); assert.equal(synced.length, 2);
+    const local = await service.updateVideo(f.producerId, f.videoId, { moduleId: f.childId });
+    assert.equal(local.collectionSyncPending, false, 'local videos have no provider collection');
+});
 test('upload advisory lock prevents removal or metadata changes while provider work is running', async () => {
     const f = await fixture(), operationId = id('stream_operations');
     await query("INSERT INTO stream_operations(id,actor_key,course_id,title,file_size,file_sha256,video_id,state,created_at,updated_at) VALUES($1,$2,$3,'Video',1000,$4,$5,'ready',$6,$6)", [operationId, 'producer:' + f.producerId, f.courseId, '0'.repeat(64), f.videoId, new Date().toISOString()]);

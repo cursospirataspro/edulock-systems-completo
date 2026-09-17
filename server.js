@@ -5669,7 +5669,13 @@ function streamError(res,e) {
 }
 async function createStreamCourse(body={},actor) {
     if(typeof body.name!=='string'||!body.name.trim()) throw Object.assign(new Error('Nombre del curso requerido'),{statusCode:400});
+    const description=typeof body.description==='string'?body.description.trim().slice(0,2000):'';
     const course=await db.createCourse({id:body.id||uuidv4(),name:body.name.trim().slice(0,120),author:String(body.author||'').trim().slice(0,100),producerId:actor.producerId||null});
+    // Descripción breve: mismo dato que edita Configuración (settings.description). Un fallo aquí no crea otro curso.
+    if(description&&actor.producerId){
+        try { await producerContentService.updateCourse(actor.producerId,course.id,{settings:{description}}); course.description=description; }
+        catch(e){ course.settingsWarning='La descripción no se guardó: '+e.message+'. Puedes escribirla desde Configuración.'; }
+    }
     try {
         const lib=await streamService.ensureCourseLibrary({courseId:course.id,actor});
         course.bunnyLibraryId=lib.libraryId; course.bunnyPullZone=lib.pullZone;
@@ -5679,7 +5685,8 @@ async function createStreamCourse(body={},actor) {
 async function createStreamModule(courseId,body={},actor) {
     await ownedStreamCourse(courseId,actor);
     if(typeof body.name!=='string'||!body.name.trim()) throw Object.assign(new Error('Nombre del módulo requerido'),{statusCode:400});
-    const mod=await db.createModule({id:body.id||uuidv4(),courseId,parentId:body.parentId||null,name:body.name.trim().slice(0,120),sortOrder:Number(body.sortOrder)||0,producerId:actor.producerId||null});
+    // Sin sortOrder el módulo se coloca al final de sus hermanos; el orden se cambia arrastrando.
+    const mod=await db.createModule({id:body.id||uuidv4(),courseId,parentId:body.parentId||null,name:body.name.trim().slice(0,120),sortOrder:body.sortOrder==null||body.sortOrder===''?undefined:Number(body.sortOrder)||0,producerId:actor.producerId||null});
     try { mod.bunnyCollectionId=await streamService.ensureModuleCollection({courseId,moduleId:mod.id,actor}); }
     catch(e) {mod.bunnyWarning=e.message;mod.provisioningWarning=e.message;}
     return mod;
@@ -5741,6 +5748,8 @@ const streamReconcileTimer=setInterval(async()=>{
         await streamService.reconcilePending({limit:20});
         // Cada 10 minutos: módulos de cualquier productor guardados sin colección.
         if(Date.now()-collectionReconcileAt>10*60*1000){collectionReconcileAt=Date.now();await streamService.reconcileCollections({limit:20});}
+        // Clases movidas de módulo cuya colección de Bunny no se pudo actualizar en el momento.
+        await streamService.reconcileVideoCollections({limit:20});
     } catch(e){console.warn('[stream/reconcile]',e.message);}finally{streamReconciling=false;}
 },15000);
 streamReconcileTimer.unref();
@@ -6251,7 +6260,8 @@ const { createProducerMail } = require('./lib/producer-mail');
 const producerLicenseWorkspace = createProducerLicenseWorkspace({ pool: db.pool, vaultKey: process.env.LICENSE_VAULT_KEY || JWT_SECRET, jwtSecret: JWT_SECRET });
 const producerMail = createProducerMail({ db, secret: JWT_SECRET, getLicenseSerial: producerLicenseWorkspace.readLicenseSerial });
 producerLicenseWorkspace.mount(app, requireProducer);
-mountProducerContent(app, { db, requireProducer, generatePublicCode, getPublicBase });
+const producerContentService = mountProducerContent(app, { db, requireProducer, generatePublicCode, getPublicBase,
+    syncCollection: ({ producerId, videoId, courseId, moduleId }) => streamService.syncVideoCollection({ courseId, videoId, moduleId, actor: { producerId } }) });
 mountProducerBusiness(app, { db, requireProducer, requireAdmin, hashPassword, verifyPassword, secret: JWT_SECRET, getPublicBase,
     mailConfigured: producerMail.configured,
     issueProducerToken: p => jwt.sign({ sub: p.id, producerId: p.id, email: p.email, role: 'producer', label: p.name || p.email, authVersion: Number(p.auth_version || 0) }, JWT_SECRET, { expiresIn: JWT_EXPIRES, issuer: 'reproductor-cursos' }) });

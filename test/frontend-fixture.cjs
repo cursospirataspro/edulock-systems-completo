@@ -6,10 +6,17 @@ const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const courses = [{ id: 'course-1', name: 'Curso de prueba (fixture)', author: 'Fixture', bunnyLibraryId: '0' }];
-const modules = [{ id: 'module-1', courseId: 'course-1', name: 'Módulo 1 — Introducción', parentId: null, sortOrder: 0, bunnyCollectionId: null },
-    { id: 'module-2', courseId: 'course-1', name: 'Módulo 2 — Práctica', parentId: null, sortOrder: 1, bunnyCollectionId: '11111111-2222-4333-8444-555555555555' }];
-const videos = [], operations = new Map();
-let counter = 0;
+const modules = [{ id: 'module-1', courseId: 'course-1', name: 'Módulo 1 — Introducción', parentId: null, sortOrder: 10, bunnyCollectionId: null, attachments: 1 },
+    { id: 'module-2', courseId: 'course-1', name: 'Módulo 2 — Práctica', parentId: null, sortOrder: 20, bunnyCollectionId: '11111111-2222-4333-8444-555555555555', attachments: 0 },
+    { id: 'module-3', courseId: 'course-1', name: 'Conceptos básicos', parentId: 'module-1', sortOrder: 10, bunnyCollectionId: null, attachments: 0 }];
+const videos = [{ videoId: 'video-a', title: 'Clase 1 · Bienvenida', courseId: 'course-1', moduleId: 'module-1', sortOrder: 10, status: 'ready', sourceType: 'bunny', publicCode: 'FIXTURE-A', attachments: 2, presentation: { coverUrl: null, theme: 'dark', description: 'Presentación del curso.' } },
+    { videoId: 'video-b', title: 'Clase 2 · Preparación', courseId: 'course-1', moduleId: 'module-3', sortOrder: 10, status: 'ready', sourceType: 'bunny', publicCode: null, attachments: 0, presentation: { coverUrl: null, theme: 'dark', description: '' } },
+    { videoId: 'video-c', title: 'Clase 3 · Ejercicio inicial', courseId: 'course-1', moduleId: 'module-2', sortOrder: 10, status: 'processing', sourceType: 'bunny', publicCode: null, attachments: 0, presentation: { coverUrl: null, theme: 'dark', description: '' } },
+    { videoId: 'video-d', title: 'Clase suelta (sin módulo)', courseId: 'course-1', moduleId: null, sortOrder: 10, status: 'ready', sourceType: 'bunny', publicCode: null, attachments: 0, presentation: { coverUrl: null, theme: 'dark', description: '' } }];
+const operations = new Map();
+const courseSettings = new Map([['course-1', { purchaseUrl: null, description: 'Curso de demostración del fixture local.', embedOrigins: [] }]]);
+const resources = new Map([['video:video-a', [{ id: 'res-1', name: 'Guía en PDF (enlace externo)', type: 'document', protection: 'public', sourceKind: 'link', url: 'https://example.invalid/guia.pdf', version: 1 }, { id: 'res-2', name: 'Apuntes protegidos (PDF alojado)', type: 'document', protection: 'protected', sourceKind: 'file', url: '/resources/res-2/download', version: 1, byteSize: 120000, pageCount: 4 }]]]);
+let counter = 100; // los ids nuevos no deben chocar con los datos iniciales (module-1, video-a…)
 const now = new Date().toISOString();
 const fakeKey = n => `FIXT-${String(n).padStart(4, '0')}-NOTA-REAL`;
 const students = [{ id: 'student-1', name: 'Alumna de prueba', email: 'alumna@fixture.invalid', active: true, createdAt: now, lastLogin: now, linkedAt: now, linkedVia: 'license_activation' }];
@@ -49,7 +56,9 @@ const server = http.createServer(async (req,res) => {
         if (pathname === '/api/producer/courses') {
             if (req.method === 'GET') return json(res,200,{ courses });
             const input = JSON.parse(await readBody(req));
-            const course = { id:'course-' + (++counter), name:input.name, author:input.author, bunnyWarning:'Servicio de prueba; no se creó una biblioteca real' };
+            if (!input.name || !String(input.name).trim()) return json(res, 400, { error: 'Nombre del curso requerido' });
+            const course = { id:'course-' + (++counter), name:input.name.trim(), author:(input.author || '').trim(), bunnyWarning:'Servicio de prueba; no se creó una biblioteca real' };
+            courseSettings.set(course.id, { purchaseUrl: null, description: String(input.description || '').trim(), embedOrigins: [] });
             courses.push(course); return json(res,201,{ course, warning: course.bunnyWarning });
         }
         const collectionRepair = pathname.match(/^\/api\/producer\/courses\/([^/]+)\/modules\/([^/]+)\/collection$/);
@@ -63,7 +72,8 @@ const server = http.createServer(async (req,res) => {
         if (courseModules) {
             if (req.method === 'GET') return json(res,200,{ modules:modules.filter(item => item.courseId === courseModules[1]) });
             const input = JSON.parse(await readBody(req));
-            const module = { id:'module-' + (++counter), courseId:courseModules[1], bunnyCollectionId: null, ...input };
+            const siblings = modules.filter(m => m.courseId === courseModules[1] && (m.parentId || null) === (input.parentId || null));
+            const module = { id:'module-' + (++counter), courseId:courseModules[1], bunnyCollectionId: null, attachments: 0, parentId: input.parentId || null, name: input.name, sortOrder: Math.max(0, ...siblings.map(m => m.sortOrder || 0)) + 10 };
             modules.push(module); return json(res,201,{ module, warning: 'Servicio de prueba; la colección se prepara al subir' });
         }
         if (pathname === '/api/producer/stream/upload') {
@@ -73,7 +83,7 @@ const server = http.createServer(async (req,res) => {
                 return json(res, 502, { error: 'Bunny respondió HTTP 400.', code: 'BUNNY_HTTP_ERROR', retryable: false, stage: 'library-protect', stageLabel: 'Protección de la biblioteca (DRM básico)',
                     provider: { status: 400, errorKey: 'VideoLibrary.TokenAuthAndDrmConflict', message: 'Cannot have Token Authentication and Basic DRM enabled at the same time' } });
             }
-            const video = { videoId:'video-' + (++counter), title:field(body,'title'), courseId:field(body,'courseId'), status:'processing', sourceType:'bunny' };
+            const video = { videoId:'video-' + (++counter), title:field(body,'title'), courseId:field(body,'courseId'), moduleId: field(body,'moduleId') || null, sortOrder: 999, status:'processing', sourceType:'bunny', publicCode: null, attachments: 0, presentation: { coverUrl: null, theme: 'dark', description: '' } };
             const operation = { operationId, videoId:video.videoId, phase:'processing', ready:false, failed:false, encodeProgress:0, reads:0 };
             operations.set(operationId,operation); videos.push(video); return json(res,202,operation);
         }
@@ -87,7 +97,12 @@ const server = http.createServer(async (req,res) => {
         }
         if (pathname === '/api/producer/videos') return json(res,200,{ videos });
         if (pathname === '/api/producer/licenses') return json(res,200,{ lots:[] });
-        if (/\/api\/producer\/video\/[^/]+\/sublink$/.test(pathname)) return json(res,200,{ sublink:'http://127.0.0.1:49310/cover/FIXTURE-ONLY' });
+        const sublink = pathname.match(/\/api\/producer\/video\/([^/]+)\/sublink$/);
+        if (sublink) { const v = videos.find(x => x.videoId === sublink[1]); if (!v) return json(res, 404, { error: 'Video no encontrado' }); v.publicCode = v.publicCode || ('FIXTURE-' + v.videoId.toUpperCase()); return json(res,200,{ publicCode: v.publicCode, sublink:'http://127.0.0.1:49310/cover/' + v.publicCode }); }
+        if (pathname === '/api/resources' && req.method === 'GET') { const key = url.searchParams.get('targetKind') + ':' + url.searchParams.get('targetId'); return json(res, 200, { resources: resources.get(key) || [], legacyDocuments: [] }); }
+        if (pathname === '/api/resources/link' && req.method === 'POST') { const input = JSON.parse(await readBody(req)); const key = input.targetKind + ':' + input.targetId; const item = { id: 'res-' + (++counter), name: input.name, type: input.type, protection: 'public', sourceKind: 'link', url: input.url, version: 1 }; resources.set(key, [...(resources.get(key) || []), item]); const target = input.targetKind === 'video' ? videos.find(v => v.videoId === input.targetId) : modules.find(m => m.id === input.targetId); if (target) target.attachments = (target.attachments || 0) + 1; return json(res, 201, { resource: item }); }
+        const resourceRoute = pathname.match(/^\/api\/resources\/([^/]+)$/);
+        if (resourceRoute && (req.method === 'PATCH' || req.method === 'DELETE')) { for (const [key, list] of resources) { const item = list.find(r => r.id === resourceRoute[1]); if (!item) continue; if (req.method === 'DELETE') { resources.set(key, list.filter(r => r !== item)); return json(res, 200, { ok: true }); } const input = JSON.parse(await readBody(req)); Object.assign(item, { name: input.name ?? item.name, url: input.url ?? item.url, protection: input.protection ?? item.protection, version: item.version + 1 }); return json(res, 200, { resource: item }); } return json(res, 404, { error: 'Recurso no encontrado' }); }
         if (pathname === '/api/producer/license/generate-bulk') {
             const input = JSON.parse(await readBody(req));
             if (input.expiresAt || input.durationDays) return json(res, 400, { error: 'Las licencias de curso no tienen vencimiento.', code: 'LICENSE_EXPIRY_UNSUPPORTED' });
@@ -102,7 +117,27 @@ const server = http.createServer(async (req,res) => {
         if (ws !== null) {
             if (ws === '/overview') return json(res,200,{ projects: courses.length, videos: videos.length, licenses: licenses.length, students: students.length, activeActivations: 1, openRequests: 0 });
             if (ws === '/account') return json(res,200,{ email:'fixture@example.invalid', name:'Productor de prueba', quotas:{ maxLicenses:20, maxDevices:2, maxStudents:0 }, usage:{ licensesUsed: licenses.length, studentsUsed: students.length }, mail:{ configured:false, provider:'Resend' }, features:{ automaticBilling:false, globalBlacklist:false } });
-            if (ws === '/projects') return json(res,200,{ projects: courses.map(c => ({ ...c, settings: { purchaseUrl: null, description: '', embedOrigins: [] }, modules: modules.filter(m => m.courseId === c.id).map(m => ({ ...m, playlistCode: null, playlistUrl: null })), videos: videos.filter(v => v.courseId === c.id).map(v => ({ ...v, moduleId: null, sortOrder: 0, publicCode: null, presentation: { coverUrl: null, theme: 'dark', description: '' } })) })), unassignedVideos: [] });
+            if (ws === '/projects') return json(res,200,{ projects: courses.map(c => ({ ...c, settings: courseSettings.get(c.id) || { purchaseUrl: null, description: '', embedOrigins: [] }, modules: modules.filter(m => m.courseId === c.id).map(m => ({ playlistCode: null, playlistUrl: m.playlistPublished ? '/playlist/fixture-' + m.id : null, ...m })), videos: videos.filter(v => v.courseId === c.id) })), unassignedVideos: videos.filter(v => !v.courseId) });
+            const courseRoute = ws.match(/^\/courses\/([^/]+)$/);
+            if (courseRoute) { const c = courses.find(x => x.id === courseRoute[1]); if (!c) return json(res, 404, { error: 'Contenido no encontrado.', code: 'CONTENT_NOT_FOUND' }); if (req.method === 'DELETE') { if (modules.some(m => m.courseId === c.id) || videos.some(v => v.courseId === c.id)) return json(res, 409, { error: 'Primero mueve o elimina los elementos asociados.', code: 'CONTENT_HAS_DEPENDENCIES' }); courses.splice(courses.indexOf(c), 1); return json(res, 200, { ok: true }); } const input = JSON.parse(await readBody(req)); if (input.name) c.name = input.name; if (input.author !== undefined) c.author = input.author; if (input.settings) courseSettings.set(c.id, { ...(courseSettings.get(c.id) || {}), ...input.settings }); return json(res, 200, { course: { ...c, settings: courseSettings.get(c.id) } }); }
+            const moduleRoute = ws.match(/^\/modules\/([^/]+)$/);
+            if (moduleRoute) { const m = modules.find(x => x.id === moduleRoute[1]); if (!m) return json(res, 404, { error: 'Contenido no encontrado.', code: 'CONTENT_NOT_FOUND' });
+                if (req.method === 'DELETE') { if (modules.some(x => x.parentId === m.id) || videos.some(v => v.moduleId === m.id) || m.attachments) return json(res, 409, { error: 'Primero mueve o elimina los elementos asociados. Las licencias y accesos existentes se conservan.', code: 'CONTENT_HAS_DEPENDENCIES', dependencies: { videos: videos.filter(v => v.moduleId === m.id).length } }); modules.splice(modules.indexOf(m), 1); return json(res, 200, { ok: true }); }
+                const input = JSON.parse(await readBody(req));
+                if (Object.prototype.hasOwnProperty.call(input, 'parentId')) { const parent = input.parentId ? modules.find(x => x.id === input.parentId) : null; if (input.parentId && !parent) return json(res, 404, { error: 'Contenido no encontrado.', code: 'CONTENT_NOT_FOUND' }); let cursor = parent; while (cursor) { if (cursor.id === m.id) return json(res, 409, { error: 'Un módulo no puede quedar dentro de sí mismo o de un descendiente.', code: 'CONTENT_MODULE_CYCLE' }); cursor = modules.find(x => x.id === cursor.parentId); } m.parentId = input.parentId || null; }
+                if (input.name) m.name = input.name; if (typeof input.playlistPublished === 'boolean') m.playlistPublished = input.playlistPublished;
+                return json(res, 200, { module: { playlistUrl: m.playlistPublished ? '/playlist/fixture-' + m.id : null, ...m } }); }
+            const videoRoute = ws.match(/^\/videos\/([^/]+)$/);
+            if (videoRoute) { const v = videos.find(x => x.videoId === videoRoute[1]); if (!v) return json(res, 404, { error: 'Contenido no encontrado.', code: 'CONTENT_NOT_FOUND' });
+                if (req.method === 'DELETE') { videos.splice(videos.indexOf(v), 1); return json(res, 200, { ok: true, providerFilesDeleted: false }); }
+                const input = JSON.parse(await readBody(req)); let providerWarning = null;
+                if (Object.prototype.hasOwnProperty.call(input, 'moduleId')) { if (input.moduleId && !modules.some(m => m.id === input.moduleId && m.courseId === v.courseId)) return json(res, 409, { error: 'El módulo debe pertenecer al curso seleccionado.', code: 'CONTENT_MODULE_COURSE_MISMATCH' }); if ((input.moduleId || null) !== (v.moduleId || null)) { v.moduleId = input.moduleId || null; v.sortOrder = 999; if (url.searchParams.get('bunnyFail') || v.title.includes('FALLA-BUNNY')) { v.collectionSyncPending = true; providerWarning = 'La clase se movió en Edulock. La colección de Bunny no se pudo actualizar ahora y se reintentará automáticamente.'; } else v.collectionSyncPending = false; } }
+                if (input.title) v.title = input.title; if (input.presentation) v.presentation = { ...v.presentation, ...input.presentation };
+                return json(res, 200, { video: { ...v, providerWarning } }); }
+            if (ws === '/reorder' && req.method === 'POST') { const input = JSON.parse(await readBody(req)); const isModules = input.kind === 'modules'; const key = isModules ? 'parentId' : 'moduleId'; const scoped = Object.prototype.hasOwnProperty.call(input, key);
+                const list = (isModules ? modules : videos).filter(item => item.courseId === input.courseId && (!scoped || (item[key] || null) === (input[key] || null))); const ids = new Set(list.map(item => isModules ? item.id : item.videoId));
+                if (ids.size !== input.ids.length || input.ids.some(id => !ids.has(id))) return json(res, 409, { error: 'El contenido cambió. Actualiza la lista y vuelve a ordenar.', code: 'CONTENT_ORDER_CHANGED' });
+                input.ids.forEach((id, index) => { const item = list.find(item => (isModules ? item.id : item.videoId) === id); item.sortOrder = (index + 1) * 10; }); return json(res, 200, { ok: true, kind: input.kind, count: input.ids.length }); }
             if (ws === '/lots') return json(res,200,{ lots: lots.map(lot => { const own = licenses.filter(l => l.lotId === lot.id); const c = counts(own); return { ...lot, total: c.total, availableCount: c.available, freeCount: c.available, reservedCount: c.reserved, inUseCount: c.inUse, activeCount: c.inUse, suspendedCount: c.suspended, revokedCount: c.revoked, exportableCount: own.filter(l => l.serial).length }; }) });
             if (ws === '/licenses' && req.method === 'GET') {
                 const status = url.searchParams.get('status') || '', lotId = url.searchParams.get('lotId') || '', q = (url.searchParams.get('q') || '').toLowerCase();

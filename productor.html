@@ -46,7 +46,7 @@
   details{margin-top:12px} summary{cursor:pointer;color:var(--c-text);padding:6px 0}
   @media(max-width:600px){.wrap{padding:12px}.card{padding:14px}.brand{flex-wrap:wrap}.job{align-items:flex-start;flex-direction:column}table{min-width:520px}}
 </style>
-<link rel="stylesheet" href="/css/producer-workspace.css?v=20260916-estudiantes">
+<link rel="stylesheet" href="/css/producer-workspace.css?v=20260917-contenido">
 </head>
 <body>
 
@@ -66,7 +66,7 @@
     <div class="sidebar-caption">TU ESPACIO DE TRABAJO</div>
     <nav aria-label="Secciones">
       <button data-page="proyectos" class="nav-item active"><span aria-hidden="true">◫</span> Proyectos</button>
-      <button data-page="videos" class="nav-item"><span aria-hidden="true">▷</span> Videos y listas</button>
+      <button data-page="videos" class="nav-item"><span aria-hidden="true">▷</span> Contenido</button>
       <button data-page="licencias" class="nav-item"><span aria-hidden="true">⌘</span> Licencias y lotes</button>
       <button data-page="estudiantes" class="nav-item"><span aria-hidden="true">♙</span> Estudiantes</button>
       <button data-page="almacenamiento" class="nav-item"><span aria-hidden="true">▤</span> Almacenamiento</button>
@@ -81,64 +81,12 @@
     <main class="workspace-content">
       <div id="app-msg" role="status" aria-live="polite"></div>
       <div class="project-context"><label for="up-course">Proyecto activo<select id="up-course" onchange="selectCourse()"><option value="">Todos los proyectos</option></select></label><p id="workspace-context-hint" class="muted">Organiza contenido y accesos por proyecto.</p><button class="btn ghost" id="workspace-refresh">Actualizar</button></div>
-      <section data-workspace-page="proyectos"><div class="section-intro"><div><h2>Tu contenido, bajo control</h2><p>Gestiona cada proyecto, sus clases y el acceso de tus alumnos.</p></div><button class="btn" id="new-project-focus">+ Nuevo proyecto</button></div><div id="workspace-overview" class="stat-grid" aria-label="Resumen de cuenta"></div><div class="toolbar"><label class="search-field">Buscar proyectos<input id="project-search" type="search" placeholder="Nombre o autor"></label></div><div id="project-grid" class="project-grid"></div>  <div class="card">
-    <h3 style="color:var(--c-primary);margin-bottom:8px">Organizar el proyecto</h3><div id="project-actions" class="actions" style="margin-bottom:12px"></div>
-    <p class="muted" style="margin-bottom:12px">Cada curso reúne sus clases y tiene sus propias licencias.</p>
-<div id="course-status" role="status" class="muted" style="margin-top:8px"></div>
-    <details><summary>Recursos de los módulos</summary>
-      <p class="muted">Adjunta enlaces libres o archivos PDF. Tú decides qué PDF requiere licencia.</p>
-      <div id="module-resources-list" style="margin-top:8px"></div>
-    </details>
-    <details><summary>Crear curso</summary>
-      <div class="row" style="margin-top:8px">
-        <div style="flex:2;min-width:180px"><label for="course-name">Nombre del curso</label><input id="course-name" maxlength="120" placeholder="Ej: Fotografía inicial"></div>
-        <div style="flex:1;min-width:140px"><label for="course-author">Autor (opcional)</label><input id="course-author" maxlength="100"></div>
-        <button class="btn" id="course-create-btn" onclick="createCourse()">Crear curso</button>
-      </div>
-    </details>
-    <details><summary>Crear módulo en el curso seleccionado</summary>
-      <div class="row" style="margin-top:8px">
-        <div style="flex:2;min-width:180px"><label for="module-name">Nombre del módulo</label><input id="module-name" maxlength="120" placeholder="Ej: Módulo 1 — Introducción"></div>
-        <div style="flex:1;min-width:140px"><label for="module-parent">Dentro de (opcional)</label><select id="module-parent"><option value="">Nivel principal</option></select></div>
-        <button class="btn" id="module-create-btn" onclick="createModule()">Crear módulo</button>
-      </div>
-    </details>
-  </div>
-
-<div class="card"><div class="section-heading"><h3>Módulos y listas del proyecto</h3><span class="muted">El orden se refleja en tu catálogo.</span></div><div id="workspace-modules"></div></div></section>
-      <section data-workspace-page="videos" hidden>  <!-- Subir video -->
-  <div class="card">
-    <h3 style="color:var(--c-primary);margin-bottom:6px">Subir una clase</h3>
-    <p class="muted" style="margin-bottom:12px">Elige el curso y módulo. Etapas: envío al servidor → preparación de biblioteca y colección → transferencia a Bunny → procesamiento → listo. El enlace estará disponible cuando el video esté listo.</p>
-    <div class="row">
-      <div style="flex:1;min-width:160px"><label for="up-module">Módulo</label><select id="up-module"><option value="">Sin módulo</option></select><div id="up-module-status" class="muted" style="margin-top:5px"></div></div>
-      <div style="flex:2;min-width:220px"><label for="up-file">Archivo de video</label><input id="up-file" type="file" accept="video/*"></div>
-      <div style="flex:1;min-width:160px"><label for="up-title">Título de la clase</label><input id="up-title" maxlength="160" placeholder="Ej: Clase 1 — Bienvenida"></div>
-      <button class="btn" id="up-btn" onclick="uploadVideo()">Subir clase</button>
-    </div>
-    <div id="up-progress" class="hidden" style="margin-top:12px" role="status" aria-live="polite">
-      <div class="row" style="justify-content:space-between"><span id="up-label" class="muted"></span><span id="up-pct" class="muted"></span></div>
-      <div class="progress-track"><div id="up-bar" class="progress-bar"></div></div>
-    </div>
-    <div id="up-msg" role="status" aria-live="polite" class="muted" style="margin-top:10px"></div>
-    <div id="up-jobs" style="margin-top:10px"></div>
-  </div>
-
-  <!-- Mis videos -->
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h3 style="color:var(--c-primary)">Mis videos</h3><button class="btn ghost" onclick="loadVideos()">Actualizar</button>
-    </div>
-    <div class="toolbar"><label class="search-field">Buscar videos<input id="video-search" type="search" placeholder="Título de la clase"></label><label>Módulo<select id="video-module-filter"><option value="">Todos los módulos</option></select></label></div><table><thead><tr><th>Título</th><th>Estado</th><th>Enlace</th><th></th></tr></thead>
-      <tbody id="vid-body"><tr><td colspan="4" class="muted">Cargando…</td></tr></tbody></table>
-    <div id="video-link-result" class="hidden" style="margin-top:12px" role="region" aria-label="Enlace de la clase">
-      <label for="video-link">Enlace para tus alumnos</label>
-      <div class="row"><input id="video-link" readonly style="flex:1;min-width:240px"><button class="btn ghost" onclick="copyVideoLink()">Copiar enlace</button><a id="video-link-open" class="btn ghost" target="_blank" rel="noopener">Abrir enlace</a></div>
-      <div id="video-link-msg" role="status" aria-live="polite" class="muted" style="margin-top:8px"></div>
-    </div>
-  </div>
-
-<div class="card"><h3>Listas de reproducción</h3><p class="muted">Cada módulo puede compartirse como lista. Las clases conservan sus requisitos de acceso.</p><div id="workspace-playlists"></div></div></section>
+      <section data-workspace-page="proyectos"><div class="section-intro"><div><h2>Tu contenido, bajo control</h2><p>Gestiona cada formación, sus clases y el acceso de tus alumnos.</p></div><button class="btn" id="new-project-btn" type="button">+ Nuevo proyecto</button></div><div id="workspace-overview" class="stat-grid" aria-label="Resumen de cuenta"></div><div class="section-heading projects-heading"><h3>Mis formaciones</h3><span class="muted" id="project-count"></span></div><div id="project-grid" class="project-grid"></div></section>
+      <section data-workspace-page="videos" hidden>
+  <div class="section-intro content-head"><div><nav class="breadcrumb" id="content-breadcrumb" aria-label="Ruta de navegación"></nav><h2>Contenido</h2><p id="content-subtitle">Módulos, submódulos y clases de esta formación. Arrastra para ordenar; cada clase se sube desde tu equipo.</p></div><div class="actions"><button class="btn ghost" id="content-refresh" type="button">Actualizar</button><button class="btn" id="new-module-btn" type="button">+ Nuevo módulo</button></div></div>
+  <div id="upload-panel" class="card upload-panel" hidden><div class="section-heading"><h3>Subidas pendientes</h3><span class="muted">Se consultan sin reenviar el archivo; «Reintentar envío» solo aparece cuando el servidor lo necesita.</span></div><div id="up-jobs"></div></div>
+  <div id="content-tree" class="card tree-card" aria-live="polite"></div>
+</section>
       <section data-workspace-page="licencias" hidden>  <!-- Licencias -->
   <div class="card">
     <div class="section-heading"><h3 style="color:var(--c-primary)">Generar licencias</h3><span class="muted" id="lic-quota"></span></div>
@@ -180,6 +128,20 @@
     </main>
   </div>
 </div>
+<dialog id="class-dialog" aria-labelledby="class-dialog-title"><form id="class-form"><div class="section-heading"><h2 id="class-dialog-title">Nueva clase</h2><button type="button" class="btn ghost" id="class-dialog-close" aria-label="Cerrar ventana">✕</button></div>
+  <p class="muted" id="class-dialog-context"></p>
+  <div class="form-grid">
+    <label class="form-field wide">Módulo o submódulo de destino<select id="up-module"><option value="">Sin módulo</option></select><span class="muted" id="up-module-status"></span></label>
+    <label class="form-field wide">Título de la clase<input id="up-title" maxlength="160" placeholder="Ej: Clase 1 — Bienvenida"></label>
+    <label class="form-field wide">Archivo de video (desde tu equipo)<input id="up-file" type="file" accept="video/*"><span class="muted">Etapas: envío al servidor → biblioteca y colección → transferencia a Bunny → procesamiento → listo. El enlace se habilita cuando la clase está lista.</span></label>
+    <label class="form-field wide">Descripción breve (opcional)<textarea id="up-description" rows="2" maxlength="2000" placeholder="Se muestra en la portada de la clase."></textarea></label>
+  </div>
+  <div id="up-progress" class="hidden" role="status" aria-live="polite"><div class="row" style="justify-content:space-between"><span id="up-label" class="muted"></span><span id="up-pct" class="muted"></span></div><div class="progress-track"><div id="up-bar" class="progress-bar"></div></div></div>
+  <div id="up-msg" role="status" aria-live="polite" class="muted"></div>
+  <div id="class-dialog-after" class="actions" hidden></div>
+  <p class="muted">Los materiales (PDF, ZIP u otros) se agregan como enlaces externos desde «Recursos» de la clase, sin subirlos a Edulock.</p>
+  <div class="dialog-footer"><button type="button" class="btn ghost" id="class-dialog-cancel">Cancelar</button><button type="button" class="btn" id="up-btn" onclick="uploadVideo()">Subir clase</button></div>
+</form></dialog>
 <dialog id="workspace-dialog" aria-labelledby="workspace-dialog-title"><form id="workspace-form"><div class="section-heading"><h2 id="workspace-dialog-title"></h2><button type="button" class="btn ghost" id="workspace-dialog-close" aria-label="Cerrar ventana">✕</button></div><div id="workspace-dialog-body"></div><div id="workspace-dialog-msg" role="status" aria-live="polite"></div><div class="dialog-footer"><button type="button" class="btn ghost" id="workspace-dialog-cancel">Cancelar</button><button type="submit" class="btn" id="workspace-dialog-submit">Guardar cambios</button></div></form></dialog>
 
 
@@ -389,21 +351,10 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ 
 let _resourceEditor = null;
 function openResourceEditor(kind, id, title) {
     if (!window.EdulockResources) { message('app-msg', 'No se pudo cargar el editor de recursos. Actualiza el panel.', 'err'); return; }
-    if (!_resourceEditor) _resourceEditor = EdulockResources.createEditor({ getToken: () => TOKEN,
+    // Los materiales nuevos se agregan por enlace externo; los PDF alojados anteriormente se conservan y se siguen administrando.
+    if (!_resourceEditor) _resourceEditor = EdulockResources.createEditor({ getToken: () => TOKEN, allowUpload: false,
         onUnauthorized: () => logout(), onError: text => message('app-msg', text, 'err') });
     _resourceEditor.open({ kind, id, title });
-}
-function renderModuleResources() {
-    const list = $('module-resources-list');
-    list.replaceChildren();
-    if (!_modules.length) { list.textContent = 'Selecciona un curso con módulos para gestionar sus recursos.'; return; }
-    for (const module of _modules) {
-        const row = document.createElement('div'); row.className = 'job';
-        const title = document.createElement('span'); title.textContent = module.name;
-        const button = document.createElement('button'); button.type = 'button'; button.className = 'btn ghost'; button.textContent = 'Recursos';
-        button.addEventListener('click', () => openResourceEditor('module', module.id, module.name));
-        row.append(title, button); list.append(row);
-    }
 }
 async function api(method, path, body) {
     const opts = { method, headers: { Authorization: 'Bearer ' + TOKEN } };
@@ -509,58 +460,53 @@ async function loadCourses(preferredId) {
     $('lic-course').value = _courses.some(c => c.id === licenseCourse) ? licenseCourse : $('up-course').value;
     await selectCourse();
 }
+function moduleOptionLabel(module, names, depth = 0) {
+    let label = module.name, parent = module.parentId && names.get(module.parentId);
+    while (parent && depth < 6) { label = parent.name + ' / ' + label; parent = parent.parentId && names.get(parent.parentId); depth++; }
+    return label;
+}
+function fillModuleSelect(select, modules, { root = 'Sin módulo', exclude = new Set(), selected = '' } = {}) {
+    const names = new Map(modules.map(m => [m.id, m]));
+    select.innerHTML = `<option value="">${esc(root)}</option>` + modules.filter(m => !exclude.has(m.id)).map(m => `<option value="${esc(m.id)}">${esc(moduleOptionLabel(m, names))}</option>`).join('');
+    select.value = modules.some(m => m.id === selected) ? selected : '';
+}
 async function selectCourse() {
     const requestId = ++_courseRequest;
     const courseId = $('up-course').value;
     _modules = [];
-    renderModuleResources();
-    $('up-module').innerHTML = '<option value="">Sin módulo</option>';
-    $('module-parent').innerHTML = '<option value="">Nivel principal</option>';
-    $('module-create-btn').disabled = !courseId;
+    fillModuleSelect($('up-module'), []);
     $('up-btn').disabled = !courseId;
-    if (!courseId) { message('course-status', 'Crea o selecciona un curso para agregar sus clases.'); return; }
-    const course = _courses.find(c => c.id === courseId);
-    const warning = course && (course.bunnyWarning || course.provisioningWarning);
-    message('course-status', warning ? 'La preparación en Bunny está pendiente: ' + warning : 'Las clases se guardarán en este curso.', warning ? 'warn' : 'muted');
+    if (!courseId) return;
     try {
         const data = await api('GET', '/api/producer/courses/' + encodeURIComponent(courseId) + '/modules');
         if (requestId !== _courseRequest) return;
         _modules = data.modules || [];
-        renderModuleResources();
-        const names = new Map(_modules.map(m => [m.id, m.name]));
-        const options = _modules.map(m => `<option value="${esc(m.id)}">${esc(m.parentId && names.has(m.parentId) ? names.get(m.parentId) + ' / ' + m.name : m.name)}</option>`).join('');
-        $('up-module').innerHTML += options; $('module-parent').innerHTML += options;
+        fillModuleSelect($('up-module'), _modules, { selected: $('up-module').value });
         if (typeof renderModuleCollectionStatus === 'function') renderModuleCollectionStatus();
-    } catch (error) { if (requestId === _courseRequest) message('course-status', error.message, 'err'); }
+    } catch (error) { if (requestId === _courseRequest) message('app-msg', error.message, 'err'); }
 }
-async function createCourse() {
-    const name = $('course-name').value.trim();
-    if (!name) { message('course-status', 'Escribe el nombre del curso.', 'err'); return; }
-    const button = $('course-create-btn'); if (button.disabled) return; button.disabled = true;
-    try {
-        const data = await api('POST', '/api/producer/courses', { name, author:$('course-author').value.trim() });
-        const course = data.course || data;
-        $('course-name').value = ''; $('course-author').value = '';
-        await loadCourses(course.id);
-        message('course-status', provisionMessage(data, 'Curso'), (data.warning || course.bunnyWarning || course.provisioningWarning) ? 'warn' : 'ok');
-    } catch (error) { message('course-status', error.message, 'err'); }
-    finally { button.disabled = false; }
+// Crear curso desde la ventana «Nuevo proyecto»: nombre + instructor (autor) + descripción breve en una sola petición.
+async function createCourse({ name, author = '', description = '' }) {
+    name = String(name || '').trim();
+    if (!name) throw new Error('Escribe el nombre del curso.');
+    const data = await api('POST', '/api/producer/courses', { name, author: String(author || '').trim(), description: String(description || '').trim() });
+    const course = data.course || data;
+    await loadCourses(course.id);
+    const warnings = [];
+    if (data.warning || course.bunnyWarning || course.provisioningWarning) warnings.push('La preparación en Bunny está pendiente: ' + (data.warning || course.bunnyWarning || course.provisioningWarning) + '. No necesitas volver a crearlo.');
+    if (course.settingsWarning) warnings.push(course.settingsWarning);
+    return { course, warnings };
 }
-async function createModule() {
-    const courseId = $('up-course').value, name = $('module-name').value.trim();
-    if (!courseId || !name) { message('course-status', 'Selecciona un curso y escribe el nombre del módulo.', 'err'); return; }
-    const button = $('module-create-btn'); if (button.disabled) return; button.disabled = true;
-    try {
-        const data = await api('POST', '/api/producer/courses/' + encodeURIComponent(courseId) + '/modules', { name, parentId:$('module-parent').value || null });
-        $('module-name').value = '';
-        if ($('up-course').value === courseId) {
-            await selectCourse(); $('up-module').value = (data.module || data).id || '';
-            message('course-status', provisionMessage(data, 'Módulo'), (data.warning || data.bunnyWarning) ? 'warn' : 'ok');
-        }
-    } catch (error) { message('course-status', error.message, 'err'); }
-    finally { button.disabled = !$('up-course').value; }
+// Crear módulo o submódulo: solo título; el orden lo asigna el servidor al final de sus hermanos.
+async function createModule(courseId, { name, parentId = null }) {
+    name = String(name || '').trim();
+    if (!courseId || !name) throw new Error('Escribe el título del módulo.');
+    const data = await api('POST', '/api/producer/courses/' + encodeURIComponent(courseId) + '/modules', { name, parentId: parentId || null });
+    if ($('up-course').value === courseId) await selectCourse();
+    return { module: data.module || data, warning: data.warning || data.bunnyWarning || null };
 }
 function showUploadProgress(view) {
+    if (view && view.phase) _uploadPhase = view.phase;
     $('up-progress').classList.remove('hidden');
     $('up-label').textContent = view.label;
     $('up-pct').textContent = view.percent === null ? 'Sin porcentaje disponible' : Math.round(view.percent) + '% de esta etapa';
@@ -570,6 +516,7 @@ function showUploadProgress(view) {
 function renderUploadJobs(jobs) {
     $('up-jobs').replaceChildren();
     const pending = jobs.filter(j => !j.ready);
+    const panel = $('upload-panel'); if (panel) panel.hidden = !pending.length;
     if (!pending.length) return;
     const heading = document.createElement('p'); heading.className = 'muted';
     heading.textContent = 'Subidas guardadas. «Continuar seguimiento» consulta la operación sin reenviar el archivo; «Reintentar envío» solo aparece cuando el servidor necesita el archivo otra vez.'; $('up-jobs').append(heading);
@@ -590,10 +537,12 @@ function renderUploadJobs(jobs) {
     }
 }
 async function retryUpload(job) {
+    // El reintento reutiliza la misma operación: se abre la ventana de clase con los datos del intento y el mismo archivo.
+    if ($('up-course').value !== job.courseId) { $('up-course').value = job.courseId; await selectCourse(); if (typeof selectCourseWorkspace === 'function') await selectCourseWorkspace(); }
+    if (typeof openClassDialog === 'function') openClassDialog(job.moduleId || '', { retryJob: job });
     const file = $('up-file').files[0];
     if (!file) { message('up-msg', 'Selecciona el mismo archivo («' + job.fileName + '») para reintentar el envío.', 'err'); $('up-file').focus(); return; }
     if (file.name !== job.fileName || file.size !== job.fileSize) { message('up-msg', 'El archivo seleccionado no coincide con «' + job.fileName + '» (' + job.fileSize + ' bytes). Selecciona el mismo archivo.', 'err'); return; }
-    if ($('up-course').value !== job.courseId) { $('up-course').value = job.courseId; await selectCourse(); }
     $('up-module').value = job.moduleId || ''; $('up-title').value = job.title;
     return runUpload(() => _stream.upload({ file, courseId: job.courseId, moduleId: job.moduleId || '', title: job.title }));
 }
@@ -618,78 +567,55 @@ async function repairModuleCollection(courseId, moduleId, button) {
     try {
         const data = await api('POST', '/api/producer/courses/' + encodeURIComponent(courseId) + '/modules/' + encodeURIComponent(moduleId) + '/collection', {});
         const module = _modules.find(m => m.id === moduleId); if (module) module.bunnyCollectionId = data.collectionId;
-        message('course-status', 'Colección confirmada en Bunny para el módulo.', 'ok'); renderModuleCollectionStatus();
-    } catch (error) { message('course-status', streamErrorText(error), 'err'); }
+        message('app-msg', 'Colección confirmada en Bunny para el módulo.', 'ok'); renderModuleCollectionStatus();
+    } catch (error) { message('app-msg', streamErrorText(error), 'err'); }
     finally { if (button) button.disabled = false; }
 }
 function uploadBusy(busy) {
-    for (const id of ['up-file','up-title','up-course','up-module','up-btn']) $(id).disabled = busy;
+    for (const id of ['up-file','up-title','up-description','up-course','up-module','up-btn']) $(id).disabled = busy;
     if (!busy) $('up-btn').disabled = !$('up-course').value;
     $('up-btn').textContent = busy ? 'En curso…' : 'Subir clase';
 }
-async function runUpload(action) {
+let _uploadPhase = '';
+async function runUpload(action, { description = '' } = {}) {
     if (!_stream || _stream.isBusy()) return;
-    uploadBusy(true); message('up-msg', '');
+    uploadBusy(true); message('up-msg', ''); _uploadPhase = 'client-upload';
     try {
-        await action();
-        message('up-msg', 'Video listo. Ya puedes generar y copiar su enlace en Mis videos.', 'ok');
-        $('up-file').value = ''; $('up-title').value = ''; await loadVideos();
+        const result = await action();
+        _uploadPhase = 'done';
+        let text = 'Clase lista. Ya puedes generar y copiar su enlace desde su fila en Contenido.';
+        if (description && result && result.videoId) {
+            try { await api('PATCH', '/api/producer/workspace/videos/' + encodeURIComponent(result.videoId), { presentation: { description } }); }
+            catch (error) { text += ' La descripción no se guardó (' + error.message + '); puedes escribirla desde «Editar clase».'; }
+        }
+        message('up-msg', text, 'ok');
+        $('up-file').value = ''; $('up-title').value = ''; $('up-description').value = '';
+        if (typeof onClassUploaded === 'function') onClassUploaded(result);
+        await loadVideos();
     } catch (error) {
+        _uploadPhase = 'failed';
         message('up-msg', error.message + (['UPLOAD_FAILED', 'UPLOAD_REJECTED'].includes(error.code) ? ' Para reintentar el envío usa «Reintentar envío» con el mismo archivo.' : ''), error.code === 'STATUS_PENDING' ? 'warn' : 'err');
+        if (error.code === 'STATUS_PENDING') await loadVideos().catch(() => {});
     } finally { uploadBusy(false); if (_stream) renderUploadJobs(_stream.getJobs()); }
 }
 async function uploadVideo() {
     const file = $('up-file').files[0], courseId = $('up-course').value;
-    if (!file || !courseId) { message('up-msg', 'Selecciona un curso y un archivo de video.', 'err'); return; }
+    if (!file || !courseId) { message('up-msg', 'Selecciona un archivo de video de tu equipo.', 'err'); return; }
     const input = { file, courseId, moduleId:$('up-module').value, title:$('up-title').value.trim() || file.name };
-    return runUpload(() => _stream.upload(input));
+    return runUpload(() => _stream.upload(input), { description: $('up-description').value.trim() });
 }
 async function resumeUpload(operationId) { return runUpload(() => _stream.resume(operationId)); }
-async function loadVideos() {
-    const table = $('vid-body');
-    try {
-        const data = await api('GET', '/api/producer/videos');
-        const videos = data.videos || [];
-        table.replaceChildren();
-        if (!videos.length) { table.innerHTML = '<tr><td colspan="4" class="muted">Aún no tienes videos.</td></tr>'; return; }
-        for (const video of videos) {
-            const row = document.createElement('tr');
-            const ready = video.status === 'ready';
-            row.innerHTML = `<td>${esc(video.title)}<div class="muted">${esc(video.courseName || video.course_name || '')}</div></td><td>${esc(ready ? 'Listo' : video.status === 'error' ? 'Error' : 'Pendiente')}</td><td></td><td></td>`;
-            if (video.publicCode && ready) {
-                const link = document.createElement('a'); link.href = '/cover/' + encodeURIComponent(video.publicCode); link.target = '_blank'; link.rel = 'noopener'; link.textContent = 'Abrir enlace'; row.children[2].append(link);
-            } else row.children[2].textContent = '—';
-            const button = document.createElement('button'); button.className = 'btn ghost'; button.textContent = 'Generar enlace'; button.disabled = !ready;
-            button.onclick = () => mkSublink(video.videoId, button); row.children[3].append(button);
-            const resourcesButton = document.createElement('button'); resourcesButton.type = 'button'; resourcesButton.className = 'btn ghost'; resourcesButton.textContent = 'Recursos'; resourcesButton.style.margin = '4px';
-            resourcesButton.addEventListener('click', () => openResourceEditor('video', video.videoId, video.title)); row.children[3].append(resourcesButton);
-            table.append(row);
-        }
-    } catch (error) { table.innerHTML = `<tr><td colspan="4" class="err">${esc(error.message)}</td></tr>`; }
-}
+// El gestor de Contenido (producer-workspace.js) reemplaza esta función al arrancar; aquí solo evita errores antes de eso.
+async function loadVideos() {}
+// Enlace de Edulock de una clase (publicCode/sublink). Devuelve la URL; volver a pedirlo recupera el mismo enlace.
 async function mkSublink(videoId, button) {
-    if (button.disabled) return; button.disabled = true;
+    if (button && button.disabled) return null; if (button) button.disabled = true;
     try {
         const data = await api('POST', '/api/producer/video/' + encodeURIComponent(videoId) + '/sublink');
         const link = new URL(data.sublink, location.origin);
         if (!['https:', 'http:'].includes(link.protocol)) throw new Error('El servidor no devolvió un enlace de clase válido.');
-        $('video-link').value = link.href; $('video-link-open').href = link.href;
-        $('video-link-result').classList.remove('hidden');
-        message('video-link-msg', 'Enlace listo. Puedes copiarlo o abrirlo para comprobar la portada.', 'ok');
-        await loadVideos();
-    } catch (error) { message('app-msg', error.message, 'err'); }
-    finally { button.disabled = false; }
-}
-async function copyVideoLink() {
-    const input = $('video-link');
-    if (!input.value) return;
-    try {
-        await navigator.clipboard.writeText(input.value);
-        message('video-link-msg', 'Enlace copiado.', 'ok');
-    } catch (_) {
-        input.focus(); input.select();
-        message('video-link-msg', 'Enlace seleccionado. Usa Ctrl+C para copiarlo.', 'muted');
-    }
+        return link.href;
+    } finally { if (button) button.disabled = false; }
 }
 async function genLicenses() {
     const quantity = Number($('lic-qty').value), courseId = $('lic-course').value;
@@ -718,6 +644,7 @@ $('up-module').addEventListener('change', renderModuleCollectionStatus);
 // Workspace starts after its navigation and controllers are ready.
 
 </script>
-<script src="/js/producer-workspace.js?v=20260916-estudiantes"></script>
+<script src="/js/producer-tree.js?v=20260917-contenido"></script>
+<script src="/js/producer-workspace.js?v=20260917-contenido"></script>
 </body>
 </html>

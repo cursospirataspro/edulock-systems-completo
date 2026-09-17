@@ -262,6 +262,30 @@ test('background reconciliation creates the collection of a module saved without
     assert.equal(transport.state.collections.length, 1);
 });
 
+test('moving an existing video to another module updates its Bunny collection without re-uploading, and pending syncs are reconciled', async () => {
+    const { service, transport, db } = setup();
+    transport.state.libraries.push({ Id: 101, Name: 'Prueba', ApiKey: 'synthetic-library-key', PullZoneId: 102, StorageZoneId: 103 });
+    transport.state.collections.push({ guid: COLLECTION, name: 'Módulo sintético [module:' + MODULE + ']' });
+    transport.state.videos.push({ guid: VIDEO, title: 'Clase', collectionId: '' });
+    db.state.library = { libraryId: '101', libraryKey: 'synthetic-library-key', pullZone: 'synthetic.b-cdn.net', tokenKey: null, drm: true };
+    db.state.collection = COLLECTION;
+    const writes = () => transport.state.calls.filter(c => c.method === 'POST' && c.path === `/library/101/videos/${VIDEO}`);
+    const moved = await service.syncVideoCollection({ courseId: COURSE, videoId: VIDEO, moduleId: MODULE, actor: ADMIN });
+    assert.equal(moved.collectionId, COLLECTION); assert.equal(moved.changed, true);
+    assert.equal(transport.state.videos[0].collectionId, COLLECTION); assert.equal(writes().length, 1);
+    assert.equal(transport.state.puts, 0, 'a collection change never re-sends the file');
+    const again = await service.syncVideoCollection({ courseId: COURSE, videoId: VIDEO, moduleId: MODULE, actor: ADMIN });
+    assert.equal(again.changed, false); assert.equal(writes().length, 1, 'no write when the remote collection already matches');
+    const removed = await service.syncVideoCollection({ courseId: COURSE, videoId: VIDEO, moduleId: null, actor: ADMIN });
+    assert.equal(removed.collectionId, null); assert.deepEqual(writes().at(-1).body, { collectionId: '' });
+    await assert.rejects(service.syncVideoCollection({ courseId: COURSE, videoId: 'not-a-uuid', moduleId: MODULE, actor: ADMIN }), { code: 'BUNNY_INVALID_VIDEO' });
+    await assert.rejects(service.syncVideoCollection({ courseId: COURSE, videoId: VIDEO, moduleId: MODULE, actor: { producerId: 'someone-else' } }));
+    const cleared = [];
+    db.getPendingCollectionSyncs = async () => [{ videoId: VIDEO, courseId: COURSE, moduleId: MODULE }];
+    db.setCollectionSyncPending = async (id, pending) => cleared.push([id, pending]);
+    assert.deepEqual(await service.reconcileVideoCollections({ limit: 5 }), { synced: 1, errors: [] });
+    assert.deepEqual(cleared, [[VIDEO, false]]); assert.equal(transport.state.videos[0].collectionId, COLLECTION);
+});
 test('a video created for a module is confirmed inside that collection', async t => {
     const { service, transport } = setup(); const filePath = await fixture(t);
     await service.uploadVideo({ filePath, title: 'Clase', courseId: COURSE, moduleId: MODULE, actor: ADMIN, operationId: crypto.randomUUID() });

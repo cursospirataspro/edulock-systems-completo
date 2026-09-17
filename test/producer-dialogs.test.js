@@ -13,34 +13,20 @@ function source(panel, name) {
 }
 const forbiddenNativeDialog = () => { throw new Error('Native dialogs are unavailable'); };
 
-test('class link is shown inline with an open link and refreshed list when native dialogs are unavailable', async () => {
-    const nodes = new Map(); let refreshed = 0;
-    const node = id => {
-        if (!nodes.has(id)) nodes.set(id, { value: '', href: '', hidden: true, classList: { remove() { node(id).hidden = false; } } });
-        return nodes.get(id);
-    };
-    const context = vm.createContext({ $: node, URL, location: { origin: 'https://qa.example.invalid' },
+test('the class link is returned for the popup, validated as http(s) and never written to a removed inline block', async () => {
+    const context = vm.createContext({ $: () => { throw new Error('mkSublink must not touch page nodes'); }, URL, location: { origin: 'https://qa.example.invalid' },
         prompt: forbiddenNativeDialog, alert: forbiddenNativeDialog, confirm: forbiddenNativeDialog,
-        api: async () => ({ sublink: 'https://qa.example.invalid/cover/synthetic-code' }),
-        loadVideos: async () => { refreshed++; }, message: () => {} });
+        api: async () => ({ sublink: 'https://qa.example.invalid/cover/synthetic-code' }), message: () => {} });
     vm.runInContext(source('productor', 'mkSublink'), context);
     const button = { disabled: false };
-    await context.mkSublink('synthetic-video', button);
-    assert.equal(node('video-link').value, 'https://qa.example.invalid/cover/synthetic-code');
-    assert.equal(node('video-link-open').href, node('video-link').value);
-    assert.equal(node('video-link-result').hidden, false);
-    assert.equal(refreshed, 1); assert.equal(button.disabled, false);
-});
-
-test('copying the class link reports clipboard success or selects text without claiming a failed copy', async () => {
-    let copied, selected = 0; const messages = [];
-    const input = { value: 'https://qa.example.invalid/cover/synthetic', focus() {}, select() { selected++; } };
-    const context = vm.createContext({ $: () => input, navigator: { clipboard: { writeText: async value => { copied = value; } } },
-        message: (_id, text) => messages.push(text) });
-    vm.runInContext(source('productor', 'copyVideoLink'), context);
-    await context.copyVideoLink(); assert.equal(copied, input.value); assert.equal(messages.at(-1), 'Enlace copiado.');
-    context.navigator.clipboard = undefined;
-    await context.copyVideoLink(); assert.equal(selected, 1); assert.match(messages.at(-1), /Ctrl\+C/);
+    assert.equal(await context.mkSublink('synthetic-video', button), 'https://qa.example.invalid/cover/synthetic-code');
+    assert.equal(button.disabled, false);
+    assert.equal(await context.mkSublink('synthetic-video', { disabled: true }), null, 'a busy button does not repeat the request');
+    const bad = vm.createContext({ $: () => ({}), URL, location: { origin: 'https://qa.example.invalid' }, api: async () => ({ sublink: 'javascript:alert(1)' }) });
+    vm.runInContext(source('productor', 'mkSublink'), bad);
+    await assert.rejects(bad.mkSublink('synthetic-video', { disabled: false }), /enlace de clase válido/);
+    assert.equal(html.productor.includes('copyVideoLink'), false, 'the old inline copy block is gone');
+    assert.equal(html.productor.includes('Insertar portada'), false, 'the cover embed button is gone from the producer UI');
 });
 
 function dialogHarness(panel, fails = false) {

@@ -238,6 +238,9 @@ async function initDb() {
     await q(`ALTER TABLE modules ADD COLUMN IF NOT EXISTS documents TEXT DEFAULT '[]'`).catch(() => {});
     // Migración: publicCode único por video para portadas públicas
     await q(`ALTER TABLE catalog ADD COLUMN IF NOT EXISTS public_code TEXT`).catch(() => {});
+    // Traslado de clase entre módulos: la colección de Bunny se sincroniza fuera de la transacción;
+    // si el proveedor falla, la marca permite reintentarlo en la reconciliación periódica.
+    await q(`ALTER TABLE catalog ADD COLUMN IF NOT EXISTS collection_sync_pending BOOLEAN NOT NULL DEFAULT FALSE`).catch(() => {});
     await q(`CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_public_code ON catalog(public_code) WHERE public_code IS NOT NULL`).catch(() => {});
 
     // Migración: Bunny Stream — biblioteca por curso, colección por módulo (auto-provisión)
@@ -1541,9 +1544,15 @@ module.exports.createModule = async ({ id, courseId, parentId, name, sortOrder, 
         const parent = rowToModule((await client.query('SELECT * FROM modules WHERE id=$1 FOR SHARE', [parentId])).rows[0]);
         if (!parent || parent.courseId !== courseId || (parent.producerId || null) !== (course.producerId || null)) throw dbError('INVALID_PARENT_MODULE', 'El módulo padre no pertenece al curso.', 400);
     }
+    let order = sortOrder;
+    if (order == null || order === '') {
+        // Sin orden explícito: al final de sus hermanos (mismo curso y mismo padre).
+        const last = (await client.query('SELECT COALESCE(MAX(sort_order),0) AS max FROM modules WHERE course_id=$1 AND parent_id IS NOT DISTINCT FROM $2', [courseId, parentId || null])).rows[0];
+        order = Number(last?.max || 0) + 10;
+    }
     await client.query(
         'INSERT INTO modules (id, course_id, parent_id, name, sort_order, created_at, producer_id) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING',
-        [id, courseId, parentId || null, name.trim().slice(0, 120), sortOrder || 0, new Date().toISOString(), course.producerId]
+        [id, courseId, parentId || null, name.trim().slice(0, 120), Number(order) || 0, new Date().toISOString(), course.producerId]
     );
     const res = await client.query('SELECT * FROM modules WHERE id=$1 FOR SHARE', [id]);
     if (res.rows[0]?.course_id !== courseId || (res.rows[0]?.parent_id || null) !== (parentId || null) || (res.rows[0]?.producer_id || null) !== (course.producerId || null)) {
@@ -1702,6 +1711,16 @@ module.exports.updateStreamOperation = async (id, fields) => {
 
 // Modules whose course already has a Bunny library but that still lack a collection
 // (e.g. the collection step failed when the module was created).
+module.exports.setCollectionSyncPending = async (videoId, pending) => {
+    await q('UPDATE catalog SET collection_sync_pending=$2 WHERE video_id=$1', [videoId, pending === true]);
+};
+module.exports.getPendingCollectionSyncs = async (limit = 20) => {
+    const count = Math.max(1, Math.min(100, Number(limit) || 20));
+    return (await q(`SELECT v.video_id, v.course_id, v.module_id FROM catalog v JOIN courses co ON co.id=v.course_id
+        WHERE v.collection_sync_pending=TRUE AND v.source_type='bunny' AND co.bunny_library_id IS NOT NULL
+        ORDER BY v.uploaded_at ASC LIMIT $1`, [count])).rows.map(r => ({ videoId: r.video_id, courseId: r.course_id, moduleId: r.module_id || null }));
+};
+
 module.exports.getModulesWithoutCollection = async (limit = 20) => {
     const count = Math.max(1, Math.min(100, Number(limit) || 20));
     return (await q(`SELECT m.id AS module_id, m.course_id FROM modules m

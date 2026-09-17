@@ -141,6 +141,7 @@
     function createEditor(options) {
         const doc = options.document || document;
         const client = options.client || createClient(options);
+        const allowUpload = options.allowUpload !== false;
         let dialog, nodes, context, resources = [], legacyDocuments = [], editing = null, deleting = null;
         let busy = false, loaded = false, generation = 0, previousFocus;
 
@@ -187,9 +188,9 @@
             dialog.innerHTML = `
                 <div class="er-heading"><h2 id="er-title">Recursos adjuntos</h2><button type="button" class="er-button er-secondary" data-er="close">Cerrar</button></div>
                 <p class="er-muted" data-er="context"></p>
-                <p>Elige el acceso de cada recurso. Los enlaces y archivos nuevos son <strong>libres</strong> hasta que tú actives su protección.</p>
-                <p class="er-muted">Libre: enlace y descarga. Protegido: acceso con licencia en el reproductor de Windows o Android. En esta versión puedes proteger archivos PDF.</p>
-                <p class="er-muted">Los recursos libres también pueden adjuntarse a videos sin curso. Para proteger un PDF, primero asigna su video a un curso; el acceso usará la licencia de ese curso.</p>
+                <p data-er="intro">Elige el acceso de cada recurso. Los enlaces y archivos nuevos son <strong>libres</strong> hasta que tú actives su protección.</p>
+                <p class="er-muted" data-er="intro-help">Libre: enlace y descarga. Protegido: acceso con licencia en el reproductor de Windows o Android. En esta versión puedes proteger archivos PDF.</p>
+                <p class="er-muted" data-er="intro-course">Los recursos libres también pueden adjuntarse a videos sin curso. Para proteger un PDF, primero asigna su video a un curso; el acceso usará la licencia de ese curso.</p>
                 <div class="er-actions"><button type="button" class="er-button er-secondary" data-er="refresh">Actualizar lista</button></div>
                 <div class="er-status" data-er="status" role="status" aria-live="polite"></div>
                 <div class="er-list" data-er="list"></div>
@@ -209,6 +210,18 @@
                 </fieldset></form>`;
             nodes = {};
             for (const item of dialog.querySelectorAll('[data-er]')) nodes[item.getAttribute('data-er')] = item;
+            if (!allowUpload) {
+                // Materiales por enlace externo (PDF, ZIP u otros). Los PDF ya alojados siguen apareciendo y pueden editarse.
+                nodes.intro.textContent = 'Los materiales de esta clase o módulo se agregan como enlaces externos (PDF, ZIP, audio, imágenes u otros). No se suben archivos a Edulock.';
+                nodes['intro-help'].textContent = 'Los enlaces externos son libres: el alumno los abre o descarga sin licencia. El video conserva su protección con licencia. Los PDF protegidos guardados anteriormente se conservan y se siguen administrando aquí.';
+                nodes['intro-course'].hidden = true;
+                nodes['source-field'].hidden = true;
+                nodes.source.value = 'link';
+                nodes.legend.textContent = 'Agregar enlace';
+                nodes.save.textContent = 'Agregar enlace';
+                nodes.url.placeholder = 'https://... (enlace a PDF, ZIP u otro material)';
+                nodes['file-help'].textContent = 'Para convertir un enlace en PDF protegido adjunta el archivo original; esta opción solo aparece al editar un recurso existente.';
+            }
             doc.body.append(dialog);
             nodes.close.addEventListener('click', close);
             dialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); });
@@ -229,7 +242,7 @@
         function updateFields() {
             const sourceKind = editing ? editing.sourceKind : nodes.source.value;
             const converting = editing && sourceKind === 'link' && nodes.protection.value === 'protected';
-            nodes['source-field'].hidden = Boolean(editing);
+            nodes['source-field'].hidden = Boolean(editing) || !allowUpload;
             nodes.protection.options[1].disabled = !editing && sourceKind === 'link';
             if (!editing && sourceKind === 'link') nodes.protection.value = 'public';
             const needsFile = !editing && sourceKind === 'file' || converting;
@@ -253,8 +266,8 @@
             nodes.name.readOnly = false;
             nodes.source.value = 'link';
             nodes.protection.value = 'public';
-            nodes.legend.textContent = 'Agregar recurso';
-            nodes.save.textContent = 'Agregar recurso';
+            nodes.legend.textContent = allowUpload ? 'Agregar recurso' : 'Agregar enlace';
+            nodes.save.textContent = allowUpload ? 'Agregar recurso' : 'Agregar enlace';
             nodes['cancel-edit'].hidden = true;
             updateFields();
         }

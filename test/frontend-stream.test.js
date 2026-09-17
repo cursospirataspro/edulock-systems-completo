@@ -155,20 +155,21 @@ test('producer quota/permission denial preserves login, while 401 ends it', asyn
     assert.equal(expired.logouts(), 1);
 });
 test('course change ignores stale module responses from the previous course', async () => {
-    const nodes = Object.fromEntries(['up-course','up-module','module-parent','module-create-btn','up-btn'].map(id => [id, { value:'', innerHTML:'', disabled:false }]));
+    const nodes = Object.fromEntries(['up-course','up-module','up-btn'].map(id => [id, { value:'', innerHTML:'', disabled:false }]));
     nodes['up-course'].value = 'a';
     let finishFirst;
-    const resourceRenders = [];
-    const context = vm.createContext({ $:id => nodes[id], _courseRequest:0, _courses:[], _modules:[], esc:String, message:() => {},
-        renderModuleResources: () => resourceRenders.push(Array.from(context._modules, item => item.id)),
+    const selectRenders = [];
+    const context = vm.createContext({ $:id => nodes[id], _courseRequest:0, _courses:[], _modules:[], esc:String, message:() => {}, Map,
         api:async (_method,url) => url.includes('/a/') ? new Promise(resolve => { finishFirst = resolve; }) : { modules:[{ id:'b-module',name:'B' }] }
     });
-    vm.runInContext(functionSource(html.productor, 'selectCourse'), context);
+    vm.runInContext(functionSource(html.productor, 'moduleOptionLabel') + functionSource(html.productor, 'fillModuleSelect') + functionSource(html.productor, 'selectCourse'), context);
+    const originalFill = context.fillModuleSelect;
+    context.fillModuleSelect = (select, modules, options) => { selectRenders.push(modules.map(m => m.id)); return originalFill(select, modules, options); };
     const first = context.selectCourse();
     nodes['up-course'].value = 'b'; await context.selectCourse();
     finishFirst({ modules:[{ id:'a-module',name:'A' }] }); await first;
     assert.equal(context._modules[0].id, 'b-module');
     assert.ok(!nodes['up-module'].innerHTML.includes('a-module'));
-    assert.deepEqual(resourceRenders.at(-1), ['b-module']);
-    assert.ok(!resourceRenders.flat().includes('a-module'), 'stale module resources cannot be shown in the newly selected course');
+    assert.deepEqual(selectRenders.at(-1), ['b-module']);
+    assert.ok(!selectRenders.flat().includes('a-module'), 'stale modules cannot be offered as upload destination in the newly selected course');
 });
