@@ -25,8 +25,9 @@ function call(method, host, path, key, body) { return new Promise(res => { const
       for (const v of videos) {
         const collectionId = await db.getModuleBunnyCollection(v.module_id);
         if (!collectionId) continue;
-        // Videos antiguos: el GUID de Bunny vive en bunny_url, no en video_id.
-        const guid = (String(v.bunny_url || '').match(/\/([0-9a-f-]{36})\/playlist\.m3u8/i) || [])[1] || v.video_id;
+        // Videos antiguos: el GUID de Bunny vive en la URL (cifrada en la base; se lee descifrada), no en video_id.
+        const entry = await db.getCatalogById(v.video_id);
+        const guid = (String(entry?.bunnyUrl || '').match(/\/([0-9a-f-]{36})\//i) || [])[1] || v.video_id;
         const remote = await call('GET', 'video.bunnycdn.com', `/library/${lib.libraryId}/videos/${guid}`, lib.libraryKey);
         if (remote.status !== 200) { line.errors.push(`video ${v.title}: GET ${remote.status}`); continue; }
         const current = JSON.parse(remote.body).collectionId || '';
