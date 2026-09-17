@@ -23,6 +23,7 @@ import com.edulock.player.api.data.FirebaseLoginRequest
 import com.edulock.player.api.data.LoginResponse
 import com.edulock.player.utils.ActivationStore
 import com.edulock.player.utils.DeviceFingerprintAdvanced
+import com.edulock.player.utils.KeyAttestation
 import com.edulock.player.utils.NotificationPermissionHelper
 import com.google.android.gms.tasks.Task
 import com.google.android.gms.tasks.Tasks
@@ -77,6 +78,7 @@ class LoginActivity : AppCompatActivity() {
     private var authGeneration = 0
     private var _autoRegisterRetried = false
     private val apiService get() = ApiClient.getService()
+    private val CLOUD_PROJECT_NUMBER = 61528672386L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -371,7 +373,8 @@ class LoginActivity : AppCompatActivity() {
         try {
             val mgr = IntegrityManagerFactory.create(this@LoginActivity)
             val nonce = java.util.UUID.randomUUID().toString().replace("-", "")
-            val req = IntegrityTokenRequest.builder().setNonce(nonce).build()
+            // Apps distribuidas fuera de Google Play deben indicar el número de proyecto de Google Cloud.
+            val req = IntegrityTokenRequest.builder().setNonce(nonce).setCloudProjectNumber(CLOUD_PROJECT_NUMBER).build()
             val tokenResponse = Tasks.await(mgr.requestIntegrityToken(req), 8, TimeUnit.SECONDS)
             tokenResponse.token()
         } catch (_: Exception) { null }
@@ -383,12 +386,14 @@ class LoginActivity : AppCompatActivity() {
         val info = withContext(Dispatchers.IO) { DeviceFingerprintAdvanced.captureFullDeviceInfo(this@LoginActivity) }
         if (info.deviceId.isBlank()) { showStatus("No se pudo identificar este dispositivo. Intenta nuevamente."); return }
         val integrityTk = requestIntegrityToken()
+        val attestation = KeyAttestation.collect(this@LoginActivity)
         val http = apiService.firebaseLogin(FirebaseLoginRequest(
             idToken = idToken, uid = user.uid, email = user.email, deviceId = info.deviceId,
             deviceModel = info.deviceModel, fcmToken = getSharedPreferences("edulock_fcm", Context.MODE_PRIVATE).getString("fcm_token", ""),
             deviceSerial = info.deviceSerial, osVersion = info.osVersion, totalRam = info.totalRam,
             buildFingerprint = info.buildFingerprint, brand = info.brand, manufacturer = info.manufacturer, androidId = info.androidId,
-            integrityToken = integrityTk
+            integrityToken = integrityTk,
+            keyAttestation = attestation
         ))
         val response = readResponse(http, LoginResponse::class.java)
         if (AuthResponsePolicy.canStartSession(http.code(), response)) {

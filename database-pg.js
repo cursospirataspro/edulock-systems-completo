@@ -211,6 +211,8 @@ async function initDb() {
         )
     `);
     await q(`CREATE INDEX IF NOT EXISTS idx_devices_student ON devices(student_id)`);
+    // Resultado de la atestación por hardware (Android Key Attestation) del último inicio de sesión.
+    await q(`ALTER TABLE devices ADD COLUMN IF NOT EXISTS attestation TEXT`).catch(() => {});
 
     await q(`
         CREATE TABLE IF NOT EXISTS playback_progress (
@@ -1936,6 +1938,12 @@ module.exports.registerOrValidateDevice = async (studentId, fingerprint, meta = 
     } finally {
         client.release();
     }
+};
+
+// Guarda el resumen de atestación por hardware del dispositivo (solo registro; nunca bloquea).
+module.exports.setDeviceAttestation = async (studentId, fingerprint, summary) => {
+    await q('UPDATE devices SET attestation=$1 WHERE student_id=$2 AND fingerprint=$3',
+        [JSON.stringify(summary).slice(0, 20000), studentId, fingerprint]);
 };
 
 // Devuelve el límite de dispositivos del alumno (default 1).

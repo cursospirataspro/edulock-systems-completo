@@ -2489,13 +2489,45 @@ app.post('/api/auth/account-status', authRateLimit, async (req, res) => {
     try { res.json(await accountAuth.accountStatus(req.body)); }
     catch (error) { sendAccountError(res, error); }
 });
+// ── Desafío para la atestación por hardware (Android Key Attestation) ──
+// El reproductor pide un desafío, genera una clave en el Keystore con ese desafío y envía la cadena
+// de certificados en /api/auth/firebase-login. Se consume una sola vez y caduca a los 10 minutos.
+const { verifyKeyAttestation } = require('./lib/key-attestation');
+const _attestationChallenges = new Map();
+function issueAttestationChallenge() {
+    const now = Date.now();
+    for (const [k, exp] of _attestationChallenges) if (exp < now) _attestationChallenges.delete(k);
+    if (_attestationChallenges.size > 5000) _attestationChallenges.clear();
+    const challenge = crypto.randomBytes(24).toString('base64url');
+    _attestationChallenges.set(challenge, now + 10 * 60 * 1000);
+    return challenge;
+}
+function consumeAttestationChallenge(challenge) {
+    const exp = _attestationChallenges.get(challenge);
+    _attestationChallenges.delete(challenge);
+    return !!exp && exp >= Date.now();
+}
+app.get('/api/auth/attestation-challenge', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ challenge: issueAttestationChallenge(), expiresIn: 600 });
+});
+// Token OAuth para Play Integrity: cuenta de servicio (JSON) con el API habilitado en el proyecto de Google Cloud.
+async function playIntegrityAccessToken() {
+    if (process.env.PLAY_INTEGRITY_SERVICE_ACCOUNT) {
+        const { GoogleAuth } = require('google-auth-library');
+        const auth = new GoogleAuth({ keyFile: process.env.PLAY_INTEGRITY_SERVICE_ACCOUNT, scopes: ['https://www.googleapis.com/auth/playintegrity'] });
+        return (await auth.getAccessToken()) || '';
+    }
+    return process.env.PLAY_INTEGRITY_KEY || '';
+}
+
 app.post('/api/auth/firebase-login', authRateLimit, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     if (!dbReady) return res.status(503).json({ error: 'DB no disponible' });
     if (!firebaseAdmin) return res.status(503).json({ error: 'Firebase Admin no inicializado' });
     const { idToken, deviceId, deviceModel, deviceName, platform, osRelease, appVersion,
             deviceSerial, osVersion, osVersionCode, cpuCores, totalRam, androidId, buildFingerprint,
-            brand, manufacturer, fcmToken, integrityToken } = req.body || {};
+            brand, manufacturer, fcmToken, integrityToken, keyAttestation } = req.body || {};
     if (!idToken) return res.status(400).json({ error: 'idToken requerido' });
 
     let decoded;
@@ -2509,26 +2541,46 @@ app.post('/api/auth/firebase-login', authRateLimit, async (req, res) => {
     const clientIp = req.ip || req.connection?.remoteAddress || '';
     console.log(`[firebase-login] uid=${uid} email=${email} device=${deviceId || 'n/a'} ip=${clientIp}`);
 
-    // ── Play Integrity attestation (Android) ──
-    if (integrityToken && process.env.PLAY_INTEGRITY_KEY) {
+    // ── Atestación por hardware (Android Key Attestation, verificada contra las raíces de Google) ──
+    // Solo registro y auditoría: nunca bloquea el inicio de sesión (decisión del propietario).
+    let attestationSummary = null;
+    if (keyAttestation && typeof keyAttestation === 'object') {
         try {
-            const piRes = await fetch('https://playintegrity.googleapis.com/v1/' +
-                process.env.PLAY_INTEGRITY_PACKAGE + ':decodeIntegrityToken', {
+            const challenge = typeof keyAttestation.challenge === 'string' ? keyAttestation.challenge : '';
+            const issued = consumeAttestationChallenge(challenge);
+            const verdict = verifyKeyAttestation({ chain: keyAttestation.chain, expectedChallenge: issued ? challenge : '' });
+            if (!issued && verdict.reason === 'challenge_mismatch') verdict.reason = 'challenge_unknown_or_expired';
+            attestationSummary = { ...verdict, checkedAt: new Date().toISOString(), kind: 'android_key_attestation', challenge, chain: Array.isArray(keyAttestation.chain) ? keyAttestation.chain.slice(0, 6).map(c => String(c).slice(0, 4000)) : [] };
+            console.log(`[firebase-login] [INTEGRITY] keyAttestation ok=${verdict.ok} root=${verdict.rootTrusted} level=${verdict.securityLevel} boot=${verdict.verifiedBootState} locked=${verdict.deviceLocked} reason=${verdict.reason || '-'} device=${deviceId || 'n/a'}`);
+            if (!verdict.ok && deviceId) {
+                db.pool.query(`INSERT INTO audit_log (fingerprint, user_id, video_id, device_id, ip, user_agent, delivered_at, event_type)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,'security_warning')`,
+                ['', uid || '', 'attestation_failed', String(deviceId).slice(0, 100), clientIp, JSON.stringify({ reason: verdict.reason, level: verdict.securityLevel, boot: verdict.verifiedBootState, locked: verdict.deviceLocked }).slice(0, 500), new Date().toISOString()]).catch(() => {});
+            }
+        } catch (e) {
+            console.warn(`[firebase-login] [INTEGRITY] keyAttestation error: ${e.message}`);
+        }
+    }
+
+    // ── Play Integrity (Android): se descifra en Google si hay credenciales (cuenta de servicio o token) ──
+    if (integrityToken && (process.env.PLAY_INTEGRITY_SERVICE_ACCOUNT || process.env.PLAY_INTEGRITY_KEY)) {
+        try {
+            const pkg = process.env.PLAY_INTEGRITY_PACKAGE || 'edulock.systemsoficial.com';
+            const bearer = await playIntegrityAccessToken();
+            const piRes = await fetch(`https://playintegrity.googleapis.com/v1/${pkg}:decodeIntegrityToken`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.PLAY_INTEGRITY_KEY },
+                headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + bearer },
                 body: JSON.stringify({ integrity_token: integrityToken }),
             }).then(r => r.json());
             const verdict = piRes?.tokenPayloadExternal?.deviceIntegrity?.deviceRecognitionVerdict || [];
             const meetsDi = verdict.includes('MEETS_DEVICE_INTEGRITY');
-            console.log(`[firebase-login] [INTEGRITY] Play Integrity verdict=${JSON.stringify(verdict)} meetsDI=${meetsDi} email=${email}`);
-            if (!meetsDi) {
-                console.warn(`[firebase-login] [INTEGRITY] Device failed Play Integrity: email=${email} device=${deviceId}`);
-            }
+            console.log(`[firebase-login] [INTEGRITY] Play Integrity verdict=${JSON.stringify(verdict)} meetsDI=${meetsDi} device=${deviceId || 'n/a'}` + (piRes?.error ? ' error=' + JSON.stringify(piRes.error).slice(0, 160) : ''));
+            if (attestationSummary) attestationSummary.playIntegrity = { verdict, meetsDeviceIntegrity: meetsDi };
         } catch (e) {
             console.warn(`[firebase-login] [INTEGRITY] Play Integrity check error: ${e.message}`);
         }
     } else if (integrityToken) {
-        console.log(`[firebase-login] [INTEGRITY] integrityToken received but PLAY_INTEGRITY_KEY not configured`);
+        console.log(`[firebase-login] [INTEGRITY] integrityToken recibido; Play Integrity sin credenciales (la atestación por hardware ya cubre el dispositivo)`);
     }
 
     const geoInfo = await lookupIpInfo(clientIp).catch(() => null);
@@ -2589,6 +2641,7 @@ app.post('/api/auth/firebase-login', authRateLimit, async (req, res) => {
             { deviceName: deviceName || '', browser: browserStr, os: osStr, city: geoCity },
             1, { enforceLimit: false }
         ).catch(() => ({ ok: true }));
+        if (attestationSummary && devResult.ok !== false) db.setDeviceAttestation(student.id, deviceId, attestationSummary).catch(() => {});
         if (devResult.ok === false) {
             return res.status(403).json({
                 status: 'wrong_device',

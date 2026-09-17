@@ -284,6 +284,13 @@ interface EdulockApiService {
     ): Response<SessionActivateLicenseResponse>
 
     /**
+     * GET /api/auth/attestation-challenge
+     * Desafío de un solo uso para la atestación por hardware (Android Key Attestation).
+     */
+    @GET("api/auth/attestation-challenge")
+    suspend fun attestationChallenge(): Response<AttestationChallengeResponse>
+
+    /**
      * POST /api/auth/logout
      * Cierra la sesión de contenido en el servidor. La licencia, el dispositivo y el contador
      * de activaciones se conservan; al volver a entrar se pide la licencia de nuevo.

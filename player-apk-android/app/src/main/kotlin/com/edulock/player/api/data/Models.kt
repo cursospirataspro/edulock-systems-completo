@@ -70,8 +70,13 @@ data class FirebaseLoginRequest(
     val brand: String? = null,
     val manufacturer: String? = null,
     val androidId: String? = null,
-    val integrityToken: String? = null
+    val integrityToken: String? = null,
+    val keyAttestation: KeyAttestationPayload? = null
 )
+
+/** Cadena de certificados de atestación por hardware (Android Key Attestation), DER en base64, hoja → raíz. */
+data class KeyAttestationPayload(val challenge: String, val chain: List<String>, val securityLevel: String? = null)
+data class AttestationChallengeResponse(val challenge: String? = null, val expiresIn: Int? = null)
 
 /** POST /api/auth/register-request — crear solicitud de registro. */
 data class RegistrationRequest(
