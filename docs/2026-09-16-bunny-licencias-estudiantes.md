@@ -239,3 +239,23 @@ Comprobado el 2026-09-17 a las 20:39 UTC con la API de cuenta de Bunny: `Account
 - El CDN responde `403` ("suspended or not configured") a los videos ya publicados: la prueba de reproducción del alumno en el VPS pasa 5/7 y falla en la lista HLS (`502`). **Los alumnos no pueden reproducir hasta que se reactive la cuenta.** El 2026-09-16 la misma prueba pasaba 13/13.
 - No lo causa el código: el mismo servidor sirve el resto de la plataforma (inicio de sesión, licencias, portada, handshake) con normalidad.
 - Qué hacer: en el panel de Bunny, verificar la tarjeta o cargar saldo (el crédito de prueba de 20 USD no se está aplicando). Al reactivarse, las subidas pendientes y la reconciliación de colecciones se reanudan solas; no hay que redesplegar.
+
+### 15.5 Cuenta nueva de Bunny y pruebas pendientes completadas (2026-09-17, 21:10–21:35 UTC)
+
+El propietario creó una cuenta nueva de Bunny (alta 2026-09-17 21:11 UTC, prueba gratuita hasta 2026-10-01, `AccountDisabled: false`, sin bibliotecas) y pegó su Account API Key en el panel de administración. Comprobación: la clave había quedado guardada en el campo equivocado (`bunny_token_key`, la clave de firma de reproducción) y el campo de cuenta seguía con la clave de la cuenta deshabilitada. Se movió la clave a `bunny_account_key`, se vació `bunny_token_key` (el servidor la obtiene sola del pull zone) y se respaldaron los valores anteriores en `/root/backups/bunny-config-old-2026-09-17.txt` (permisos 600). No hace falta reiniciar: el servicio lee la clave de cuenta en cada operación.
+
+Con la cuenta nueva se repitieron las pruebas que habían quedado bloqueadas, todas contra producción con un productor QA temporal y datos sintéticos:
+
+| Prueba | Resultado |
+|--------|-----------|
+| Panel del productor por la interfaz real (`prod-panel-qa.js`) | **11/11**: inicio de sesión, Proyectos, nuevo proyecto con descripción, Abrir proyecto, módulo, submódulo, ventana de clase, **subida real del clip de 20 s hasta "Clase lista"** (biblioteca 756021 creada en Fráncfort con DRM, sin réplicas; colección por módulo), enlace en ventana, recurso por enlace externo (distintivo 📎 1), **clase movida al submódulo con la colección de Bunny actualizada sin resubir** (mismo GUID, codificación 100 %, 640×360, 20 s; `collection_sync_pending=false`). Sin errores de consola |
+| Cadena de reproducción del alumno sobre esa clase (`vps-prueba-reproduccion.js` apuntado al curso QA, licencia emitida por el productor QA) | **13/13**: activación, portada, handshake, lista HLS (2 variantes, `mp4a`), clave, segmento (480 KB), progreso, validación, reactivación sin consumir cupo, límite de 2 dispositivos |
+| Reproductor de PC 1.1.2 instalado, enlace `edulock://play` de la portada de la clase nueva | resolve-perm 200, lista y clave 200, heartbeats; **audio real**: medidor Core Audio sobre el proceso, pico 0.131, 8/9 muestras con sonido; servidor `progress` registrado |
+
+Observaciones:
+- La prueba de reproducción fallaba primero con 403 porque el script emitía la licencia sin productor para un curso que pertenece al productor QA (`license_owner_mismatch`). Es el comportamiento correcto; con la licencia emitida como lo hace el panel, pasa completa.
+- Dos errores `[stream/manifest] No se pudo conectar con Bunny` (16:25 y 16:27 hora del VPS) en la primera petición al CDN de la biblioteca recién creada; el reintento inmediato respondió 200. Mismo patrón transitorio de conexión al borde de Bunny visto otros días; sin impacto en la prueba.
+- Las dos excepciones del script de prueba en corridas anteriores eran del propio script (una clase inexistente por la subida bloqueada, y un `const` repetido entre llamadas a `executeJavaScript`), no del panel; corregidas.
+- Limpieza: productor, curso, módulos, clase, recurso y operaciones QA borrados de la base; la biblioteca 756021 (1 clip de 2 MB) se conserva en Bunny, como todas las anteriores. Reproductor cerrado en la PC.
+
+**Lo que sigue pendiente y depende del propietario:** los cursos ya existentes siguen atados a bibliotecas de la cuenta antigua, que sigue deshabilitada: "duramxn 21 xxx" (biblioteca 755206, 1 video, 1 licencia activa de 20), "prueba" (749820, 1 video, 1 licencia activa) y "pepe tradinf" (755280, sin videos). Esos videos no se reproducen hasta que se reactive la cuenta antigua (verificar tarjeta o cargar saldo) o se vuelvan a subir en los cursos desde el panel nuevo. El servidor no crea bibliotecas nuevas para cursos que ya tienen una guardada, así que no hay riesgo de duplicados ni de huérfanos.
