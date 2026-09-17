@@ -151,3 +151,29 @@ Preparación (lado vendedor, datos sintéticos): productor QA → curso → mód
 - **Teléfono (Motorola moto e32, Android 11, por ADB):** instalado `Edulock-Player-1.1.3.apk` (`versionName=1.1.3`), estado local limpiado para simular un alumno nuevo. Recorrido hecho en la interfaz real con `uiautomator`: Regístrate → correo, contraseña y nombre → Crear cuenta → **pasa directo a "Activa tu licencia"** (servidor: `Auto-registered student`) → clave escrita → **Esperando comando** → enlace `edulock://play` → `PlayerActivity` con marca de agua del alumno → servidor `progress 100% pos=20s` → **audio real**: `dumpsys audio` muestra el `AudioTrack` del paquete `edulock.systemsoficial.com` en `state:started usage=USAGE_MEDIA` y `audio_flinger` con 1 pista activa durante la reproducción. Luego **Cerrar Sesión → Iniciar sesión → vuelve a pedir la licencia** (campo vacío, sin autocompletar) → misma clave → Esperando comando. Servidor: la licencia sigue `active` sin vencimiento, **1 sola activación**, dispositivo `active` intacto, sesión de contenido anterior cerrada con motivo `logout` y una nueva abierta.
 - Incidencias, ambas ajenas a la app: el script de preparación escribió el `producer_id` de la licencia QA con un salto de línea (activación respondía "productor suspendido" hasta corregir la fila); y un evento aleatorio de `monkey` sobre campos autocompletados por Google inició sesión con la cuenta guardada del teléfono (se cerró esa sesión; también se disparó sin querer un correo de recuperación de contraseña a la cuenta de administrador, que puede ignorarse).
 - Limpieza: alumnos, licencia, productor, curso y catálogo QA borrados de la base; cuentas Firebase QA eliminadas. La biblioteca 755315 de Bunny (1 clip de 2 MB) se deja para no borrar nada en Bunny; se elimina a mano desde su panel si se desea. El teléfono queda en la pantalla de inicio de sesión; la PC conserva la sesión de administrador.
+
+## 12. Barrido final y comparativa con InfoProtector (2026-09-17, cierre)
+
+Verificado en vivo contra producción (servidor, Bunny, reproductor PC 1.1.2 instalado y APK 1.1.3):
+
+| Criterio de la auditoría (v4) | Estado real hoy |
+|---|---|
+| Cadena de reproducción (launch → check-in → resolve → clave → lista → segmentos → progreso) | OK · `tools/vps-prueba-reproduccion.js` 13/13 y `tools/vps-recorrido-alumno.js` 50/50 (segunda corrida) |
+| Widevine/DRM básico de Bunny, bibliotecas solo Frankfurt sin réplicas | OK · 7 bibliotecas en `DE`, `ReplicationRegions=[]`, DRM activo en las 5 de cursos reales/QA recientes (las 2 QA del 12-sep sin DRM son restos de pruebas, sin cursos) |
+| Reproductor endurecido: fuses + integridad ASAR + firma VMP (Castlabs) | OK · paquete instalado: 8 fuses verificados, hash ASAR embebido verificado, 495 entradas |
+| Anti-captura de ventana (`WDA_EXCLUDEFROMCAPTURE`) | OK · afinidad 17 en la ventana viva; toda captura sale negra |
+| Firma Authenticode del instalador/portable | **NO** · `Get-AuthenticodeSignature` = `NotSigned` en Setup, Portable y exe instalado. La auditoría v4 lo daba por hecho: era incorrecto. Hace falta comprar un certificado de firma de código (OV/EV) y configurarlo en electron-builder; hasta entonces Windows SmartScreen puede mostrar "editor desconocido". |
+| APK firmada (release) | OK · firma V2 válida, pero el certificado es el heredado (`CN=Satana FX`). Cambiar de llave obligaría a desinstalar/reinstalar en todos los teléfonos (Android exige la misma llave para actualizar); decisión del propietario. |
+| JWT corto + refresh, HMAC anti-replay, gracia offline | OK · sin cambios; además ahora el token de contenido va atado a licencia/curso/sesión (`sid`) |
+| Límite de dispositivos | OK · por licencia (no global), transaccional, mismo equipo cuenta una vez |
+| Marcas de agua (visible + forense) y heartbeat | OK · visibles en PC y teléfono durante la prueba; `progress`/heartbeat en logs |
+| Registro automático sin aprobación; acceso solo por licencia | OK · probado en teléfono real y en servidor |
+| Cierre de sesión que vuelve a pedir licencia sin liberar cupo | OK · servidor + teléfono real |
+| Actualización forzada (`minVersion`/`latestVersion`) | OK · latest 1.1.2 (PC) publicado; min 1.0.0 (nadie bloqueado) |
+| Play Integrity (Android) | **Pendiente** · siguen sin definirse `PLAY_INTEGRITY_KEY`/`PLAY_INTEGRITY_PACKAGE` en el VPS (requiere credenciales de Google Cloud del propietario); la APK ya lo integra y el servidor solo registra |
+| Tokens en el access.log de nginx (pendiente 3 de la auditoría) | **Corregido** · nuevo `log_format edulock_sin_query` (sin cadena de consulta) aplicado al sitio; comprobado que `?token=` ya no se escribe |
+| Registro `cdp://` huérfano en la PC de desarrollo (pendiente 4) | **Corregido** · eliminado de HKCU |
+| Infraestructura | OK · servicio `online`, TLS Let's Encrypt válido hasta 29-nov-2026, respaldos del 16 y 17; disco pasó de 94 % a 82 % tras acotar el journal de systemd (150 MB) y limpiar caché de apt |
+| Bunny (créditos) | La API reporta saldo 0 y cupón 0, pero subidas y reproducción funcionan hoy; el crédito de prueba no aparece en `/billing`. Conviene vigilar el panel de Bunny. |
+
+Correcciones menores de este barrido: `POST /api/auth/login-email` ya no cae al "update mínimo" cuando el cliente no envía modelo de dispositivo (usa `COALESCE`, conserva los datos previos); la prueba de reproducción se alineó a la regla de una licencia por sesión.
