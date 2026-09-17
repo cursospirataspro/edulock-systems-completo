@@ -60,7 +60,9 @@ const step = (name, ok, detail = '') => { results.push({ name, ok, detail }); co
     step('validación de la activación guardada', validate.status === 200 && validate.json?.valid === true, 'HTTP ' + validate.status + ' ' + JSON.stringify(validate.json || {}).slice(0, 80));
     const relogin = await call('POST', '/api/auth/login-email', { body: { email, password, deviceId } });
     const ws = await call('POST', '/api/playback/resolve-perm', { body: { perm, deviceId }, token: relogin.json?.token, headers: sig() });
-    step('tras volver a entrar, el mismo dispositivo sigue autorizado (la licencia no queda libre)', ws.status === 200 && (await db.getLicenseById(licenseId)).status === 'active', 'HTTP ' + ws.status + ' licencia=' + (await db.getLicenseById(licenseId)).status);
+    // Regla vigente (una licencia por sesión): al volver a entrar se pide la licencia otra vez; la licencia y el cupo del equipo se conservan.
+    const reactivated = await call('POST', '/api/license/activate', { body: { licenseKey: key, deviceId }, token: relogin.json?.token, headers: sig() });
+    step('tras volver a entrar pide la licencia otra vez; la misma clave reactiva sin consumir cupo (la licencia no queda libre)', ws.status === 403 && ws.json?.code === 'LICENSE_REQUIRED' && reactivated.status === 200 && reactivated.json?.reused === true && (await db.getLicenseById(licenseId)).status === 'active', 'sin licencia HTTP ' + ws.status + ' · reactivación HTTP ' + reactivated.status + ' reused=' + reactivated.json?.reused + ' licencia=' + (await db.getLicenseById(licenseId)).status);
     // Each device logs in with its own session token (the JWT is bound to the device that signed in).
     const login2 = await call('POST', '/api/auth/login-email', { body: { email, password, deviceId: deviceId + '-2' } });
     const other = await call('POST', '/api/license/activate', { body: { licenseKey: key, deviceId: deviceId + '-2' }, token: login2.json?.token, headers: sig() });

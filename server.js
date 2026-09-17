@@ -1108,17 +1108,17 @@ app.post('/api/auth/login-email', authRateLimit, async (req, res) => {
             await db.pool.query(`
                 UPDATE students SET
                     device_id = $1,
-                    device_model = $2,
-                    device_serial = $3,
-                    os_version = $4,
-                    os_version_code = $5,
-                    cpu_cores = $6,
-                    total_ram = $7,
-                    android_id = $8,
-                    build_fingerprint = $9,
-                    brand = $10,
-                    manufacturer = $11,
-                    fcm_token = $12,
+                    device_model = COALESCE($2, device_model),
+                    device_serial = COALESCE($3, device_serial),
+                    os_version = COALESCE($4, os_version),
+                    os_version_code = COALESCE($5, os_version_code),
+                    cpu_cores = COALESCE($6, cpu_cores),
+                    total_ram = COALESCE($7, total_ram),
+                    android_id = COALESCE($8, android_id),
+                    build_fingerprint = COALESCE($9, build_fingerprint),
+                    brand = COALESCE($10, brand),
+                    manufacturer = COALESCE($11, manufacturer),
+                    fcm_token = COALESCE($12, fcm_token),
                     last_login = NOW()::text
                 WHERE id = $13
             `, [deviceId || null, deviceModel || null, deviceSerial || null, osVersion || null,
