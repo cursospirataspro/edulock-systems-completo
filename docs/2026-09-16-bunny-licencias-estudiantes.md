@@ -82,6 +82,7 @@ Solo lectura: clave completa, disponibilidad, curso, lote, creada, asignada, dis
 | `public/js/producer-workspace.js`, `public/css/producer-workspace.css` | Nueva UI |
 | `migrations/20260916_licencias_permanentes.*.sql` | Migración reversible |
 | `test/*` | Tests actualizados y nuevos; `test/frontend-fixture.cjs` con datos sintéticos para revisar el panel |
+| `tools/*.js` | Diagnóstico de biblioteca Bunny (solo lectura), reparación de colecciones de un curso y prueba de reproducción, todos para ejecutar en el VPS con `NODE_PATH=/opt/reproductor/node_modules` |
 
 ## 8. Pruebas
 
@@ -89,7 +90,8 @@ Comandos y entorno:
 - Local (Windows, Node 24): `node --test $(ls test/*.test.js | grep -v postgres)` → **395 pasan, 4 fallan de forma preexistente y ajena** (motor PDF sin módulos en `pdf-runtime/` local: 3; verificación de correo en `account-auth`: 1; ambos módulos sin cambios).
 - VPS, base `edulock_qa_20260912` (desechable, Postgres real): `node --test test/*postgres*.test.js test/postgres-integration.test.js …` → **128 pasan, 0 fallan** tras las actualizaciones.
 - Prueba real con Bunny (API desplegada, productor sintético, clip de 3 s con audio generado con ffmpeg): curso → biblioteca 755267 (DE, sin réplicas, DRM básico); módulo → colección `6b014823…`; subida → `processing` → **`ready` en ~10 s**; el video en Bunny reporta `collectionId` = colección del módulo; catálogo `ready` con clave HLS; portada pública `200`; lista HLS accesible desde el pull zone con Referer (403 sin Referer, por `BlockNoneReferrer`). Las filas sintéticas se eliminaron después; la biblioteca **755267** permanece en Bunny (1 video de 43 KB) y se borra manualmente desde el panel de Bunny si se desea.
-- **No verificado:** reproducción con audio y avance desde el reproductor de escritorio con una licencia de prueba (requiere una cuenta de alumno real). Todo lo anterior a ese paso está confirmado.
+- Reproducción de extremo a extremo contra el servidor desplegado (`tools/vps-prueba-reproduccion.js`, alumno y licencia sintéticos creados y borrados por el propio script): login del alumno, activación (`expiresAt: null`), enlace permanente desde la portada pública, `resolve-perm` con marca de agua, lista HLS maestra y de calidad vía proxy, clave de descifrado, primer segmento (517 KB), avance de reproducción registrado, validación de la activación, re-login sin liberar la licencia, y límite de dispositivos (segundo equipo entra, tercero `DEVICE_LIMIT_EXCEEDED`) → **13/13 pasos correctos**. El video de demostración del curso "prueba" no trae pista de audio en su origen; el clip QA con tono de audio subido por la nueva ruta quedó procesado en Bunny con `CODECS="avc1.64000d,mp4a.40.2"` (audio presente).
+- Lo único no ejecutado con un humano es escuchar el audio en el reproductor de escritorio; el flujo que el reproductor sigue (activación → resolve-perm → lista → clave → segmentos → progreso) es exactamente el que se validó.
 - Revisión de interfaz en el fixture (`node test/frontend-fixture.cjs` → http://127.0.0.1:49310/productor): pestañas y contadores, claves completas, diálogo Administrar sin campos retirados, Estudiantes y ficha, y anchura móvil sin desplazamiento horizontal.
 
 ## 9. Despliegue
