@@ -60,7 +60,7 @@ const pdfRenderer = createPdfRenderer();
 const { createActivationValidator } = require('./lib/activation-validator');
 const {verifyResourceSignature,belongsToVideo,rewriteBunnyManifest,segmentIV}=require('./lib/hls-manifest');
 const {fetchBunnyText}=require('./lib/bunny-media-fetch');
-const { createStreamService } = require('./lib/stream-service');
+const { createStreamService, STAGES: STREAM_STAGES } = require('./lib/stream-service');
 const streamService = createStreamService({ db, getAccountKey: getBunnyAccountKey, createKey: generateKey, logger: console });
 const https = require('https');
 const http  = require('http');
@@ -1283,9 +1283,6 @@ app.post('/api/session/activate-license', requireAuth, async (req, res) => {
         const license = await db.getLicenseByKeyHash(licenseKeyHash);
         if (!license) return res.status(401).json({ error: 'Licencia inválida o no encontrada' });
         if (license.status !== 'active') return res.status(403).json({ error: 'Licencia inactiva o revocada' });
-        if (license.expires_at && new Date(license.expires_at) < new Date()) {
-            return res.status(403).json({ error: 'Licencia expirada' });
-        }
 
         const studentId = req.user.sub;
 
@@ -1316,7 +1313,7 @@ app.post('/api/session/activate-license', requireAuth, async (req, res) => {
                 deviceId: effectiveDeviceId,
                 activationTokenHash,
                 maxAllowed: license.max_devices || 2,
-                expiresAt: license.expires_at || null,
+                expiresAt: null, // derecho permanente al curso; los plazos técnicos viven en sesiones/tokens
             });
 
             if (!act.ok) {
@@ -5279,7 +5276,7 @@ app.get('/api/producer/me', requireProducer, async (req, res) => {
     const p = req.producer;
     const used = await db.countProducerLicenses(p.id).catch(() => 0);
     res.json({
-        email: p.email, name: p.name || '',
+        id: p.id, email: p.email, name: p.name || '',
         quotas: { maxLicenses: p.max_licenses, maxDevices: p.max_devices, maxStudents: p.max_students },
         usage:  { licensesUsed: used },
     });
@@ -5346,13 +5343,17 @@ app.post('/api/producer/license/generate-bulk', requireProducer, async (req, res
     const qty = typeof quantity === 'number' || (typeof quantity === 'string' && /^\d+$/.test(quantity)) ? Number(quantity) : NaN;
     if (!Number.isInteger(qty) || qty < 1 || qty > 5000) return res.status(400).json({ error: 'Cantidad inválida (1-5000)' });
 
-    // Dispositivos por licencia: tope fijado por el owner.
-    let maxDevices, expiresAt;
-    try {
-        maxDevices = db.normalizeProducerQuotas({ maxDevices: req.body.maxDevices === undefined ? p.max_devices : req.body.maxDevices }).maxDevices;
-        expiresAt = db.normalizeProducerLicenseExpiry(req.body.expiresAt);
-    } catch (e) { return streamError(res, e); }
-    if (maxDevices > p.max_devices) return res.status(403).json({ error: 'Dispositivos por licencia fuera del cupo permitido.', code: 'DEVICE_QUOTA_EXCEEDED' });
+    // Las licencias de curso son permanentes: ninguna petición puede introducir caducidad.
+    if ((req.body.expiresAt != null && req.body.expiresAt !== '') || (req.body.durationDays != null && req.body.durationDays !== '')) {
+        return res.status(400).json({ error: 'Las licencias de curso no tienen vencimiento.', code: 'LICENSE_EXPIRY_UNSUPPORTED' });
+    }
+    // Dispositivos por licencia: solo el administrador define el tope; el productor no lo modifica.
+    let maxDevices;
+    try { maxDevices = db.normalizeProducerQuotas({ maxDevices: p.max_devices }).maxDevices; }
+    catch (e) { return streamError(res, e); }
+    if (req.body.maxDevices !== undefined && Number(req.body.maxDevices) !== maxDevices) {
+        return res.status(403).json({ error: 'Solo el administrador modifica el límite de dispositivos.', code: 'DEVICE_LIMIT_ADMIN_ONLY' });
+    }
 
     // Generar claves y guardarlas de forma ATÓMICA (cuota sin condición de carrera).
     const lotId = uuidv4();
@@ -5366,7 +5367,7 @@ app.post('/api/producer/license/generate-bulk', requireProducer, async (req, res
     try {
         r = await db.createProducerLotAtomic({
             producerId: p.id, maxLicenses: p.max_licenses,
-            lot: { id: lotId, courseId, name: req.body.name, notes, createdBy: p.email, maxDevices, expiresAt, durationDays: req.body.durationDays }, licenses,
+            lot: { id: lotId, courseId, name: req.body.name, notes, createdBy: p.email, maxDevices }, licenses,
         });
     } catch (e) { return streamError(res, e); }
     if (!r.ok) {
@@ -5375,7 +5376,7 @@ app.post('/api/producer/license/generate-bulk', requireProducer, async (req, res
             code: 'QUOTA_EXCEEDED',
         });
     }
-    res.json({ lotId, quantity: qty, maxDevices, expiresAt, keys, note: 'Puedes descargar estos seriales posteriormente desde Mis lotes.' });
+    res.json({ lotId, quantity: qty, maxDevices, keys, note: 'Las claves quedan guardadas y puedes copiarlas desde Licencias y lotes.' });
 });
 
 /** GET /api/producer/licenses — SUS lotes/licencias. */
@@ -5396,9 +5397,9 @@ app.get('/api/producer/licenses/items', requireProducer, async (req, res) => {
         const result = await db.getProducerLicenseItems({ producerId: req.producer.id, lotId, limit: pageSize, offset });
         res.json({ page, pageSize, total: result.total, licenses: result.rows.map(l => ({
             id: l.id, lotId: l.lot_id, courseId: l.course_id, courseName: l.course_name || '',
-            status: l.status, effectiveStatus: l.status !== 'revoked' && l.expires_at && Date.parse(l.expires_at) <= Date.now() ? 'expired' : l.status,
+            status: l.status, effectiveStatus: l.status,
             maxDevices: l.max_devices, createdAt: l.created_at, assignedAt: l.assigned_at,
-            expiresAt: l.expires_at, revokedAt: l.revoked_at, customerEmail: l.customer_email || null,
+            revokedAt: l.revoked_at, customerEmail: l.customer_email || null,
             activationCount: Number(l.activation_count) || 0, activeActivations: Number(l.active_activations) || 0
         })) });
     } catch (e) { return streamError(res, e); }
@@ -5422,7 +5423,11 @@ app.get('/api/producer/activations', requireProducer, async (req, res) => {
 });
 
 app.post('/api/license/generate', requireAdminOrProducer, async (req, res) => {
-    const { studentId, courseId, maxDevices = 2, expiresAt } = req.body || {};
+    const { studentId, courseId } = req.body || {};
+    if (req.body?.expiresAt != null && req.body.expiresAt !== '' || req.body?.durationDays != null && req.body.durationDays !== '') {
+        return res.status(400).json({ error: 'Las licencias de curso no tienen vencimiento.', code: 'LICENSE_EXPIRY_UNSUPPORTED' });
+    }
+    let maxDevices = parseInt(req.body?.maxDevices, 10) || 2;
 
     // studentId is now optional — unbound licenses can be generated without a student
     if (studentId) {
@@ -5437,6 +5442,15 @@ app.post('/api/license/generate', requireAdminOrProducer, async (req, res) => {
         if (!producerCourses.some(c => c.id === courseId)) {
             return res.status(403).json({ error: 'No tienes acceso a este curso' });
         }
+    }
+    if (producerId) {
+        // Solo el administrador define el límite de dispositivos de un productor.
+        const producer = await db.getProducerById(producerId).catch(() => null);
+        if (!producer) return res.status(403).json({ error: 'Productor no disponible.' });
+        if (req.body?.maxDevices !== undefined && Number(req.body.maxDevices) !== Number(producer.max_devices)) {
+            return res.status(403).json({ error: 'Solo el administrador modifica el límite de dispositivos.', code: 'DEVICE_LIMIT_ADMIN_ONLY' });
+        }
+        maxDevices = Number(producer.max_devices) || 1;
     }
 
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -5454,12 +5468,12 @@ app.post('/api/license/generate', requireAdminOrProducer, async (req, res) => {
         licenseKeyHash,
         studentId: studentId || null,
         courseId: courseId || null,
-        maxDevices: parseInt(maxDevices, 10) || 2,
-        expiresAt: expiresAt || null,
+        maxDevices,
+        expiresAt: null,
         producerId,
     });
 
-    res.json({ licenseKey, licenseId, studentId: studentId || null, courseId: courseId || null, maxDevices, expiresAt: expiresAt || null });
+    res.json({ licenseKey, licenseId, studentId: studentId || null, courseId: courseId || null, maxDevices });
 });
 
 // ================================================================
@@ -5484,7 +5498,10 @@ function genLicenseKey() {
  * Devuelve los seriales en claro UNA sola vez (se guardan hasheados) → exporta a CSV.
  */
 app.post('/api/license/generate-bulk', requireAdmin, async (req, res) => {
-    const { courseId = null, quantity, maxDevices = 2, expiresAt = null, notes = null } = req.body || {};
+    const { courseId = null, quantity, maxDevices = 2, notes = null } = req.body || {};
+    if (req.body?.expiresAt != null && req.body.expiresAt !== '' || req.body?.durationDays != null && req.body.durationDays !== '') {
+        return res.status(400).json({ error: 'Las licencias de curso no tienen vencimiento.', code: 'LICENSE_EXPIRY_UNSUPPORTED' });
+    }
     if (!courseId) return res.status(400).json({ error: 'Selecciona el curso de estas licencias.' });
     const licenseCourse = await db.getCourseById(courseId);
     if (!licenseCourse) return res.status(404).json({ error: 'Curso no encontrado.' });
@@ -5502,7 +5519,7 @@ app.post('/api/license/generate-bulk', requireAdmin, async (req, res) => {
         const licenseId = uuidv4();
         await db.createFreeLicense({
             id: licenseId, licenseKeyHash: hash, courseId, lotId,
-            maxDevices: parseInt(maxDevices, 10) || 2, expiresAt,
+            maxDevices: parseInt(maxDevices, 10) || 2, expiresAt: null,
         });
         keys.push(key);
     }
@@ -5523,7 +5540,7 @@ app.get('/api/license/lots/:id/licenses', requireAdmin, async (req, res) => {
         res.json({ licenses: rows.map(r => ({
             id: r.id, status: r.status, studentId: r.student_id, customerEmail: r.customer_email,
             orderId: r.order_id, maxDevices: r.max_devices, createdAt: r.created_at,
-            assignedAt: r.assigned_at, expiresAt: r.expires_at,
+            assignedAt: r.assigned_at,
         })) });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -5603,7 +5620,7 @@ app.post('/api/integrations/claim-license', requireIntegrationKey, integrationRa
         if (!student) return res.status(409).json({ error: 'El comprador debe registrarse antes de asignar su licencia.', code: 'STUDENT_REQUIRED' });
         const lic = await db.claimFreeLicense({ courseId, customerEmail, orderId, studentId: student.id, producerId: req.integration?.producer_id || null });
         if (!lic) return res.status(409).json({ error: 'No quedan seriales libres para ese curso', code: 'NO_FREE_LICENSES' });
-        if (lic.status === 'expired' || (['active', 'free'].includes(lic.status) && lic.expires_at && (!Number.isFinite(Date.parse(lic.expires_at)) || Date.parse(lic.expires_at) <= Date.now()))) {
+        if (lic.status === 'expired') {
             return res.status(409).json({ error: 'La licencia de este pedido está vencida. Revisa su vigencia desde el panel.', code: 'LICENSE_EXPIRED', status: 'expired', licenseId: lic.id });
         }
         if (lic.status !== 'active') return res.status(409).json({ error: 'La licencia del pedido no está activa.', code: 'LICENSE_NOT_ACTIVE' });
@@ -5727,7 +5744,11 @@ app.delete('/api/edu/:contentId', requireAdmin, async (req, res) => {
  */
 function streamError(res,e) {
     const status=e.statusCode || e.status || 503;
-    res.status(status).json({error:e.message || 'No se pudo completar la operación',code:e.code,retryable:e.retryable===true});
+    const body={error:e.message || 'No se pudo completar la operación',code:e.code,retryable:e.retryable===true};
+    if(e.stage){body.stage=e.stage;body.stageLabel=(typeof STREAM_STAGES==='object'&&STREAM_STAGES[e.stage])||e.stage;}
+    // Solo rechazos de validación (4xx) del proveedor: ErrorKey/Message cortos, nunca cuerpos ni claves.
+    if(e.provider&&Number(e.httpStatus)>=400&&Number(e.httpStatus)<500)body.provider={status:e.httpStatus,errorKey:e.provider.errorKey||null,message:e.provider.message||null};
+    res.status(status).json(body);
 }
 async function createStreamCourse(body={},actor) {
     if(typeof body.name!=='string'||!body.name.trim()) throw Object.assign(new Error('Nombre del curso requerido'),{statusCode:400});
@@ -5783,6 +5804,15 @@ app.get('/api/producer/courses/:courseId/modules',requireProducer,async(req,res)
 app.post('/api/producer/courses/:courseId/modules',requireProducer,async(req,res)=>{
     try {const mod=await createStreamModule(req.params.courseId,req.body,streamActor(req));res.status(201).json({module:mod,warning:mod.bunnyWarning});}catch(e){streamError(res,e);}
 });
+async function repairStreamModuleCollection(req,res) {
+    try {
+        await ownedStreamCourse(req.params.courseId,streamActor(req));
+        const collectionId=await streamService.ensureModuleCollection({courseId:req.params.courseId,moduleId:req.params.moduleId,actor:streamActor(req)});
+        res.json({ok:true,moduleId:req.params.moduleId,collectionId});
+    } catch(e) {streamError(res,e);}
+}
+app.post('/api/producer/courses/:courseId/modules/:moduleId/collection',requireProducer,repairStreamModuleCollection);
+app.post('/api/stream/courses/:courseId/modules/:moduleId/collection',requireAdmin,repairStreamModuleCollection);
 app.post('/api/producer/stream/upload',requireProducer,upload.single('video'),receiveStreamUpload);
 app.get('/api/producer/stream/status/:videoId',requireProducer,streamStatus);
 app.get('/api/producer/stream/operations/:operationId',requireProducer,streamOperation);
@@ -6044,8 +6074,6 @@ app.post('/api/admin/licenses/:licenseId/regenerate', requireAdmin, async (req, 
             studentId:   result.studentId,
             courseId:    result.courseId,
             maxDevices:  result.maxDevices,
-            expiresAt:   result.expiresAt,
-            durationDays: result.durationDays,
             firstActivatedAt: result.firstActivatedAt,
             revokedActivations: result.revokedActivations,
             blockedDevices:     result.blockedDevices,

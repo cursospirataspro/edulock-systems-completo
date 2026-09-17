@@ -8,7 +8,7 @@ test('PDF-only module grants access with its current course license and activate
  const f=fixture();const result=await f.policy.authorizeResource(f.claims,moduleResource(),'device-a');assert.equal(result.license.id,'license-a');
 });
 for(const [name,patch] of [
- ['revoked license',{status:'revoked'}],['expired license',{expires_at:'2020-01-01T00:00:00Z'}],
+ ['revoked license',{status:'revoked'}],
  ['revoked activation',{activation_status:'revoked'}],['expired activation',{activation_expires_at:'2020-01-01T00:00:00Z'}],
  ['blocked device',{device_status:'blocked'}],['suspended producer',{producer_active:0}],['foreign producer',{producer_id:'producer-b'}]
 ]) test('module PDF denies '+name,async()=>{const f=fixture();Object.assign(f.state.licenses[0],patch);await assert.rejects(f.policy.authorizeResource(f.claims,moduleResource(),'device-a'),{code:'LICENSE_REQUIRED'});});
@@ -65,11 +65,16 @@ for(const [name,mutate] of [
  ['pending account',f=>f.state.student.approval_status='pending'],
 ]) test(name+' cannot reuse a media token',async()=>{const f=fixture();mutate(f);await assert.rejects(f.policy.authorizeVideo({...f.claims,videoId:'video-a'},'video-a','device-a'),{code:'ACCOUNT_REVOKED'});});
 for(const [name,patch] of [
- ['revoked license',{status:'revoked'}], ['expired license',{expires_at:'2020-01-01T00:00:00Z'}],
+ ['revoked license',{status:'revoked'}],
  ['revoked activation',{activation_status:'revoked'}],['expired activation',{activation_expires_at:'2020-01-01T00:00:00Z'}],
  ['blocked device',{device_status:'blocked'}], ['suspended producer',{producer_active:0}],
  ['another producer',{producer_id:'producer-b'}],
 ]) test(name+' cannot authorize playback',async()=>{const f=fixture();Object.assign(f.state.licenses[0],patch);await assert.rejects(f.policy.authorizeVideo(f.claims,'video-a','device-a'),{code:'LICENSE_REQUIRED'});});
+test('a legacy stored license date never blocks playback or documents: the course right is permanent',async()=>{
+ const f=fixture();Object.assign(f.state.licenses[0],{expires_at:'2020-01-01T00:00:00Z'});
+ assert.equal((await f.policy.authorizeVideo(f.claims,'video-a','device-a')).license.id,'license-a');
+ assert.equal((await f.policy.authorizeResource(f.claims,moduleResource(),'device-a')).license.id,'license-a');
+});
 test('device mismatch cannot reuse an otherwise valid license',async()=>{const f=fixture();await assert.rejects(f.policy.authorizeVideo(f.claims,'video-a','device-b'),{code:'DEVICE_MISMATCH'});});
 test('producer JWT and public guest cannot enter student APIs',async()=>{const f=fixture();for(const extra of [{role:'producer'},{guest:true}])await assert.rejects(f.policy.hydrate({...f.claims,...extra}),{code:'STUDENT_REQUIRED'});});
 test('database failure is propagated instead of granting permission',async()=>{const policy=createAccessPolicy({db:{findStudentById:async()=>{throw new Error('offline')}}});await assert.rejects(policy.hydrate({sub:'a'}),/offline/);});

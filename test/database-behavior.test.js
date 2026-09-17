@@ -133,11 +133,15 @@ test('a blocked device cannot consume or bind a free serial', async () => {
     assert.equal(calls.at(-1).sql, 'ROLLBACK');
 });
 
-test('active license owner and expiry are checked again inside the transaction', async () => {
-    for (const license of [{ status: 'active', student_id: 'other' }, { expires_at: '2020-01-01T00:00:00.000Z' }, { expires_at: 'invalid-date' }]) {
-        const { db, calls } = activationDb({ license });
-        assert.equal((await db.claimAndActivateLicenseAtomic(activationInput)).ok, false);
-        assert.equal(calls.some(c => c.sql.startsWith('INSERT INTO activations')), false);
+test('active license owner is checked again inside the transaction, and legacy expiry values no longer block a permanent license', async () => {
+    const { db, calls } = activationDb({ license: { status: 'active', student_id: 'other' } });
+    assert.equal((await db.claimAndActivateLicenseAtomic(activationInput)).ok, false);
+    assert.equal(calls.some(c => c.sql.startsWith('INSERT INTO activations')), false);
+    for (const license of [{ expires_at: '2020-01-01T00:00:00.000Z' }, { expires_at: 'invalid-date' }, { duration_days: 3 }]) {
+        const permanent = activationDb({ license });
+        const result = await permanent.db.claimAndActivateLicenseAtomic(activationInput);
+        assert.equal(result.ok, true); assert.equal(result.expiresAt, null, 'the activation token carries no course validity');
+        assert.equal(permanent.calls.some(c => c.sql.startsWith('UPDATE licenses SET first_activated_at=$1,expires_at')), false);
     }
 });
 
@@ -211,29 +215,27 @@ test('malformed stored producer quota cannot become unlimited when creating a lo
     }
 });
 
-test('producer lot persists the same future expiry on every serial and accepts no expiry', async () => {
-    const expiresAt = new Date(Date.now() + 86400000).toISOString();
-    for (const expiry of [expiresAt, null]) {
-        const { db, calls } = loadDb(sql => {
-            if (sql.includes('FROM producers')) return [{ id: 'producer', active: 1, max_licenses: 0, max_devices: 1 }];
-            if (sql.includes('FROM courses')) return [{ producer_id: 'producer' }];
-            if (sql.includes('COUNT(*)')) return [{ n: 0 }];
-        });
-        assert.equal((await db.createProducerLotAtomic({ producerId: 'producer',
-            lot: { id: 'lot', courseId: 'course', maxDevices: 1, expiresAt: expiry },
-            licenses: [{ id: 'first', hash: 'one' }, { id: 'second', hash: 'two' }] })).ok, true);
-        const inserts = calls.filter(c => c.sql.startsWith('INSERT INTO licenses'));
-        assert.equal(inserts.length, 2);
-        assert.ok(inserts.every(c => c.params.at(-1) === expiry));
-    }
+test('producer lot inserts every serial as a permanent license (expires_at NULL literal, no duration column update)', async () => {
+    const { db, calls } = loadDb(sql => {
+        if (sql.includes('FROM producers')) return [{ id: 'producer', active: 1, max_licenses: 0, max_devices: 1 }];
+        if (sql.includes('FROM courses')) return [{ producer_id: 'producer' }];
+        if (sql.includes('COUNT(*)')) return [{ n: 0 }];
+    });
+    assert.equal((await db.createProducerLotAtomic({ producerId: 'producer',
+        lot: { id: 'lot', courseId: 'course', maxDevices: 1 },
+        licenses: [{ id: 'first', hash: 'one' }, { id: 'second', hash: 'two' }] })).ok, true);
+    const inserts = calls.filter(c => c.sql.startsWith('INSERT INTO licenses'));
+    assert.equal(inserts.length, 2);
+    assert.ok(inserts.every(c => /expires_at\)\s+VALUES \([^)]*NULL\)/.test(c.sql) && c.params.length === 7));
+    assert.equal(calls.some(c => c.sql.includes('duration_days')), false);
 });
 
-test('invalid, ambiguous or past producer expiry cannot create a batch', async () => {
+test('any expiry or duration on a producer batch is refused before touching the database', async () => {
     const { db, calls } = loadDb(() => []);
-    for (const value of ['invalid', '2020-01-01T00:00:00Z', '2099-02-30T00:00:00Z', '2099-01-01', '2099-01-01T00:00:00', true, 123]) {
+    for (const lot of [{ expiresAt: new Date(Date.now() + 86400000).toISOString() }, { expiresAt: 'invalid' }, { expiresAt: '2020-01-01T00:00:00Z' }, { durationDays: 30 }, { durationDays: '5' }]) {
         await assert.rejects(db.createProducerLotAtomic({ producerId: 'producer',
-            lot: { courseId: 'course', maxDevices: 1, expiresAt: value }, licenses: [{ id: 'new', hash: 'synthetic' }] }),
-            { code: 'INVALID_LICENSE_EXPIRY', statusCode: 400 });
+            lot: { courseId: 'course', maxDevices: 1, ...lot }, licenses: [{ id: 'new', hash: 'synthetic' }] }),
+            { code: 'LICENSE_EXPIRY_UNSUPPORTED', statusCode: 400 });
     }
     assert.equal(calls.length, 0);
 });

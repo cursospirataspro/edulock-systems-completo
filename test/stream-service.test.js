@@ -33,6 +33,7 @@ function fakeDb() {
         async getStreamResource(key) { return state.resources.get(key) || null; },
         async setStreamResource(key, fields) { const old = state.resources.get(key); state.resources.set(key, {
             remote_name: old?.remote_name || fields.remoteName, remote_id: fields.remoteId || old?.remote_id || null, state: fields.state }); },
+        async clearStreamResource(key) { state.resources.delete(key); },
         async reserveStreamOperation(f) {
             if (!state.operations.has(f.id)) state.operations.set(f.id, { id: f.id, actor_key: f.actorKey,
                 course_id: f.courseId, module_id: f.moduleId, title: f.title, file_size: f.fileSize, file_sha256: f.fileSha256,
@@ -42,7 +43,7 @@ function fakeDb() {
         async getStreamOperation(id) { return state.operations.get(id) || null; },
         async getStreamOperationByVideo(id) { return [...state.operations.values()].find(op => op.video_id === id) || null; },
         async updateStreamOperation(id, fields) {
-            const map = { videoId: 'video_id', state: 'state', uploadPercent: 'upload_percent', providerStatus: 'provider_status', encodeProgress: 'encode_progress', errorCode: 'error_code' };
+            const map = { videoId: 'video_id', state: 'state', uploadPercent: 'upload_percent', providerStatus: 'provider_status', encodeProgress: 'encode_progress', errorCode: 'error_code', errorDetail: 'error_detail' };
             const op = state.operations.get(id); for (const [key, value] of Object.entries(fields)) op[map[key]] = value;
             return op;
         },
@@ -56,7 +57,10 @@ function fakeDb() {
 
 function fakeTransport() {
     const state = { calls: [], libraries: [], collections: [], videos: [], puts: 0, status: 2, progress: 30,
-        region: 'DE', replicas: [], failCreate: false, createDespiteFailure: false, failPut: false, cdnSecurity: true };
+        region: 'DE', replicas: [], failCreate: false, createDespiteFailure: false, failPut: false, cdnSecurity: true, drm: false,
+        rejectUpdate: null, rejectCollection: null, lostCollections: false };
+    const rejection = (status, errorKey, message) => Object.assign(new Error(`Bunny respondió HTTP ${status}.`),
+        { code: 'BUNNY_HTTP_ERROR', statusCode: 502, retryable: false, httpStatus: status, provider: { status, errorKey, field: null, message } });
     const transport = {
         state,
         async json(method, host, apiPath, key, body) {
@@ -70,16 +74,32 @@ function fakeTransport() {
                 return value;
             }
             if (url.pathname === '/videolibrary/101') {
-                if (method === 'POST') state.cdnSecurity = body.EnableTokenAuthentication === true;
-                return state.libraries[0];
+                if (method === 'POST') {
+                    if (state.rejectUpdate) throw rejection(400, state.rejectUpdate, 'Synthetic validation rejection');
+                    if (Object.hasOwn(body, 'EnableTokenAuthentication')) state.cdnSecurity = body.EnableTokenAuthentication === true;
+                    if (Object.hasOwn(body, 'EnableDRM')) state.drm = body.EnableDRM === true;
+                }
+                return { ...state.libraries[0], EnableDRM: state.drm };
             }
             if (url.pathname === '/storagezone/103') return { Region: state.region, ReplicationRegions: state.replicas };
             if (url.pathname === '/pullzone/102') return { Hostnames: [{ Value: 'synthetic.b-cdn.net' }], ZoneSecurityEnabled: state.cdnSecurity, ZoneSecurityKey: 'synthetic-token-key' };
             if (url.pathname === '/library/101/collections' && method === 'GET') return { items: state.collections, totalItems: state.collections.length };
-            if (url.pathname === '/library/101/collections' && method === 'POST') { const value = { guid: COLLECTION, name: body.name }; state.collections.push(value); return value; }
+            if (url.pathname === '/library/101/collections' && method === 'POST') {
+                if (state.rejectCollection) throw rejection(400, state.rejectCollection, 'Synthetic collection rejection');
+                const value = { guid: COLLECTION, name: body.name }; state.collections.push(value); return value;
+            }
+            const collectionLookup = url.pathname.match(/^\/library\/101\/collections\/(.+)$/);
+            if (collectionLookup && method === 'GET') {
+                const found = !state.lostCollections && state.collections.find(c => c.guid === collectionLookup[1]);
+                if (!found) throw rejection(404, 'collection.notFound', 'Collection not found');
+                return found;
+            }
             if (url.pathname === '/library/101/videos' && method === 'GET') return { items: state.videos, totalItems: state.videos.length };
-            if (url.pathname === '/library/101/videos' && method === 'POST') { const value = { guid: VIDEO, title: body.title }; state.videos.push(value); return value; }
-            if (url.pathname === `/library/101/videos/${VIDEO}`) return { guid: VIDEO, status: state.status, encodeProgress: state.progress };
+            if (url.pathname === '/library/101/videos' && method === 'POST') { const value = { guid: VIDEO, title: body.title, collectionId: body.collectionId || '' }; state.videos.push(value); return value; }
+            if (url.pathname === `/library/101/videos/${VIDEO}`) {
+                if (method === 'POST') { const video = state.videos.find(v => v.guid === VIDEO); if (video) video.collectionId = body.collectionId; return { success: true }; }
+                return { guid: VIDEO, status: state.status, encodeProgress: state.progress, collectionId: state.videos.find(v => v.guid === VIDEO)?.collectionId || '' };
+            }
             throw new Error(`Unexpected fake route: ${method} ${url.pathname}`);
         },
         async putFile(args) {
@@ -146,7 +166,7 @@ test('non-Frankfurt provisioning is rejected without a second library on retry',
     assert.equal(transport.state.libraries.length, 1);
 });
 
-test('a newly managed library enables MediaCage Basic DRM + CDN token protection, never paid DRM nor key reset', async () => {
+test('a newly managed library enables MediaCage Basic DRM and never requests CDN token auth alongside it', async () => {
     const { service, transport, db } = setup(); transport.state.cdnSecurity = false;
     const library = await service.ensureCourseLibrary({ courseId: COURSE, actor: ADMIN });
     const updates = transport.state.calls.filter(call => call.method === 'POST' && call.path === '/videolibrary/101');
@@ -154,16 +174,85 @@ test('a newly managed library enables MediaCage Basic DRM + CDN token protection
     const drm = updates.find(u => u.body && u.body.EnableDRM === true);
     assert.ok(drm, 'debe activar MediaCage Basic (EnableDRM:true)');
     assert.equal(drm.body.PlayerTokenAuthenticationEnabled, true);
-    // Protección de token del CDN (sin resetear su ApiKey).
-    assert.ok(updates.some(u => u.body && u.body.EnableTokenAuthentication === true), 'debe activar EnableTokenAuthentication');
+    // Bunny rechaza EnableTokenAuthentication junto con DRM básico (HTTP 400
+    // VideoLibrary.TokenAuthAndDrmConflict): con DRM activo nunca se solicita.
+    assert.equal(updates.some(u => u.body && Object.hasOwn(u.body, 'EnableTokenAuthentication')), false, 'con DRM nunca se toca el token del CDN');
     // INVARIANTES DE SEGURIDAD: nunca DRM de pago, ni reset de clave, ni replicación.
     for (const u of updates) {
         assert.equal('GoogleWidevineDrm' in u.body, false, 'nunca DRM de pago Widevine');
         assert.equal('AppleFairPlayDrm' in u.body, false, 'nunca DRM de pago FairPlay');
         assert.equal('ApiKey' in u.body, false, 'nunca resetear la clave');
+        assert.equal('ResetToken' in u.body, false, 'nunca resetear el token');
         assert.equal('ReplicationRegions' in u.body, false, 'nunca cambiar replicación aquí');
     }
+    assert.equal(library.drm, true);
     assert.equal(library.tokenKey, 'synthetic-token-key'); assert.equal(db.state.library.tokenKey, 'synthetic-token-key');
+    // Idempotent: a second verification does not repeat the DRM update.
+    await service.ensureCourseLibrary({ courseId: COURSE, actor: ADMIN });
+    assert.equal(transport.state.calls.filter(call => call.method === 'POST' && call.path === '/videolibrary/101').length, 1);
+});
+
+test('a historical DRM library whose pull zone has no token is adopted without touching its security', async () => {
+    const { service, transport, db } = setup();
+    transport.state.cdnSecurity = false; transport.state.drm = true;
+    transport.state.libraries.push({ Id: 101, ApiKey: 'synthetic', PullZoneId: 102, StorageZoneId: 103 });
+    db.state.library = { libraryId: '101', libraryKey: 'synthetic', pullZone: null };
+    const library = await service.ensureCourseLibrary({ courseId: COURSE, actor: ADMIN });
+    assert.equal(library.pullZone, 'synthetic.b-cdn.net'); assert.equal(library.drm, true);
+    assert.equal(transport.state.calls.some(call => call.method === 'POST'), false);
+});
+
+test('a provider validation rejection during protection is reported with stage and error key, and leaves no uncertain state', async t => {
+    const { service, transport, db } = setup(); const filePath = await fixture(t);
+    transport.state.rejectUpdate = 'VideoLibrary.TokenAuthAndDrmConflict';
+    const input = { filePath, title: 'Clase', courseId: COURSE, moduleId: MODULE, actor: ADMIN, operationId: crypto.randomUUID() };
+    await assert.rejects(service.uploadVideo(input), error => {
+        assert.equal(error.code, 'BUNNY_HTTP_ERROR'); assert.equal(error.stage, 'library-protect'); assert.equal(error.httpStatus, 400);
+        assert.equal(error.provider.errorKey, 'VideoLibrary.TokenAuthAndDrmConflict'); return true;
+    });
+    const op = db.state.operations.get(input.operationId);
+    assert.equal(op.state, 'reserved'); assert.equal(op.error_code, 'BUNNY_HTTP_ERROR');
+    const detail = JSON.parse(op.error_detail);
+    assert.equal(detail.stage, 'library-protect'); assert.equal(detail.errorKey, 'VideoLibrary.TokenAuthAndDrmConflict');
+    assert.equal(JSON.stringify(detail).includes('synthetic-library-key'), false);
+    const status = await service.getOperationStatus({ operationId: input.operationId, actor: ADMIN });
+    assert.equal(status.failed, true); assert.equal(status.retryable, true); assert.equal(status.stage, 'library-protect');
+    assert.match(status.error, /Protección de la biblioteca/); assert.ok(status.action);
+    // Retry after the cause is fixed: the library is still the same remote resource.
+    transport.state.rejectUpdate = null;
+    const result = await service.uploadVideo(input);
+    assert.equal(result.ready, false); assert.equal(transport.state.libraries.length, 1); assert.equal(transport.state.puts, 1);
+    assert.equal(db.state.operations.get(input.operationId).error_detail, null);
+});
+
+test('a confirmed 4xx rejection of a collection create returns the resource to reserved instead of uncertain', async () => {
+    const { service, transport, db } = setup();
+    transport.state.rejectCollection = 'collection.invalidName';
+    await assert.rejects(service.ensureModuleCollection({ courseId: COURSE, moduleId: MODULE, actor: ADMIN }), error => {
+        assert.equal(error.code, 'BUNNY_HTTP_ERROR'); assert.equal(error.stage, 'collection-create'); assert.equal(error.provider.errorKey, 'collection.invalidName'); return true;
+    });
+    assert.equal(db.state.resources.get(`module:${MODULE}`).state, 'reserved');
+    transport.state.rejectCollection = null;
+    assert.equal(await service.ensureModuleCollection({ courseId: COURSE, moduleId: MODULE, actor: ADMIN }), COLLECTION);
+    assert.equal(transport.state.collections.length, 1);
+});
+
+test('a stored collection id that no longer exists remotely is verified and rebuilt without a duplicate library', async () => {
+    const { service, transport, db } = setup();
+    assert.equal(await service.ensureModuleCollection({ courseId: COURSE, moduleId: MODULE, actor: ADMIN }), COLLECTION);
+    const fresh = createStreamService({ db, transport, getAccountKey: async () => 'synthetic', createKey: async () => 'synthetic' });
+    transport.state.lostCollections = true; transport.state.collections.length = 0;
+    assert.equal(await fresh.ensureModuleCollection({ courseId: COURSE, moduleId: MODULE, actor: ADMIN }), COLLECTION);
+    assert.equal(transport.state.calls.filter(c => c.method === 'POST' && c.path === '/library/101/collections').length, 2);
+    assert.equal(transport.state.libraries.length, 1);
+    assert.equal(db.state.collection, COLLECTION);
+});
+
+test('a video created for a module is confirmed inside that collection', async t => {
+    const { service, transport } = setup(); const filePath = await fixture(t);
+    await service.uploadVideo({ filePath, title: 'Clase', courseId: COURSE, moduleId: MODULE, actor: ADMIN, operationId: crypto.randomUUID() });
+    assert.equal(transport.state.videos[0].collectionId, COLLECTION);
+    assert.equal(transport.state.calls.some(c => c.method === 'POST' && c.path === `/library/101/videos/${VIDEO}`), false, 'no move needed when created in place');
 });
 
 test('security settings of an unmanaged historical library are not changed', async () => {

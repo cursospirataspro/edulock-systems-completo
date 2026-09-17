@@ -68,14 +68,14 @@ after(async () => {
     await db.pool.end();
   }
 });
-async function fixture({ quantity = 2, maxDevices = 2, durationDays = null, maxLicenses = 10 } = {}) {
+async function fixture({ quantity = 2, maxDevices = 2, maxLicenses = 10 } = {}) {
   const producerId = id('producers'), studentId = id('students'), courseId = id('courses');
   await db.createProducer({ id: producerId, email: `${producerId}@licenses-qa.invalid`, passwordHash: hash('synthetic'), name: 'Synthetic producer', maxLicenses, maxDevices, maxStudents: 0 });
   await db.createStudent({ id: studentId, email: `${studentId}@licenses-qa.invalid`, studentId: `qa-${studentId}`, name: 'Synthetic student', active: true, allowedVideos: [] });
   await query("UPDATE students SET approval_status='approved',max_devices=$1,producer_id=$2 WHERE id=$3", [maxDevices, producerId, studentId]);
   await db.createCourse({ id: courseId, name: 'Synthetic license course', producerId });
   const lotId = id('license_lots'), licenses = Array.from({ length: quantity }, () => { const serial = key(); return { id: id('licenses'), key: serial, hash: hash(serial) }; });
-  const generated = await db.createProducerLotAtomic({ producerId, maxLicenses, lot: { id: lotId, courseId, maxDevices, durationDays, name: 'Lote QA', notes: 'Synthetic QA only', createdBy: 'test' }, licenses });
+  const generated = await db.createProducerLotAtomic({ producerId, maxLicenses, lot: { id: lotId, courseId, maxDevices, name: 'Lote QA', notes: 'Synthetic QA only', createdBy: 'test' }, licenses });
   assert.equal(generated.ok, true);
   return { producerId, studentId, studentEmail: `${studentId}@licenses-qa.invalid`, courseId, lotId, licenses, maxDevices };
 }
@@ -113,32 +113,43 @@ test('real generation stores encrypted serials atomically and exports them from 
 
 test('real search, status, course and lot filters stay within producer ownership', async () => {
   const a = await fixture(), b = await fixture();
-  const own = await service.listLicenses(a.producerId, { q: a.licenses[0].key, lotId: a.lotId, courseId: a.courseId, status: 'free', pageSize: 1 });
+  const own = await service.listLicenses(a.producerId, { q: a.licenses[0].key, lotId: a.lotId, courseId: a.courseId, status: 'available', pageSize: 1 });
   assert.equal(own.total, 1); assert.equal(own.licenses[0].id, a.licenses[0].id);
-  assert.equal(own.licenses[0].serialAvailable, true);
-  assert.equal(JSON.stringify(own).includes(a.licenses[0].key), false);
+  assert.equal(own.licenses[0].serialAvailable, true); assert.equal(own.licenses[0].serial, a.licenses[0].key, 'the producer sees the full key');
+  assert.equal(own.licenses[0].availability, 'available'); assert.equal(own.counts.available, 2, 'tab counters follow the course/lot scope, not the text search');
   assert.equal(JSON.stringify(own).includes(a.licenses[0].hash), false);
   assert.equal((await service.listLicenses(a.producerId, { lotId: b.lotId })).total, 0);
   assert.equal((await service.listLicenses(a.producerId, { q: b.licenses[0].key })).total, 0);
   assert.equal(await service.readLicenseSerial({ producerId: a.producerId, licenseId: b.licenses[0].id }), null);
   await assert.rejects(service.exportLot(a.producerId, b.lotId), { code: 'LOT_NOT_FOUND' });
-  await assert.rejects(service.updateLicense(a.producerId, b.licenses[0].id, { notes: 'Intrusion' }), { code: 'LICENSE_NOT_FOUND' });
+  await assert.rejects(service.updateLicense(a.producerId, b.licenses[0].id, { customerEmail: 'intrusion@qa.invalid' }), { code: 'LICENSE_NOT_FOUND' });
+  await assert.rejects(service.getStudent(a.producerId, b.studentId), { code: 'STUDENT_NOT_FOUND' });
   await assert.rejects(service.listActivations(a.producerId, b.licenses[0].id), { code: 'LICENSE_NOT_FOUND' });
 });
 
-test('real metadata and customer profiles persist without transferring an assigned account', async () => {
+test('real students appear automatically after activation, one record per account, isolated per producer', async () => {
   const f = await fixture();
-  const activated = await activate(f); assert.equal(activated.ok, true);
-  await service.updateLicense(f.producerId, f.licenses[0].id, { buyerName: 'Comprador QA', buyerPhone: '12345', orderId: 'QA-ORDER', notes: 'Note' });
+  assert.equal((await service.listStudents(f.producerId)).total, 0, 'a generated lot alone creates no student');
+  const deviceId = crypto.randomUUID();
+  const activated = await activate(f, f.licenses[0], deviceId); assert.equal(activated.ok, true);
+  assert.equal((await activate(f, f.licenses[1], deviceId)).ok, true, 'second license of the same account on the same computer');
   await assert.rejects(service.updateLicense(f.producerId, f.licenses[0].id, { customerEmail: 'another@qa.invalid' }), { code: 'ASSIGNED_BUYER_IMMUTABLE' });
-  const listed = await service.listCustomers(f.producerId, { q: f.studentEmail });
-  assert.equal(listed.total, 1); assert.equal(listed.customers[0].activeLicenses, 1); assert.equal(listed.customers[0].name, 'Comprador QA');
-  await service.updateCustomer(f.producerId, { email: f.studentEmail, name: 'Nombre ficha', notes: 'Nueva nota' });
-  await service.updateCustomer(f.producerId, { email: f.studentEmail, phone: '67890' });
-  const again = await service.listCustomers(f.producerId);
-  assert.equal(again.customers[0].name, 'Nombre ficha'); assert.equal(again.customers[0].phone, '67890'); assert.equal(again.customers[0].notes, 'Nueva nota');
+  const listed = await service.listStudents(f.producerId, { q: f.studentEmail });
+  assert.equal(listed.total, 1); assert.equal(listed.students[0].licenseCount, 2); assert.equal(listed.students[0].activeLicenses, 2);
+  assert.deepEqual(listed.students[0].courses, ['Synthetic license course']);
+  const record = await service.getStudent(f.producerId, f.studentId);
+  assert.equal(record.licenses.length, 2); assert.ok(record.licenses.every(l => l.serial && l.availability === 'in_use'));
+  assert.equal(record.licenses.find(l => l.id === f.licenses[0].id).activations.length, 1);
+  // Another producer selling to the same person sees only its own licenses.
   const other = await fixture();
-  await assert.rejects(service.updateCustomer(other.producerId, { email: f.studentEmail, notes: 'Intrusion' }), { code: 'CUSTOMER_NOT_FOUND' });
+  await query('UPDATE students SET producer_id=$1 WHERE id=$2', [f.producerId, other.studentId]);
+  const cross = { ...other, studentId: f.studentId, studentEmail: f.studentEmail };
+  await query('UPDATE students SET producer_id=NULL WHERE id=$1', [f.studentId]);
+  assert.equal((await activate(cross, other.licenses[0], deviceId)).ok, true, 'the same computer counts once per license and does not exhaust the student device slots');
+  assert.equal((await service.listStudents(other.producerId)).total, 1);
+  assert.equal((await service.getStudent(other.producerId, f.studentId)).licenses.length, 1);
+  assert.equal((await service.getStudent(f.producerId, f.studentId)).licenses.length, 2);
+  assert.equal((await service.listLicenses(other.producerId, { status: 'in_use' })).total, 1);
 });
 
 test('real suspension revokes activations and only matching course sessions; reactivation requires a fresh activation', async () => {
@@ -208,24 +219,26 @@ test('real reset keeps a device registered if a second license still uses it', a
   assert.equal((await service.listActivations(f.producerId, f.licenses[1].id)).activations[0].status, 'active');
 });
 
-test('real relative duration starts on first successful activation and never restarts on another computer or serial rotation', async () => {
-  const f = await fixture({ quantity: 1, durationDays: 2 }), deviceId = crypto.randomUUID();
+test('real licenses are permanent: first activation is only history and no route can add validity', async () => {
+  const f = await fixture({ quantity: 1 }), deviceId = crypto.randomUUID();
+  await assert.rejects(db.createProducerLotAtomic({ producerId: f.producerId, lot: { id: id('license_lots'), courseId: f.courseId, maxDevices: 1, durationDays: 2 },
+    licenses: [{ id: id('licenses'), hash: hash(key()) }] }), { code: 'LICENSE_EXPIRY_UNSUPPORTED' });
   const before = await db.getLicenseById(f.licenses[0].id);
   assert.equal(before.expires_at, null); assert.equal(before.first_activated_at, null);
-  const first = await activate(f, f.licenses[0], deviceId); assert.equal(first.ok, true);
+  const first = await activate(f, f.licenses[0], deviceId); assert.equal(first.ok, true); assert.equal(first.expiresAt, null);
   const persisted = await db.getLicenseById(f.licenses[0].id);
-  assert.equal(Date.parse(persisted.expires_at) - Date.parse(persisted.first_activated_at), 2 * 86400000);
-  assert.equal(first.expiresAt, persisted.expires_at);
-  const second = await activate(f, f.licenses[0], crypto.randomUUID()); assert.equal(second.ok, true);
-  assert.equal((await db.getLicenseById(persisted.id)).expires_at, persisted.expires_at);
-  await assert.rejects(service.updateLicense(f.producerId, persisted.id, { durationDays: 5 }), { code: 'DURATION_ALREADY_STARTED' });
-  const rotated = await service.reissueLicense(f.producerId, persisted.id, true);
-  assert.equal((await activate(f, { id: persisted.id, hash: hash(rotated.key) }, deviceId)).ok, true);
-  assert.equal((await db.getLicenseById(persisted.id)).expires_at, persisted.expires_at);
+  assert.equal(persisted.expires_at, null); assert.ok(persisted.first_activated_at);
+  await assert.rejects(service.updateLicense(f.producerId, persisted.id, { durationDays: 5 }), { code: 'LICENSE_EXPIRY_UNSUPPORTED' });
+  await assert.rejects(service.updateLicense(f.producerId, persisted.id, { expiresAt: new Date(Date.now() + 86400000).toISOString() }), { code: 'LICENSE_EXPIRY_UNSUPPORTED' });
+  // A stored legacy date is ignored by activation and reported nowhere.
+  await query('UPDATE licenses SET expires_at=$1 WHERE id=$2', ['2000-01-01T00:00:00.000Z', persisted.id]);
+  assert.equal((await activate(f, f.licenses[0], crypto.randomUUID())).ok, true);
+  assert.equal((await service.listLicenses(f.producerId, { q: f.licenses[0].key })).licenses[0].effectiveStatus, 'active');
+  assert.equal((await service.listLicenses(f.producerId, { status: 'expired' }).catch(e => e.code)), 'INVALID_STATUS');
 });
 
 test('real failed activation rolls back first activation time and idempotent sale claims consume only one key', async () => {
-  const f = await fixture({ quantity: 2, maxDevices: 1, durationDays: 3 }), deviceId = crypto.randomUUID();
+  const f = await fixture({ quantity: 2, maxDevices: 1 }), deviceId = crypto.randomUUID();
   await query("INSERT INTO devices(id,student_id,fingerprint,status,first_seen,last_seen) VALUES($1,$2,$3,'blocked',$4,$4)", [crypto.randomUUID(), f.studentId, deviceId, new Date().toISOString()]);
   const failed = await activate(f, f.licenses[0], deviceId); assert.equal(failed.ok, false);
   assert.equal((await db.getLicenseById(f.licenses[0].id)).first_activated_at, null);
@@ -265,9 +278,10 @@ test('real historical hash-only license cannot be exported until explicit rotati
 
 test('real quota and active activation caps are enforced on edits and concurrent generations', async () => {
   const f = await fixture({ quantity: 1, maxLicenses: 2, maxDevices: 2 });
-  await assert.rejects(service.updateLicense(f.producerId, f.licenses[0].id, { maxDevices: 3 }), { code: 'DEVICE_QUOTA_EXCEEDED' });
+  await assert.rejects(service.updateLicense(f.producerId, f.licenses[0].id, { maxDevices: 3 }), { code: 'DEVICE_LIMIT_ADMIN_ONLY' });
   assert.equal((await activate(f)).ok, true); assert.equal((await activate(f)).ok, true);
-  await assert.rejects(service.updateLicense(f.producerId, f.licenses[0].id, { maxDevices: 1 }), { code: 'ACTIVE_DEVICES_EXCEED_LIMIT' });
+  await assert.rejects(service.updateLicense(f.producerId, f.licenses[0].id, { maxDevices: 1 }), { code: 'DEVICE_LIMIT_ADMIN_ONLY' });
+  assert.equal((await db.getLicenseById(f.licenses[0].id)).max_devices, 2);
   const create = () => { const serial = key(); return db.createProducerLotAtomic({ producerId: f.producerId,
     lot: { id: id('license_lots'), courseId: f.courseId, maxDevices: 1 }, licenses: [{ id: id('licenses'), key: serial, hash: hash(serial) }] }); };
   const results = await Promise.all([create(), create()]);
@@ -285,33 +299,33 @@ test('real serial reading within a transaction does not acquire a second databas
   } finally { client.release(); }
 });
 
-test('real admin regeneration preserves started duration, buyer metadata and device blocks while keeping the new serial exportable', async () => {
-  const f = await fixture({ quantity: 1, durationDays: 30 }), deviceId = crypto.randomUUID();
+test('real admin regeneration preserves history, ownership and device blocks while keeping the new serial exportable and permanent', async () => {
+  const f = await fixture({ quantity: 1 }), deviceId = crypto.randomUUID();
   const activated = await activate(f, f.licenses[0], deviceId); assert.equal(activated.ok, true);
-  await service.updateLicense(f.producerId, f.licenses[0].id, { buyerName: 'Comprador QA', buyerPhone: '12345' });
   await service.activationAction(f.producerId, activated.activationId, 'block');
   const previous = await db.getLicenseById(f.licenses[0].id), serial = key(), newId = id('licenses');
   const result = await db.regenerateLicense({ oldLicenseId: previous.id, newLicenseId: newId, newLicenseKey: serial, newLicenseKeyHash: hash(serial) });
   assert.equal(result.ok, true);
   const replacement = await db.getLicenseById(newId);
-  for (const field of ['duration_days', 'first_activated_at', 'expires_at', 'buyer_name', 'buyer_phone', 'student_id', 'course_id', 'lot_id']) assert.equal(replacement[field], previous[field]);
+  for (const field of ['first_activated_at', 'student_id', 'course_id', 'lot_id', 'max_devices']) assert.equal(replacement[field], previous[field]);
+  assert.equal(replacement.expires_at, null); assert.equal(replacement.duration_days, null);
   assert.equal((await db.getLicenseById(previous.id)).status, 'revoked');
   assert.equal(await service.readLicenseSerial({ producerId: f.producerId, licenseId: newId }), serial);
   assert.ok((await service.exportLot(f.producerId, f.lotId)).includes(serial));
   const blocked = await activate(f, { id: newId, hash: hash(serial) }, deviceId); assert.equal(blocked.ok, false); assert.equal(blocked.reason, 'device_blocked');
-  assert.equal(result.durationDays, 30); assert.equal(result.firstActivatedAt, previous.first_activated_at);
+  assert.equal(result.durationDays, null); assert.equal(result.expiresAt, null); assert.equal(result.firstActivatedAt, previous.first_activated_at);
 });
 
-test('real admin regeneration of an unused relative license keeps the clock unstarted and invalid input rolls back access', async () => {
-  const f = await fixture({ quantity: 1, durationDays: 7 }), oldId = f.licenses[0].id, serial = key();
+test('real admin regeneration of an unused license keeps it unstarted and invalid input rolls back access', async () => {
+  const f = await fixture({ quantity: 1 }), oldId = f.licenses[0].id, serial = key();
   await assert.rejects(db.regenerateLicense({ oldLicenseId: oldId, newLicenseId: id('licenses'), newLicenseKeyHash: hash(serial) }), { code: 'NEW_SERIAL_REQUIRED' });
   await assert.rejects(db.regenerateLicense({ oldLicenseId: oldId, newLicenseId: id('licenses'), newLicenseKey: serial, newLicenseKeyHash: 'wrong' }), { code: 'SERIAL_HASH_MISMATCH' });
   assert.equal((await db.getLicenseById(oldId)).status, 'free'); assert.equal(await db.countProducerLicenses(f.producerId), 1);
   const newId = id('licenses');
   await db.regenerateLicense({ oldLicenseId: oldId, newLicenseId: newId, newLicenseKey: serial, newLicenseKeyHash: hash(serial) });
   const next = await db.getLicenseById(newId);
-  assert.equal(next.first_activated_at, null); assert.equal(next.expires_at, null); assert.equal(next.duration_days, 7);
+  assert.equal(next.first_activated_at, null); assert.equal(next.expires_at, null); assert.equal(next.duration_days, null);
   assert.equal((await activate(f, { id: newId, hash: hash(serial) })).ok, true);
   const activated = await db.getLicenseById(newId);
-  assert.equal(Date.parse(activated.expires_at) - Date.parse(activated.first_activated_at), 7 * 86400000);
+  assert.equal(activated.expires_at, null); assert.ok(activated.first_activated_at);
 });

@@ -38,25 +38,25 @@ function harness() {
   return {context,node,requests,sections,nav,submit,workspace:context.workspaceTest};
 }
 
-test('editing a buyer note preserves exact existing expiry and avoids invalidating activations',async()=>{
-  const h=harness();const license={id:'own-license',courseName:'Own course',status:'active',maxDevices:2,expiresAt:'2030-05-06T12:34:56.987Z',firstActivatedAt:'2026-01-01T00:00:00Z',customerEmail:'buyer@example.invalid'};
+test('an assigned license opens read-only with the full key, student link and no editable limit or validity',async()=>{
+  const h=harness();const license={id:'own-license',courseName:'Own course',status:'active',availability:'in_use',maxDevices:2,serial:'ABCD-EFGH-JKLM-NPQR',serialAvailable:true,studentId:'student-a',studentEmail:'buyer@example.invalid',customerEmail:'buyer@example.invalid',activeActivations:1,createdAt:'2026-01-01T00:00:00Z'};
   h.workspace.editLicense(license);
   assert.equal(h.requests.length,0,'opening an editor is read-only');
-  const d=new Date(license.expiresAt);const local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
-  await h.submit({maxDevices:'2',expiresAt:local,customerEmail:license.customerEmail,buyerName:'Buyer',buyerPhone:'',orderId:'',notes:'New support note'});
-  const update=h.requests.find(r=>r.method==='PATCH');
-  assert.equal(update.body.notes,'New support note');
-  assert.equal(Object.hasOwn(update.body,'expiresAt'),false,'do not round expiry to minutes on unrelated changes');
-  assert.equal(Object.hasOwn(update.body,'durationDays'),false,'do not reset a started activation period');
+  const body=h.node('workspace-dialog-body').innerHTML;
+  assert.match(body,/ABCD-EFGH-JKLM-NPQR/);assert.match(body,/límite fijado por el administrador/);
+  assert.doesNotMatch(body,/name="maxDevices"|name="expiresAt"|name="durationDays"|name="buyerPhone"|name="orderId"|name="notes"/);
+  assert.equal(h.node('workspace-dialog-submit').hidden,true,'nothing to save on an assigned license');
+  await h.submit({customerEmail:'other@example.invalid'});
+  assert.equal(h.requests.some(r=>r.method==='PATCH'),false,'an assigned license cannot be transferred from the dialog');
 });
 
-test('changing validity submits only the selected new date, while revoked licenses cannot save',async()=>{
-  const h=harness();h.workspace.editLicense({id:'l',status:'active',maxDevices:1,expiresAt:null});
-  await h.submit({maxDevices:'1',expiresAt:'2031-02-03T04:05',durationDays:'',customerEmail:'',buyerName:'',buyerPhone:'',orderId:'',notes:''});
-  assert.equal(h.requests.find(r=>r.method==='PATCH').body.expiresAt,new Date('2031-02-03T04:05').toISOString());
-  const before=h.requests.length;h.workspace.editLicense({id:'revoked',status:'revoked',maxDevices:1});
+test('a free key can be reserved for an email, and revoked keys cannot save',async()=>{
+  const h=harness();h.workspace.editLicense({id:'l',status:'free',availability:'available',maxDevices:1,serial:'ABCD-EFGH-JKLM-NPQR',serialAvailable:true});
+  await h.submit({customerEmail:'buyer@example.invalid'});
+  const reservation=h.requests.find(r=>r.method==='PATCH');assert.equal(reservation.body.customerEmail,'buyer@example.invalid');assert.equal(Object.keys(reservation.body).join(','),'customerEmail');
+  const before=h.requests.length;h.workspace.editLicense({id:'revoked',status:'revoked',availability:'revoked',maxDevices:1});
   assert.equal(h.node('workspace-dialog-submit').hidden,true);
-  await h.submit({maxDevices:'1'});assert.equal(h.requests.length,before);
+  await h.submit({customerEmail:'x@example.invalid'});assert.equal(h.requests.length,before);
 });
 
 test('destructive confirmation remains read-only until explicit submit; closing cancels',async()=>{
@@ -69,6 +69,7 @@ test('navigation switches the visible workspace section without modifying conten
   const h=harness();await h.workspace.navigate('licencias');
   assert.deepEqual(h.sections.map(s=>s.hidden),[true,true,false]);assert.equal(h.node('workspace-title').textContent,'Licencias y lotes');
   assert.equal(h.nav[2].attributes['aria-current'],'page');assert.equal(h.requests.length,0);
+  await h.workspace.navigate('compradores');assert.equal(h.node('workspace-title').textContent,'Estudiantes','old links land on the replacement page');
 });
 
 test('unassigned legacy videos remain available and unsafe embedding is refused',()=>{

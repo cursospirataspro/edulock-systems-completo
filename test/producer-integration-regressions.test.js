@@ -127,19 +127,19 @@ test('claim route authenticates before its integration limiter and leaves login 
     assert.match(server, /app\.post\('\/api\/producer\/login', authRateLimit,/);
     assert.match(server, /app\.post\('\/api\/auth\/admin-login', authRateLimit,/);
 });
-test('repeated expired orders never disclose a serial or falsely return an active license', async () => {
-    for (const license of [
-        { status: 'active', expires_at: '2000-01-01T00:00:00Z' },
-        { status: 'active', expires_at: 'not-a-date' },
-        { status: 'expired', expires_at: null },
-        { status: 'free', expires_at: '2000-01-01T00:00:00Z' }
-    ]) {
-        const h = claimHarness({ id: 'old-license', course_id: 'course-a', ...license });
-        const result = await h.run();
-        assert.equal(result.statusCode, 409); assert.equal(result.body.code, 'LICENSE_EXPIRED'); assert.equal(result.body.status, 'expired');
-        assert.equal(result.body.licenseId, 'old-license'); assert.equal(h.calls.serialReads, 0); assert.equal(h.calls.claims.length, 1);
-        assert.equal(result.headers['Cache-Control'], 'no-store');
+test('only a legacy expired status blocks an order; permanent licenses ignore stored dates and never disclose inactive serials', async () => {
+    const legacy = claimHarness({ id: 'old-license', course_id: 'course-a', status: 'expired', expires_at: null });
+    const result = await legacy.run();
+    assert.equal(result.statusCode, 409); assert.equal(result.body.code, 'LICENSE_EXPIRED'); assert.equal(result.body.status, 'expired');
+    assert.equal(result.body.licenseId, 'old-license'); assert.equal(legacy.calls.serialReads, 0); assert.equal(legacy.calls.claims.length, 1);
+    assert.equal(result.headers['Cache-Control'], 'no-store');
+    for (const license of [{ status: 'active', expires_at: '2000-01-01T00:00:00Z' }, { status: 'active', expires_at: 'not-a-date' }]) {
+        const h = claimHarness({ id: 'same-license', course_id: 'course-a', ...license });
+        const ok = await h.run();
+        assert.equal(ok.statusCode, 200); assert.ok(ok.body.licenseKey); assert.equal(h.calls.serialReads, 1);
     }
+    const free = claimHarness({ id: 'license-a', course_id: 'course-a', status: 'free', expires_at: '2000-01-01T00:00:00Z' });
+    assert.equal((await free.run()).body.code, 'LICENSE_NOT_ACTIVE'); assert.equal(free.calls.serialReads, 0);
 });
 test('valid repeated orders preserve their license ID and return serials only for active access', async () => {
     const h = claimHarness({ id: 'same-license', course_id: 'course-a', status: 'active', expires_at: '2199-01-01T00:00:00Z' });
@@ -160,5 +160,5 @@ test('admin regeneration passes its generated plaintext only to the atomic vault
     await routes.get('/api/admin/licenses/:licenseId/regenerate').at(-1)({ params: { licenseId: 'old-license' }, user: { sub: 'synthetic-admin' } }, res);
     assert.equal(res.statusCode, 200); assert.ok(captured.newLicenseKey);
     assert.equal(crypto.createHmac('sha256', 'synthetic-test-secret-'.repeat(3)).update(captured.newLicenseKey).digest('hex'), captured.newLicenseKeyHash);
-    assert.equal(res.body.durationDays, 30); assert.equal(res.body.firstActivatedAt, null);
+    assert.equal(Object.hasOwn(res.body, 'durationDays'), false); assert.equal(Object.hasOwn(res.body, 'expiresAt'), false); assert.equal(res.body.firstActivatedAt, null);
 });

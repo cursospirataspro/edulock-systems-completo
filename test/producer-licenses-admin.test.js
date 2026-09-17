@@ -39,12 +39,13 @@ function load({ old = oldLicense(), signingSecret = SECRET, custodyFails = false
 }
 const request = () => ({ oldLicenseId: 'old-license', newLicenseId: 'new-license', newLicenseKeyHash: HASH, newLicenseKey: KEY });
 
-test('admin regeneration preserves elapsed validity and commercial fields and seals the replacement atomically', async () => {
+test('admin regeneration keeps history and commercial fields, never propagates legacy validity, and seals the replacement atomically', async () => {
   const h = load(), result = await h.db.regenerateLicense(request());
-  assert.equal(result.ok, true); assert.equal(result.durationDays, 30); assert.equal(result.firstActivatedAt, oldLicense().first_activated_at);
-  assert.equal(result.expiresAt, oldLicense().expires_at);
+  assert.equal(result.ok, true); assert.equal(result.durationDays, null); assert.equal(result.firstActivatedAt, oldLicense().first_activated_at);
+  assert.equal(result.expiresAt, null);
   const insert = h.calls.find(call => call.sql.startsWith('INSERT INTO licenses'));
-  assert.deepEqual(insert.params.slice(14), [30, oldLicense().first_activated_at, 'Synthetic Buyer', '12345']);
+  assert.equal(insert.params[7], null, 'a replacement course license is permanent');
+  assert.deepEqual(insert.params.slice(14), [null, oldLicense().first_activated_at, 'Synthetic Buyer', '12345']);
   const custody = h.calls.find(call => call.sql.startsWith('INSERT INTO producer_license_serials'));
   assert.ok(custody); assert.equal(h.vault.decrypt(custody.params[2], 'producer-a', 'new-license'), KEY);
   assert.equal(JSON.stringify(h.calls).includes(KEY), false);
@@ -78,10 +79,10 @@ test('failed custody write rolls back both the new license and revocation instea
   assert.equal(h.calls.at(-1).sql, 'ROLLBACK'); assert.equal(h.calls.some(call => call.sql === 'COMMIT'), false);
 });
 
-test('unused relative-duration license stays unstarted during administrator replacement', async () => {
+test('unused license stays unstarted and permanent during administrator replacement', async () => {
   const h = load({ old: { ...oldLicense(), student_id: null, first_activated_at: null, expires_at: null, assigned_at: null } });
   const result = await h.db.regenerateLicense(request());
-  assert.equal(result.firstActivatedAt, null); assert.equal(result.expiresAt, null); assert.equal(result.durationDays, 30);
+  assert.equal(result.firstActivatedAt, null); assert.equal(result.expiresAt, null); assert.equal(result.durationDays, null);
   const insert = h.calls.find(call => call.sql.startsWith('INSERT INTO licenses'));
   assert.equal(insert.params[4], 'free'); assert.equal(insert.params[15], null);
 });

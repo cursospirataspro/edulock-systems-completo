@@ -167,24 +167,26 @@ test('producer revocation is isolated, audited once and immediately denies its c
     assert.equal((await db.getProducerLicenseItems({ producerId: other })).total, 0);
 });
 
-test('producer batch expiry persists, bounds activation and rejects playback or claim after expiry', async () => {
+test('producer batches are permanent: expiry is refused, stored dates never block playback or claims, lots report no expired count', async () => {
     const owner = await producer({ maxLicenses: 0 }), courseId = await course(owner), user = await student(), device = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(), lotId = id('lots');
     const serials = Array.from({ length: 2 }, () => { const value = id('licenses'); return { id: value, hash: hash(value) }; });
-    assert.equal((await db.createProducerLotAtomic({ producerId: owner, lot: { id: lotId, courseId, maxDevices: 1, expiresAt }, licenses: serials })).ok, true);
-    assert.equal((await db.getLicenseById(serials[0].id)).expires_at, expiresAt);
+    await assert.rejects(db.createProducerLotAtomic({ producerId: owner, lot: { id: lotId, courseId, maxDevices: 1, expiresAt }, licenses: serials }), { code: 'LICENSE_EXPIRY_UNSUPPORTED' });
+    await assert.rejects(db.createProducerLotAtomic({ producerId: owner, lot: { id: lotId, courseId, maxDevices: 1, durationDays: 30 }, licenses: serials }), { code: 'LICENSE_EXPIRY_UNSUPPORTED' });
+    assert.equal((await db.createProducerLotAtomic({ producerId: owner, lot: { id: lotId, courseId, maxDevices: 1 }, licenses: serials })).ok, true);
+    assert.equal((await db.getLicenseById(serials[0].id)).expires_at, null);
     const activation = await db.claimAndActivateLicenseAtomic(activationInput(serials[0].hash, user, device));
-    assert.equal(activation.ok, true); assert.equal(activation.expiresAt, expiresAt);
+    assert.equal(activation.ok, true); assert.equal((await db.getLicenseById(serials[0].id)).expires_at, null, 'activation never writes a course expiry');
     const videoId = id('videos');
-    await db.addToCatalog({ videoId, courseId, producerId: owner, title: 'Synthetic expiry test', status: 'ready' });
+    await db.addToCatalog({ videoId, courseId, producerId: owner, title: 'Synthetic permanent test', status: 'ready' });
     const policy = createAccessPolicy({ db });
     await policy.authorizeVideo({ sub: user, deviceId: device }, videoId, device);
+    // A legacy stored date must not lock the student out: the right to the course is permanent.
     await db.pool.query('UPDATE licenses SET expires_at=$1 WHERE lot_id=$2 AND producer_id=$3', ['2020-01-01T00:00:00.000Z', lotId, owner]);
-    await assert.rejects(policy.authorizeVideo({ sub: user, deviceId: device }, videoId, device), { code: 'LICENSE_REQUIRED' });
-    assert.equal((await db.claimAndActivateLicenseAtomic(activationInput(serials[1].hash, user, device))).ok, false);
-    assert.equal((await db.getLicenseById(serials[1].id)).status, 'free');
+    await policy.authorizeVideo({ sub: user, deviceId: device }, videoId, device);
+    assert.equal((await db.claimAndActivateLicenseAtomic(activationInput(serials[1].hash, user, device))).ok, true);
     const lots = await db.getLotsByProducer(owner);
-    assert.equal(Number(lots[0].free_count), 0); assert.equal(Number(lots[0].expired_count), 2);
+    assert.equal(Number(lots[0].free_count), 0); assert.equal(Number(lots[0].used_count), 2); assert.equal(lots[0].expired_count, undefined);
 });
 
 test('concurrent activation of one free serial on two devices respects the license cap', async () => {

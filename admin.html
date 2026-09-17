@@ -2701,6 +2701,7 @@ function createStreamUploadController(options) {
     const { api: request, prefix, storageKey, getToken, onUpdate, onJobsChanged } = options;
     const delay = options.delay || (ms => new Promise(resolve => setTimeout(resolve, ms)));
     const maxPolls = options.maxPolls || 200;
+    const watchEvery = options.watchEvery || 3000;
     let busy = false;
     let jobs = [];
     try {
@@ -2725,12 +2726,23 @@ function createStreamUploadController(options) {
     function progress(value) {
         return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
     }
+    // Stage, provider reason and next action come from the server; no secrets travel here.
+    function describeFailure(status) {
+        const parts = [status.error || 'El video no pudo procesarse.'];
+        if (status.stageLabel) parts.push('Etapa: ' + status.stageLabel + '.');
+        if (status.providerMessage) parts.push('Bunny: ' + status.providerMessage + '.');
+        if (status.action) parts.push(status.action);
+        return parts.join(' ');
+    }
     function statusView(status) {
-        if (status.failed) return { phase: 'failed', label: status.error || 'El video no pudo procesarse.', percent: null };
+        if (status.failed) return { phase: 'failed', label: describeFailure(status), percent: null };
         if (status.ready === true) return { phase: 'ready', label: 'Video listo para compartir.', percent: 100 };
         const phase = String(status.phase || '').toLowerCase();
+        if (phase === 'reserved' || phase === 'creating') return {
+            phase: 'preparing', label: 'Preparando la biblioteca del curso y la colección del módulo en Bunny.', percent: null
+        };
         if (/upload|transfer|sending/.test(phase)) return {
-            phase: 'server-upload', label: 'El servidor está enviando el video a Bunny.', percent: progress(status.uploadPercent)
+            phase: 'server-upload', label: 'Transfiriendo el archivo del servidor a Bunny.', percent: progress(status.uploadPercent)
         };
         if (/processing|encoding|transcod/.test(phase) || typeof status.encodeProgress === 'number') return {
             phase: 'processing', label: 'Bunny está procesando el video; aún no está listo.', percent: progress(status.encodeProgress)
@@ -2744,7 +2756,9 @@ function createStreamUploadController(options) {
             videoId: status.videoId || job.videoId || null,
             ready, failed, retryable: status.retryable === true,
             phase: status.phase || (ready ? 'ready' : failed ? 'failed' : 'pending'),
-            error: failed ? (status.error || 'El video no pudo procesarse.') : null
+            stage: status.stage || null, stageLabel: status.stageLabel || null,
+            action: failed ? (status.action || null) : null,
+            error: failed ? describeFailure(status) : null
         }, statusView(status));
         return ready;
     }
@@ -2768,7 +2782,7 @@ function createStreamUploadController(options) {
                 continue;
             }
             if (applyStatus(job, status)) return { ...status, operationId: job.operationId };
-            if (status.failed) throw problem(status.error || 'Bunny no pudo procesar el video.', 'UPLOAD_FAILED', job);
+            if (status.failed) throw problem(describeFailure(status), 'UPLOAD_FAILED', job);
             await delay(3000);
         }
         throw problem('El procesamiento sigue pendiente. Puedes continuar el seguimiento sin volver a subir el archivo.', 'STATUS_PENDING', job);
@@ -2782,6 +2796,15 @@ function createStreamUploadController(options) {
             if (job.moduleId) form.append('moduleId', job.moduleId);
             form.append('operationId', job.operationId);
             const xhr = new XMLHttpRequest();
+            let watcher = null;
+            const stopWatch = () => { if (watcher) { clearInterval(watcher); watcher = null; } };
+            const startWatch = () => {
+                // While the server prepares Bunny and transfers the file, the operation record is the only live progress source.
+                if (watcher || typeof setInterval !== 'function') return;
+                watcher = setInterval(() => {
+                    readStatus(job).then(status => { if (watcher && !status.failed && status.ready !== true) onUpdate({ ...statusView(status), job }); }).catch(() => {});
+                }, watchEvery);
+            };
             xhr.open('POST', prefix + '/upload');
             xhr.setRequestHeader('Authorization', 'Bearer ' + getToken());
             xhr.upload.onprogress = event => {
@@ -2790,17 +2813,25 @@ function createStreamUploadController(options) {
                     onUpdate({ phase: 'client-upload', label: 'Enviando el archivo de tu equipo al servidor.', percent, job });
                 }
             };
-            xhr.upload.onload = () => changed(job, { phase: 'server-upload' }, {
-                phase: 'server-upload', label: 'Archivo enviado al servidor. Preparando y transfiriendo a Bunny; esperando confirmación.', percent: null
-            });
+            xhr.upload.onload = () => {
+                changed(job, { phase: 'server-upload' }, {
+                    phase: 'preparing', label: 'Archivo recibido en el servidor. Preparando biblioteca y colección; después se transfiere a Bunny.', percent: null
+                });
+                startWatch();
+            };
             xhr.onload = () => {
+                stopWatch();
                 let data;
                 try { data = JSON.parse(xhr.responseText); } catch (_) {
                     reject(problem('El servidor respondió sin un estado válido. Consulta el seguimiento antes de reenviar.', 'UPLOAD_UNCERTAIN', job)); return;
                 }
                 if (xhr.status < 200 || xhr.status >= 300) {
-                    const error = problem(data.error || ('No se aceptó la subida (HTTP ' + xhr.status + ').'), 'UPLOAD_REJECTED', job);
+                    const parts = [data.error || ('No se aceptó la subida (HTTP ' + xhr.status + ').')];
+                    if (data.stageLabel) parts.push('Etapa: ' + data.stageLabel + '.');
+                    if (data.provider && data.provider.message) parts.push('Bunny: ' + data.provider.message + '.');
+                    const error = problem(parts.join(' '), 'UPLOAD_REJECTED', job);
                     error.status = xhr.status;
+                    changed(job, { failed: true, retryable: data.retryable !== false, phase: 'failed', stage: data.stage || null, stageLabel: data.stageLabel || null, error: parts.join(' ') });
                     reject(error); return;
                 }
                 if (!data.videoId && !data.operationId) {
@@ -2808,8 +2839,8 @@ function createStreamUploadController(options) {
                 }
                 resolve(data);
             };
-            xhr.onerror = xhr.ontimeout = () => reject(problem('Se perdió la conexión. Consulta el seguimiento; si debes reenviar, selecciona el mismo archivo.', 'UPLOAD_UNCERTAIN', job));
-            xhr.onabort = () => reject(problem('Envío interrumpido. El seguimiento permite comprobar si el servidor lo recibió.', 'UPLOAD_UNCERTAIN', job));
+            xhr.onerror = xhr.ontimeout = () => { stopWatch(); reject(problem('Se perdió la conexión. Consulta el seguimiento; si debes reenviar, selecciona el mismo archivo.', 'UPLOAD_UNCERTAIN', job)); };
+            xhr.onabort = () => { stopWatch(); reject(problem('Envío interrumpido. El seguimiento permite comprobar si el servidor lo recibió.', 'UPLOAD_UNCERTAIN', job)); };
             xhr.send(form);
         });
     }
@@ -2840,7 +2871,7 @@ function createStreamUploadController(options) {
                     phase: 'client-upload', ready: false, createdAt: Date.now() };
                 jobs.push(job);
             }
-            changed(job, { failed: false, retryable: false, phase: 'client-upload' }, {
+            changed(job, { failed: false, retryable: false, error: null, action: null, phase: 'client-upload' }, {
                 phase: 'client-upload', label: 'Enviando el archivo de tu equipo al servidor.', percent: 0
             });
             const response = await sendFile(job, file);
@@ -3764,7 +3795,7 @@ function closeLicenseModal() {
 }
 
 // ── Regenerar licencia (1-clic): revoca la anterior y hereda su configuración ──
-// Conserva curso, dispositivos permitidos y fecha de expiración. Revoca la
+// Conserva curso y dispositivos permitidos (las licencias de curso no vencen). Revoca la
 // licencia anterior + sus activaciones + bloquea dispositivos + cierra sesiones.
 async function regenerateLicense(studentId, email, licenseId, hasActive) {
     // Sin licencia activa que heredar → crear la primera con el selector de curso
@@ -3776,7 +3807,7 @@ async function regenerateLicense(studentId, email, licenseId, hasActive) {
         '• La licencia anterior dejará de funcionar de inmediato.\n' +
         '• Todos los dispositivos vinculados serán cerrados y bloqueados.\n' +
         '• El usuario deberá ingresar la NUEVA licencia para volver a reproducir.\n\n' +
-        'Se conservan el curso, la cantidad de dispositivos y la fecha de expiración.'
+        'Se conservan el curso y la cantidad de dispositivos. Las licencias de curso no vencen.'
     );
     if (!ok) return;
     try {
@@ -3886,7 +3917,6 @@ async function openStudentDetail(id, email) {
                 <tr><td style="color:var(--c-muted);padding:4px 8px">Licencia actual</td><td style="font-family:monospace">${esc((cur.id||'—').slice(0,18))}</td></tr>
                 <tr><td style="color:var(--c-muted);padding:4px 8px">Curso asociado</td><td>${esc(cur.course_id || 'Acceso general')}</td></tr>
                 <tr><td style="color:var(--c-muted);padding:4px 8px">Fecha generación</td><td>${fmt(cur.created_at)}</td></tr>
-                <tr><td style="color:var(--c-muted);padding:4px 8px">Fecha expiración</td><td>${cur.expires_at ? fmt(cur.expires_at) : 'Sin expiración'}</td></tr>
                 <tr><td style="color:var(--c-muted);padding:4px 8px">Estado</td><td>${statusLabel}</td></tr>
                 <tr><td style="color:var(--c-muted);padding:4px 8px">Dispositivos permitidos</td><td>${esc(cur.max_devices != null ? cur.max_devices : 2)}</td></tr>
                 <tr><td style="color:var(--c-muted);padding:4px 8px">Activaciones realizadas</td><td>${acts.length}</td></tr>

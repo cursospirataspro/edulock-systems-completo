@@ -65,8 +65,10 @@ function dialogHarness(panel, fails = false) {
     return { run, dialog, messages, node };
 }
 
+// The producer panel no longer has a bespoke revocation dialog: its confirmations go through the shared
+// workspace dialog (covered in producer-workspace-ui.test.js). Only the owner panel keeps this pattern.
 test('HTML confirmations stay pending until an explicit choice; cancel and Escape never approve', async () => {
-    for (const panel of ['productor', 'admin']) {
+    for (const panel of ['admin']) {
         const h = dialogHarness(panel); let resolved = false;
         const pending = h.run().then(value => { resolved = true; return value; });
         await Promise.resolve(); assert.equal(resolved, false); assert.equal(h.dialog.open, true);
@@ -78,7 +80,7 @@ test('HTML confirmations stay pending until an explicit choice; cancel and Escap
 });
 
 test('a failed HTML dialog refuses the action without falling back to automatic approval', async () => {
-    for (const panel of ['productor', 'admin']) {
+    for (const panel of ['admin']) {
         const h = dialogHarness(panel, true);
         assert.equal(await h.run(), false); assert.equal(h.messages.length, 1);
         assert.match(h.messages[0], /No se pudo abrir/);

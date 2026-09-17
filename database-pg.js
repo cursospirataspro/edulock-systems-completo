@@ -689,6 +689,7 @@ async function initDb() {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )`);
+    await q(`ALTER TABLE stream_operations ADD COLUMN IF NOT EXISTS error_detail TEXT`);
     await q(`CREATE UNIQUE INDEX IF NOT EXISTS idx_stream_operations_video
              ON stream_operations(video_id) WHERE video_id IS NOT NULL`);
     await q(`CREATE INDEX IF NOT EXISTS idx_stream_operations_pending ON stream_operations(state, updated_at)`);
@@ -1618,6 +1619,10 @@ module.exports.setStreamResource = async (key, { remoteName, state, remoteId = n
     [key, remoteName, state, remoteId == null ? null : String(remoteId), new Date().toISOString()]);
 };
 
+// Forgets a remote association that no longer exists (e.g. a collection deleted in
+// Bunny) so the next provisioning attempt reconciles or creates it again.
+module.exports.clearStreamResource = async key => { await q('DELETE FROM stream_resources WHERE resource_key=$1', [key]); };
+
 module.exports.getStreamOperation = async id =>
     (await q('SELECT * FROM stream_operations WHERE id=$1', [id])).rows[0] || null;
 module.exports.getStreamOperationByVideo = async videoId =>
@@ -1633,7 +1638,7 @@ module.exports.reserveStreamOperation = async ({ id, actorKey, courseId, moduleI
 
 module.exports.updateStreamOperation = async (id, fields) => {
     const columns = { videoId: 'video_id', state: 'state', uploadPercent: 'upload_percent',
-        providerStatus: 'provider_status', encodeProgress: 'encode_progress', errorCode: 'error_code' };
+        providerStatus: 'provider_status', encodeProgress: 'encode_progress', errorCode: 'error_code', errorDetail: 'error_detail' };
     const values = [], sets = [];
     for (const [key, column] of Object.entries(columns)) if (fields[key] !== undefined) {
         values.push(fields[key]); sets.push(`${column}=$${values.length}`);
@@ -2183,7 +2188,7 @@ module.exports.createLicense = async ({ id, licenseKeyHash, studentId, courseId,
         `INSERT INTO licenses (id, license_key_hash, student_id, course_id, status, max_devices, created_at, expires_at, producer_id, batch_id, reserved_email)
          VALUES ($1,$2,$3,$4,'active',$5,$6,$7,$8,$9,$10)
          ON CONFLICT (license_key_hash) DO NOTHING`,
-        [id, licenseKeyHash, studentId || null, courseId || null, maxDevices, now, expiresAt || null, producerId || null, batchId || null, reservedEmail || null]
+        [id, licenseKeyHash, studentId || null, courseId || null, maxDevices, now, null, producerId || null, batchId || null, reservedEmail || null]
     );
 };
 
@@ -2234,7 +2239,7 @@ module.exports.createFreeLicense = async ({ id, licenseKeyHash, courseId, lotId,
         `INSERT INTO licenses (id, license_key_hash, student_id, course_id, status, max_devices, created_at, expires_at, lot_id, producer_id)
          VALUES ($1,$2,NULL,$3,'free',$4,$5,$6,$7,$8)
          ON CONFLICT (license_key_hash) DO NOTHING`,
-        [id, licenseKeyHash, courseId || null, maxDevices, new Date().toISOString(), expiresAt || null, lotId || null, producerId || null]
+        [id, licenseKeyHash, courseId || null, maxDevices, new Date().toISOString(), null, lotId || null, producerId || null]
     );
 };
 
@@ -2255,12 +2260,11 @@ module.exports.getCatalogByProducer = async (producerId) => {
 module.exports.getLotsByProducer = async (producerId) => (await q(`
     SELECT l.*, c.name AS course_name,
            (SELECT COUNT(*) FROM licenses li WHERE li.lot_id = l.id) AS total,
-           (SELECT COUNT(*) FROM licenses li WHERE li.lot_id = l.id AND li.status='free' AND (li.expires_at IS NULL OR li.expires_at>$2)) AS free_count,
-           (SELECT COUNT(*) FROM licenses li WHERE li.lot_id = l.id AND li.status='active' AND (li.expires_at IS NULL OR li.expires_at>$2)) AS used_count,
-           (SELECT COUNT(*) FROM licenses li WHERE li.lot_id = l.id AND li.status='revoked') AS revoked_count,
-           (SELECT COUNT(*) FROM licenses li WHERE li.lot_id = l.id AND li.status<>'revoked' AND li.expires_at<=$2) AS expired_count
+           (SELECT COUNT(*) FROM licenses li WHERE li.lot_id = l.id AND li.status='free') AS free_count,
+           (SELECT COUNT(*) FROM licenses li WHERE li.lot_id = l.id AND li.status='active') AS used_count,
+           (SELECT COUNT(*) FROM licenses li WHERE li.lot_id = l.id AND li.status='revoked') AS revoked_count
     FROM license_lots l LEFT JOIN courses c ON c.id = l.course_id
-    WHERE l.producer_id=$1 ORDER BY l.created_at DESC`, [producerId, new Date().toISOString()])).rows;
+    WHERE l.producer_id=$1 ORDER BY l.created_at DESC`, [producerId])).rows;
 
 module.exports.getProducerLicenseItems = async ({ producerId, lotId = null, limit = 50, offset = 0 }) => {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0 || offset > 2147483647) {
@@ -2270,7 +2274,7 @@ module.exports.getProducerLicenseItems = async ({ producerId, lotId = null, limi
         WHERE producer_id=$1 AND ($2::text IS NULL OR lot_id=$2)`, [producerId, lotId])).rows[0].n);
     // Explicit columns: never return serial hashes or activation credentials.
     const rows = (await q(`SELECT l.id, l.lot_id, l.course_id, c.name AS course_name,
-        l.status, l.max_devices, l.created_at, l.assigned_at, l.expires_at, l.revoked_at,
+        l.status, l.max_devices, l.created_at, l.assigned_at, l.revoked_at,
         l.customer_email, (SELECT COUNT(*) FROM activations a WHERE a.license_id=l.id) AS activation_count,
         (SELECT COUNT(*) FROM activations a WHERE a.license_id=l.id AND a.status='active'
             AND (a.expires_at IS NULL OR a.expires_at>$5)) AS active_activations
@@ -2344,9 +2348,8 @@ module.exports.claimFreeLicense = async ({ courseId, customerEmail, orderId, stu
         }
         const lic = (await client.query(`SELECT * FROM licenses
             WHERE status='free' AND course_id=$1 AND producer_id IS NOT DISTINCT FROM $2::text
-              AND (expires_at IS NULL OR expires_at > $3)
             ORDER BY created_at ASC FOR UPDATE SKIP LOCKED LIMIT 1`,
-        [courseId, producerId || null, new Date().toISOString()])).rows[0];
+        [courseId, producerId || null])).rows[0];
         if (!lic) return null;
         await grantLicenseCourse(client, student, lic, producerId);
         return (await client.query(`UPDATE licenses SET status='active', student_id=$1,
@@ -2555,10 +2558,11 @@ module.exports.countProducerLicenses = async (producerId) =>
 // Genera un lote de licencias del productor de forma ATÓMICA respetando la cuota.
 // Bloquea la fila del productor (FOR UPDATE) para serializar generaciones concurrentes.
 module.exports.createProducerLotAtomic = async ({ producerId, maxLicenses, lot, licenses }) => {
-    const expiresAt = normalizeProducerLicenseExpiry(lot.expiresAt);
+    // Las licencias de curso son permanentes: ninguna ruta puede introducir caducidad.
+    if ((lot.expiresAt != null && lot.expiresAt !== '') || (lot.durationDays != null && lot.durationDays !== '')) {
+        throw dbError('LICENSE_EXPIRY_UNSUPPORTED', 'Las licencias de curso no tienen vencimiento.', 400);
+    }
     const workspacePolicy = require('./lib/producer-licenses');
-    const durationDays = workspacePolicy.normalizeDurationDays(lot.durationDays);
-    if (durationDays !== null && expiresAt !== null) throw dbError('EXPIRY_MODE_CONFLICT', 'Elige fecha fija o duración desde la primera activación.', 400);
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -2589,8 +2593,8 @@ module.exports.createProducerLotAtomic = async ({ producerId, maxLicenses, lot, 
         for (const l of licenses) {
             await client.query(
                 `INSERT INTO licenses (id, license_key_hash, student_id, course_id, status, max_devices, created_at, lot_id, producer_id, expires_at)
-                 VALUES ($1,$2,NULL,$3,'free',$4,$5,$6,$7,$8)`,
-                [l.id, l.hash, lot.courseId || null, lot.maxDevices, now, lot.id, producerId, expiresAt]
+                 VALUES ($1,$2,NULL,$3,'free',$4,$5,$6,$7,NULL)`,
+                [l.id, l.hash, lot.courseId || null, lot.maxDevices, now, lot.id, producerId]
             );
         }
         const prepared = licenses.filter(item => item.key || item.ciphertext);
@@ -2598,7 +2602,6 @@ module.exports.createProducerLotAtomic = async ({ producerId, maxLicenses, lot, 
             if (prepared.length !== licenses.length) throw dbError('PARTIAL_SERIALS', 'El lote no contiene todos sus seriales.', 400);
             await workspacePolicy.storePreparedSerials(client, { producerId, licenses: prepared });
         }
-        if (durationDays !== null) await client.query('UPDATE licenses SET duration_days=$1 WHERE lot_id=$2 AND producer_id=$3', [durationDays, lot.id, producerId]);
         if (lot.name) await client.query('UPDATE license_lots SET name=$1 WHERE id=$2 AND producer_id=$3', [String(lot.name).trim().slice(0, 120), lot.id, producerId]);
         await client.query('COMMIT');
         return { ok: true, used };
@@ -2700,8 +2703,8 @@ module.exports.regenerateLicense = async ({ oldLicenseId, newLicenseId, newLicen
                 duration_days, first_activated_at, buyer_name, buyer_phone)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
             [newLicenseId, newLicenseKeyHash, old.student_id, old.course_id, old.student_id ? 'active' : 'free',
-             old.max_devices, now, old.expires_at, old.producer_id, old.lot_id, old.customer_email, old.order_id, old.notes, old.assigned_at,
-             old.duration_days ?? null, old.first_activated_at ?? null, old.buyer_name ?? null, old.buyer_phone ?? null]
+             old.max_devices, now, null, old.producer_id, old.lot_id, old.customer_email, old.order_id, old.notes, old.assigned_at,
+             null, old.first_activated_at ?? null, old.buyer_name ?? null, old.buyer_phone ?? null]
         );
         if (preparedSerial) {
             await require('./lib/producer-licenses').storePreparedSerials(client, { producerId: old.producer_id, licenses: [preparedSerial] });
@@ -2721,8 +2724,8 @@ module.exports.regenerateLicense = async ({ oldLicenseId, newLicenseId, newLicen
             studentId:  old.student_id,
             courseId:   old.course_id,
             maxDevices: old.max_devices,
-            expiresAt:  old.expires_at,
-            durationDays: old.duration_days ?? null,
+            expiresAt:  null,
+            durationDays: null,
             firstActivatedAt: old.first_activated_at ?? null,
             revokedActivations,
             blockedDevices: deviceIds.length, // dispositivos cuya activación/sesión se cerró (NO bloqueados)
@@ -2782,13 +2785,13 @@ module.exports.activateDeviceAtomic = async ({ licenseId, studentId, deviceId, a
         await client.query('BEGIN');
         // Lock de la licencia: serializa activaciones concurrentes del mismo código.
         const license = (await client.query('SELECT * FROM licenses WHERE id=$1 FOR UPDATE', [licenseId])).rows[0];
-        if (!license || license.status !== 'active' || license.student_id !== studentId ||
-            (license.expires_at && (!Number.isFinite(Date.parse(license.expires_at)) || Date.parse(license.expires_at) <= Date.now()))) {
+        if (!license || license.status !== 'active' || license.student_id !== studentId) {
             await client.query('ROLLBACK');
             return { ok: false, reason: 'license_inactive' };
         }
         await require('./lib/producer-licenses').activateLicensePolicy(client, license, { deviceId, now });
-        const boundedExpiries = [expiresAt, license.expires_at].filter(Boolean).map(value => Date.parse(value));
+        // El derecho al curso es permanente; solo el arrendamiento técnico de la activación puede llevar plazo.
+        const boundedExpiries = [expiresAt].filter(Boolean).map(value => Date.parse(value));
         if (boundedExpiries.some(value => !Number.isFinite(value) || value <= Date.now())) throw dbError('invalid_expiry', 'Vencimiento de activación inválido.', 400);
         expiresAt = boundedExpiries.length ? new Date(Math.min(...boundedExpiries)).toISOString() : null;
 
@@ -2846,9 +2849,6 @@ module.exports.claimAndActivateLicenseAtomic = async ({ licenseKeyHash, studentI
                 throw dbError('license_owner_mismatch', 'Licencia asignada a otra cuenta.', 403);
             }
             const now = new Date().toISOString();
-            if (license.expires_at && (!Number.isFinite(Date.parse(license.expires_at)) || Date.parse(license.expires_at) <= Date.now())) {
-                throw dbError('license_expired', 'Licencia vencida.', 403);
-            }
             await require('./lib/producer-licenses').activateLicensePolicy(client, license, { deviceId, now });
             const caps = [Number(license.max_devices), Number(maxAllowed), Number(producer?.max_devices)].filter(v => Number.isInteger(v) && v > 0);
             const limit = caps.length ? Math.min(...caps) : 1;
@@ -2872,7 +2872,8 @@ module.exports.claimAndActivateLicenseAtomic = async ({ licenseKeyHash, studentI
             await client.query(`INSERT INTO devices(id,student_id,fingerprint,status,first_seen,last_seen)
                 VALUES($1,$2,$3,'active',$4,$4) ON CONFLICT(student_id,fingerprint)
                 DO UPDATE SET status='active',last_seen=EXCLUDED.last_seen`, [uuid4(), studentId, deviceId, now]);
-            const validExpiries = [license.expires_at, expiresAt].filter(Boolean).map(v => Date.parse(v));
+            // Licencia permanente: solo el plazo técnico de la activación (si lo hay) acota el token.
+            const validExpiries = [expiresAt].filter(Boolean).map(v => Date.parse(v));
             if (validExpiries.some(v => !Number.isFinite(v) || v <= Date.now())) throw dbError('invalid_expiry', 'Vencimiento de activación inválido.', 400);
             const activationExpiry = validExpiries.length ? new Date(Math.min(...validExpiries)).toISOString() : null;
             const activationId = existing?.id || uuid4();

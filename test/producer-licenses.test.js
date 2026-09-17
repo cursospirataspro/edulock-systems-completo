@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { createProducerLicenseWorkspace, createSerialVault, ensureSchema, storePreparedSerials,
-  activateLicensePolicy, normalizeDurationDays, effectiveStatus } = require('../lib/producer-licenses');
+  activateLicensePolicy, normalizeDurationDays, effectiveStatus, availabilityOf } = require('../lib/producer-licenses');
 
 // Synthetic pools only: these tests never load .env, use real serials, or connect to a service.
 const SECRET = 'synthetic-test-secret-with-at-least-32-bytes';
@@ -71,25 +71,34 @@ test('generation custody encrypts before persistence, rejects foreign insertion 
   await assert.rejects(storePreparedSerials(foreign.pool, { producerId: 'producer-b', licenses: [{ id: 'license-a', key: KEY }], vault }), { code: 'LICENSE_NOT_FOUND' });
 });
 
-test('list licenses binds every filter, escapes LIKE wildcards, hashes full serial and omits vault secrets', async () => {
+test('list licenses binds every filter, escapes LIKE wildcards, hashes full serial, returns the full key and omits vault secrets', async () => {
+  const vault = createSerialVault(SECRET), ciphertext = vault.encrypt(KEY, 'producer-a', 'license-a');
   const h = harness({ handler(sql) {
+    if (sql.startsWith('SELECT COUNT(*) AS total')) return [{ total: 3, available: 1, reserved: 0, in_use: 2, suspended: 0, revoked: 0 }];
     if (sql.startsWith('SELECT COUNT(*)')) return [{ n: 1 }];
-    if (sql.startsWith('SELECT l.id,l.lot_id')) return [{ ...baseLicense(), serial_available: true, serial_suffix: 'NPQR', ciphertext: 'must-not-leak', license_key_hash: 'must-not-leak' }];
+    if (sql.startsWith('SELECT l.id,l.lot_id')) return [{ ...baseLicense(), serial_suffix: 'NPQR', ciphertext, license_key_hash: 'must-not-leak', student_name: 'Alumna QA', student_email: 'alumna@example.invalid' }];
     return null;
   } });
-  const response = await h.service.listLicenses('producer-a', { q: KEY, lotId: 'lot-a', courseId: 'course-a', status: 'active', page: 2, pageSize: 10 });
+  const response = await h.service.listLicenses('producer-a', { q: KEY, lotId: 'lot-a', courseId: 'course-a', status: 'in_use', page: 2, pageSize: 10 });
   assert.equal(response.total, 1); assert.equal(response.page, 2); assert.equal(response.licenses[0].serialAvailable, true);
+  assert.equal(response.licenses[0].serial, KEY); assert.equal(response.licenses[0].availability, 'in_use');
+  assert.equal(response.licenses[0].studentName, 'Alumna QA'); assert.equal(Object.hasOwn(response.licenses[0], 'expiresAt'), false);
+  assert.deepEqual(response.counts, { total: 3, available: 1, reserved: 0, inUse: 2, suspended: 0, revoked: 0 });
   assert.equal(JSON.stringify(response).includes('must-not-leak'), false);
   assert.ok(h.calls.every(call => call.params[0] === 'producer-a'));
-  assert.ok(h.calls[0].params.includes(crypto.createHmac('sha256', SECRET).update(KEY).digest('hex')));
+  assert.ok(h.calls.some(c => c.params.includes(crypto.createHmac('sha256', SECRET).update(KEY).digest('hex'))));
   assert.deepEqual(h.calls.at(-1).params.slice(-2), [10, 10]);
   await h.service.listLicenses('producer-a', { q: '10%_sale' });
   assert.ok(h.calls.at(-1).params.includes('%10\\%\\_sale%'));
+  // Legacy aliases keep working and the join never depends on students.producer_id.
+  await h.service.listLicenses('producer-a', { status: 'free' });
+  assert.equal(h.calls.at(-1).sql.includes('s.producer_id'), false);
+  assert.match(h.calls.at(-1).sql, /l\.status='free' AND l\.student_id IS NULL/);
 });
 
 test('unfiltered license queries have valid PostgreSQL parameter arity', async () => {
   const h = harness();
-  assert.deepEqual(await h.service.listLicenses('producer-a'), { licenses: [], total: 0, page: 1, pageSize: 50 });
+  assert.deepEqual(await h.service.listLicenses('producer-a'), { licenses: [], total: 0, page: 1, pageSize: 50, counts: { total: 0, available: 0, reserved: 0, inUse: 0, suspended: 0, revoked: 0 } });
 });
 
 test('malformed filters and pagination cannot become SQL or unbounded queries', async () => {
@@ -100,16 +109,26 @@ test('malformed filters and pagination cannot become SQL or unbounded queries', 
   }
 });
 
-test('effective license status keeps suspension and terminal revocation distinct from expiration', () => {
+test('course licenses are permanent: legacy expiry values never change the effective status', () => {
   const past = new Date(Date.now() - 86400000).toISOString();
-  assert.equal(effectiveStatus({ status: 'active', expires_at: past }), 'expired');
-  assert.equal(effectiveStatus({ status: 'free', expires_at: past }), 'expired');
+  assert.equal(effectiveStatus({ status: 'active', expires_at: past }), 'active');
+  assert.equal(effectiveStatus({ status: 'free', expires_at: past }), 'free');
   assert.equal(effectiveStatus({ status: 'suspended', expires_at: past }), 'suspended');
   assert.equal(effectiveStatus({ status: 'revoked', expires_at: past }), 'revoked');
 });
 
+test('availability distinguishes distributable, reserved, in-use, suspended and revoked keys', () => {
+  assert.equal(availabilityOf({ status: 'free' }), 'available');
+  assert.equal(availabilityOf({ status: 'free', customer_email: 'buyer@example.invalid' }), 'reserved');
+  assert.equal(availabilityOf({ status: 'free', reserved_email: 'buyer@example.invalid' }), 'reserved');
+  assert.equal(availabilityOf({ status: 'active', student_id: 'student-a' }), 'in_use');
+  assert.equal(availabilityOf({ status: 'active', student_id: null, customer_email: 'sold@example.invalid' }), 'in_use', 'a sold key with zero live activations stays in use');
+  assert.equal(availabilityOf({ status: 'suspended', student_id: 'student-a' }), 'suspended');
+  assert.equal(availabilityOf({ status: 'revoked' }), 'revoked');
+});
+
 test('foreign licenses fail before changes and always release the transaction', async () => {
-  for (const action of [s => s.updateLicense('producer-a', 'foreign', { notes: 'x' }), s => s.setLicenseStatus('producer-a', 'foreign', 'suspended'), s => s.reissueLicense('producer-a', 'foreign', true)]) {
+  for (const action of [s => s.updateLicense('producer-a', 'foreign', { customerEmail: 'x@example.invalid' }), s => s.setLicenseStatus('producer-a', 'foreign', 'suspended'), s => s.reissueLicense('producer-a', 'foreign', true)]) {
     const h = harness({ license: null });
     await assert.rejects(action(h.service), { code: 'LICENSE_NOT_FOUND' });
     assert.equal(h.calls.some(c => /^(UPDATE|INSERT|DELETE)/.test(c.sql)), false);
@@ -120,56 +139,48 @@ test('foreign licenses fail before changes and always release the transaction', 
 
 test('a suspended producer cannot change an otherwise owned license', async () => {
   const h = harness({ producer: { id: 'producer-a', active: 0 } });
-  await assert.rejects(h.service.updateLicense('producer-a', 'license-a', { notes: 'x' }), { code: 'PRODUCER_INACTIVE' });
+  await assert.rejects(h.service.updateLicense('producer-a', 'license-a', { customerEmail: 'x@example.invalid' }), { code: 'PRODUCER_INACTIVE' });
   assert.equal(h.calls.some(c => c.sql.includes('FROM licenses')), false);
 });
 
-test('metadata edits use only allowed columns and never let a producer change ownership', async () => {
-  const h = harness();
-  const response = await h.service.updateLicense('producer-a', 'license-a', { notes: '<script>alert(1)</script>', buyerName: '  Cliente  ', producerId: 'producer-b', studentId: 'student-b', status: 'active' });
-  assert.equal(response.license.buyerName, 'Cliente');
-  const update = h.calls.find(c => c.sql.startsWith('UPDATE licenses'));
-  assert.match(update.sql, /notes=\$1,buyer_name=\$2/);
-  assert.equal(update.sql.includes('student_id='), false); assert.equal(update.sql.includes('producer_id='), true);
-  assert.deepEqual(update.params.slice(-2), ['license-a', 'producer-a']);
-  assert.ok(h.calls.some(c => c.sql.startsWith('INSERT INTO producer_workspace_audit')));
-  assert.equal(h.calls.at(-1).sql, 'COMMIT');
+test('a producer can only reserve a free key for an email; every other field is refused before any query', async () => {
+  for (const [fields, code] of [[{ notes: 'x' }, 'FIELD_NOT_EDITABLE'], [{ buyerName: 'x' }, 'FIELD_NOT_EDITABLE'], [{ producerId: 'producer-b' }, 'FIELD_NOT_EDITABLE'],
+    [{ studentId: 'student-b' }, 'FIELD_NOT_EDITABLE'], [{ status: 'active' }, 'FIELD_NOT_EDITABLE'], [{}, 'EMPTY_UPDATE'],
+    [{ maxDevices: 1 }, 'DEVICE_LIMIT_ADMIN_ONLY'], [{ expiresAt: future }, 'LICENSE_EXPIRY_UNSUPPORTED'], [{ durationDays: 30 }, 'LICENSE_EXPIRY_UNSUPPORTED']]) {
+    const h = harness();
+    await assert.rejects(h.service.updateLicense('producer-a', 'license-a', fields), { code });
+    assert.equal(h.calls.length, 0, `${code} must be refused without touching the database`);
+  }
+  const free = harness({ license: { ...baseLicense(), status: 'free', student_id: null, assigned_at: null, first_activated_at: null } });
+  const response = await free.service.updateLicense('producer-a', 'license-a', { customerEmail: 'Buyer@Example.invalid' });
+  const update = free.calls.find(c => c.sql.startsWith('UPDATE licenses'));
+  assert.match(update.sql, /SET customer_email=\$1 WHERE id=\$2 AND producer_id=\$3/);
+  assert.deepEqual(update.params, ['buyer@example.invalid', 'license-a', 'producer-a']);
+  assert.equal(response.license.customerEmail, 'buyer@example.invalid'); assert.equal(response.license.availability, 'reserved');
+  assert.ok(free.calls.some(c => c.sql.startsWith('INSERT INTO producer_workspace_audit')));
+  assert.equal(free.calls.at(-1).sql, 'COMMIT');
 });
 
-test('device limit cannot exceed the fresh producer quota or discard active activations', async () => {
+test('device limits are administrator-only for producers, at generation and at edit time', async () => {
   const h = harness({ producer: { id: 'producer-a', active: 1, max_devices: 2 } });
-  await assert.rejects(h.service.updateLicense('producer-a', 'license-a', { maxDevices: 3 }), { code: 'DEVICE_QUOTA_EXCEEDED' });
-  const busy = harness({ handler(sql) { return sql.startsWith('SELECT COUNT(*) AS n FROM activations') ? [{ n: 2 }] : null; } });
-  await assert.rejects(busy.service.updateLicense('producer-a', 'license-a', { maxDevices: 1 }), { code: 'ACTIVE_DEVICES_EXCEED_LIMIT' });
-  assert.equal(busy.calls.some(c => c.sql.startsWith('UPDATE')), false);
+  await assert.rejects(h.service.updateLicense('producer-a', 'license-a', { maxDevices: 3 }), { code: 'DEVICE_LIMIT_ADMIN_ONLY' });
+  await assert.rejects(h.service.updateLicense('producer-a', 'license-a', { maxDevices: 1 }), { code: 'DEVICE_LIMIT_ADMIN_ONLY' });
+  assert.equal(h.calls.length, 0);
 });
 
 test('assigned buyer identity cannot be transferred using contact metadata', async () => {
-  const h = harness({ handler(sql) { return sql.startsWith('SELECT email FROM students') ? [{ email: 'assigned@example.invalid' }] : null; } });
-  await assert.rejects(h.service.updateLicense('producer-a', 'license-a', { customerEmail: 'different@example.invalid' }), { code: 'ASSIGNED_BUYER_IMMUTABLE' });
-  await h.service.updateLicense('producer-a', 'license-a', { customerEmail: 'ASSIGNED@example.invalid' });
-});
-
-test('expiry edits revoke activations and close only the owned course sessions in the same transaction', async () => {
   const h = harness();
-  await h.service.updateLicense('producer-a', 'license-a', { expiresAt: future });
-  assert.ok(h.calls.some(c => c.sql.startsWith('UPDATE activations')));
-  const playback = h.calls.find(c => c.sql.startsWith('DELETE FROM playback_sessions'));
-  assert.deepEqual(playback.params, ['student-a', 'course-a', null]);
-  const sessions = h.calls.find(c => c.sql.startsWith('DELETE FROM active_sessions'));
-  assert.deepEqual(sessions.params, ['student-a', 'course-a', null, 'producer-a']);
-  assert.equal(h.calls.some(c => /UPDATE devices|DELETE FROM devices/.test(c.sql)), false);
-  assert.equal(h.calls.at(-1).sql, 'COMMIT');
+  await assert.rejects(h.service.updateLicense('producer-a', 'license-a', { customerEmail: 'different@example.invalid' }), { code: 'ASSIGNED_BUYER_IMMUTABLE' });
+  assert.equal(h.calls.some(c => c.sql.startsWith('UPDATE')), false); assert.equal(h.calls.at(-1).sql, 'ROLLBACK');
 });
 
-test('duration validation distinguishes pre-activation setup from already-started access', async () => {
+test('license validity cannot be introduced through the workspace: no expiry, no duration, no activations touched', async () => {
+  const h = harness();
+  await assert.rejects(h.service.updateLicense('producer-a', 'license-a', { expiresAt: future }), { code: 'LICENSE_EXPIRY_UNSUPPORTED' });
+  await assert.rejects(h.service.updateLicense('producer-a', 'license-a', { customerEmail: 'a@example.invalid', durationDays: 5 }), { code: 'LICENSE_EXPIRY_UNSUPPORTED' });
+  assert.equal(h.calls.length, 0);
   for (const invalid of [0, -1, 3651, 1.2, '3 days', true]) assert.throws(() => normalizeDurationDays(invalid), { code: 'INVALID_DURATION' });
   assert.equal(normalizeDurationDays('30'), 30);
-  const active = harness();
-  await assert.rejects(active.service.updateLicense('producer-a', 'license-a', { durationDays: 30 }), { code: 'DURATION_ALREADY_STARTED' });
-  const free = harness({ license: { ...baseLicense(), status: 'free', student_id: null, first_activated_at: null } });
-  await assert.rejects(free.service.updateLicense('producer-a', 'license-a', { durationDays: 30, expiresAt: future }), { code: 'EXPIRY_MODE_CONFLICT' });
-  await free.service.updateLicense('producer-a', 'license-a', { durationDays: 30, expiresAt: null });
 });
 
 test('license suspension is reversible but revocation remains terminal', async () => {
@@ -183,7 +194,7 @@ test('license suspension is reversible but revocation remains terminal', async (
   assert.equal((await free.service.setLicenseStatus('producer-a', 'license-a', 'active')).status, 'free');
   const revoked = harness({ license: { ...baseLicense(), status: 'revoked' } });
   await assert.rejects(revoked.service.setLicenseStatus('producer-a', 'license-a', 'active'), { code: 'LICENSE_REVOKED' });
-  await assert.rejects(revoked.service.updateLicense('producer-a', 'license-a', { notes: 'x' }), { code: 'LICENSE_REVOKED' });
+  await assert.rejects(revoked.service.updateLicense('producer-a', 'license-a', { customerEmail: 'x@example.invalid' }), { code: 'LICENSE_REVOKED' });
   assert.equal((await revoked.service.setLicenseStatus('producer-a', 'license-a', 'revoked')).unchanged, true);
 });
 
@@ -201,7 +212,8 @@ test('device actions are scoped to one license; reset does not remove a delibera
     const devices = mutations.find(c => c.sql.startsWith('UPDATE devices'));
     if (action !== 'unblock') {
       assert.match(devices.sql, /d.status='active'/); assert.match(devices.sql, /NOT EXISTS\(SELECT 1 FROM activations/);
-      assert.deepEqual(devices.params, ['student-a', 'device-a', 'producer-a']);
+      assert.deepEqual(devices.params, ['student-a', 'device-a', 'license-a', 'producer-a']);
+      assert.equal(devices.sql.includes('s.producer_id'), false, 'ownership is proven by the license, never by students.producer_id');
     } else assert.equal(devices, undefined);
     assert.equal(mutations.some(c => c.sql.startsWith('INSERT INTO producer_license_device_blocks')), action === 'block');
     assert.equal(mutations.some(c => c.sql.startsWith('DELETE FROM producer_license_device_blocks')), action === 'unblock');
@@ -215,17 +227,18 @@ test('a foreign activation cannot become a global device operation', async () =>
   assert.equal(h.calls.some(c => /^(UPDATE|INSERT|DELETE)/.test(c.sql)), false);
 });
 
-test('first activation policy persists the absolute expiry once; reuse cannot extend access', async () => {
+test('first activation is recorded once as history and never starts a validity period', async () => {
   const calls = [], first = '2026-01-01T00:00:00.000Z';
   const client = { async query(sql, params) { calls.push({ sql, params }); return { rows: [] }; } };
   const license = { ...baseLicense(), first_activated_at: null, duration_days: 30 };
   await activateLicensePolicy(client, license, { deviceId: 'device-a', now: first });
-  assert.equal(license.expires_at, '2026-01-31T00:00:00.000Z'); assert.equal(license.first_activated_at, first);
-  assert.ok(calls.some(c => c.sql.startsWith('UPDATE licenses')));
+  assert.equal(license.expires_at, null); assert.equal(license.first_activated_at, first);
+  const update = calls.find(c => c.sql.startsWith('UPDATE licenses'));
+  assert.equal(update.sql.includes('expires_at'), false); assert.deepEqual(update.params, [first, 'license-a', 'producer-a']);
   const updates = calls.filter(c => c.sql.startsWith('UPDATE licenses')).length;
   await activateLicensePolicy(client, license, { deviceId: 'device-b', now: '2026-01-10T00:00:00.000Z' });
   assert.equal(calls.filter(c => c.sql.startsWith('UPDATE licenses')).length, updates);
-  assert.equal(license.expires_at, '2026-01-31T00:00:00.000Z');
+  assert.equal(license.first_activated_at, first);
 });
 
 test('blocked device is rejected before first activation date or expiry is changed', async () => {
@@ -315,36 +328,80 @@ test('reissue rolls back if encrypted custody cannot be saved and does not reviv
   assert.equal(revoked.calls.some(c => c.sql.startsWith('UPDATE licenses')), false);
 });
 
-test('customer listing is derived only from owned licenses and does not reveal student secrets', async () => {
+test('student listing is derived from the license→student relation of owned licenses, one row per account', async () => {
   const h = harness({ handler(sql) {
-    if (sql.startsWith('WITH customer_licenses')) return [{ email: 'client@example.invalid', name: 'Client', phone: '', notes: '', total_licenses: '2', active_licenses: '1', last_activity: now }];
+    if (sql.startsWith('SELECT COUNT(*) AS n FROM (WITH owned')) return [{ n: 1 }];
+    if (sql.startsWith('WITH owned AS')) return [{ id: 'student-a', name: 'Alumna QA', email: 'client@example.invalid', active: 1, license_count: '2', active_licenses: '1',
+      suspended_licenses: '1', revoked_licenses: '0', active_activations: '1', last_activity: now, first_assigned_at: now, course_names: ['Curso A', 'Curso B'] }];
     return null;
   } });
-  const result = await h.service.listCustomers('producer-a', { q: 'client' });
-  assert.equal(result.customers[0].totalLicenses, 2);
+  const result = await h.service.listStudents('producer-a', { q: 'client', courseId: 'course-a', page: 1, pageSize: 20 });
+  assert.equal(result.total, 1); assert.equal(result.students[0].licenseCount, 2); assert.deepEqual(result.students[0].courses, ['Curso A', 'Curso B']);
   assert.ok(h.calls.every(c => c.params[0] === 'producer-a'));
-  assert.ok(h.calls.at(-1).sql.includes('s.producer_id=l.producer_id'));
-  assert.ok(h.calls.at(-1).sql.includes('WHERE l.producer_id=$1'));
+  const sql = h.calls.at(-1).sql;
+  assert.ok(sql.includes('WHERE l.producer_id=$1 AND l.student_id IS NOT NULL'));
+  assert.equal(sql.includes('s.producer_id'), false, 'students.producer_id must not hide buyers of several producers');
+  assert.equal(JSON.stringify(result).includes('password'), false);
+  await assert.rejects(h.service.listStudents('producer-a', { courseId: "' OR TRUE --" }), { code: 'INVALID_ID' });
 });
 
-test('customer profile update rejects foreign emails and preserves omitted existing fields', async () => {
-  const foreign = harness();
-  await assert.rejects(foreign.service.updateCustomer('producer-a', { email: 'foreign@example.invalid', notes: 'x' }), { code: 'CUSTOMER_NOT_FOUND' });
+test('a student record exposes only this producer licenses, keys and devices, and refuses strangers', async () => {
+  const vault = createSerialVault(SECRET), ciphertext = vault.encrypt(KEY, 'producer-a', 'license-a');
+  const stranger = harness();
+  await assert.rejects(stranger.service.getStudent('producer-a', 'student-b'), { code: 'STUDENT_NOT_FOUND' });
   const h = harness({ handler(sql) {
-    if (sql.startsWith('SELECT l.id FROM licenses')) return [{ id: 'license-a' }];
-    if (sql.startsWith('SELECT name,phone,notes FROM producer_customer_profiles')) return [{ name: 'Existing', phone: '123', notes: 'Before' }];
+    if (sql.startsWith('SELECT s.id,s.name,s.email,s.active,s.created_at')) return [{ id: 'student-a', name: 'Alumna QA', email: 'client@example.invalid', active: 1, created_at: now, last_login: now, linked_at: now, linked_via: 'license_activation' }];
+    if (sql.startsWith('SELECT l.id,l.lot_id')) return [{ ...baseLicense(), ciphertext, student_email: 'client@example.invalid', student_name: 'Alumna QA' }];
+    if (sql.startsWith('SELECT a.id,a.license_id,a.device_id')) return [{ id: 'activation-a', license_id: 'license-a', device_id: 'device-a', status: 'active', created_at: now, last_used_at: now, expires_at: null, blocked: false }];
     return null;
   } });
-  const result = await h.service.updateCustomer('producer-a', { email: 'CLIENT@example.invalid', notes: 'After' });
-  assert.deepEqual(result.customer, { email: 'client@example.invalid', name: 'Existing', phone: '123', notes: 'After' });
-  assert.equal(h.calls.some(c => c.sql.startsWith('UPDATE students')), false);
+  const record = await h.service.getStudent('producer-a', 'student-a');
+  assert.equal(record.student.email, 'client@example.invalid'); assert.equal(record.licenses.length, 1);
+  assert.equal(record.licenses[0].serial, KEY); assert.equal(record.licenses[0].activations[0].deviceId, 'device-a');
+  assert.ok(h.calls.every(c => c.params[0] === 'producer-a'));
+  assert.ok(h.calls.every(c => !/s\.producer_id/.test(c.sql)));
+});
+
+test('a free key can be read for delivery without a buyer; revoked keys are never handed out', async () => {
+  const vault = createSerialVault(SECRET), ciphertext = vault.encrypt(KEY, 'producer-a', 'license-a');
+  const free = harness({ handler(sql) {
+    if (sql.startsWith('SELECT v.ciphertext')) return [{ ciphertext }];
+    if (sql.startsWith('SELECT l.status FROM licenses')) return [{ status: 'free' }];
+    return null;
+  } });
+  assert.equal(await free.service.readLicensePlainSerial('producer-a', 'license-a'), KEY);
+  const revoked = harness({ handler(sql) {
+    if (sql.startsWith('SELECT v.ciphertext')) return [{ ciphertext }];
+    if (sql.startsWith('SELECT l.status FROM licenses')) return [{ status: 'revoked' }];
+    return null;
+  } });
+  await assert.rejects(revoked.service.readLicensePlainSerial('producer-a', 'license-a'), { code: 'LICENSE_REVOKED' });
+  const historical = harness();
+  await assert.rejects(historical.service.readLicensePlainSerial('producer-a', 'license-a'), { code: 'LICENSE_SERIAL_UNAVAILABLE' });
+});
+
+test('lot serial copies and CSV exports respect an explicit available-only scope and refuse unknown scopes', async () => {
+  const vault = createSerialVault(SECRET), ciphertext = vault.encrypt(KEY, 'producer-a', 'license-a');
+  const h = harness({ handler(sql) {
+    if (sql.startsWith('SELECT id FROM license_lots')) return [{ id: 'lot-a' }];
+    if (sql.startsWith('SELECT l.id,l.status')) return [{ id: 'license-a', status: 'free', ciphertext, max_devices: 2 }];
+    return null;
+  } });
+  const copied = await h.service.listLotSerials('producer-a', 'lot-a', { scope: 'available' });
+  assert.deepEqual(copied.serials, [KEY]);
+  assert.match(h.calls.find(c => c.sql.startsWith('SELECT l.id,l.status')).sql, /l\.status='free' AND l\.student_id IS NULL/);
+  const csv = await h.service.exportLot('producer-a', 'lot-a', { scope: 'available' });
+  assert.ok(csv.includes('serial,licenseId,availability,status')); assert.ok(csv.includes('available'));
+  await assert.rejects(h.service.exportLot('producer-a', 'lot-a', { scope: 'everything' }), { code: 'INVALID_SCOPE' });
 });
 
 test('route adapter requires active producer middleware and applies no-store to serial responses', async () => {
   const h = harness(), routes = [], auth = () => {};
   const app = Object.fromEntries(['get', 'patch', 'post'].map(method => [method, (path, middleware, handler) => routes.push({ method, path, middleware, handler })]));
   h.service.mount(app, auth);
-  assert.equal(routes.length, 14);
+  assert.equal(routes.length, 16);
+  assert.equal(routes.some(route => route.path.endsWith('/customers')), false, 'Compradores is replaced by Estudiantes');
+  assert.ok(routes.some(route => route.path.endsWith('/students')));
   assert.ok(routes.every(route => route.middleware === auth));
   const response = { statusCode: 200, headers: {}, status(code) { this.statusCode = code; return this; }, set(key, value) { this.headers[key] = value; return this; }, json(value) { this.body = value; }, send(value) { this.body = value; } };
   await routes.find(route => route.path.endsWith('/licenses')).handler({ producer: null, query: {} }, response);

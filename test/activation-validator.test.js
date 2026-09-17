@@ -29,17 +29,23 @@ test('course-scoped activation validates an authorized video and returns the cou
   assert.deepEqual(await f.run(f.body), { valid: true, studentId: 'student-a', licenseId: 'lic-a', courseId: 'course-a' });
   assert.equal(f.state.authorized, 1); assert.equal(f.state.touched, 1);
 });
+test('a student who also buys from another producer still validates this producer license', async () => {
+  const f = fixture(); f.state.student.producerId = 'another';
+  assert.equal((await f.run(f.body)).valid, true);
+});
 test('revoked device and suspended producer invalidate a saved activation even without videoId', async () => {
-  for (const mutate of [f => { f.state.devices = []; }, f => { f.state.producer.active = 0; }, f => { f.state.student.producerId = 'another'; }]) {
+  for (const mutate of [f => { f.state.devices = []; }, f => { f.state.producer.active = 0; }]) {
     const f = fixture(); delete f.body.videoId; mutate(f);
     await assert.rejects(f.run(f.body), e => e.status === 403); assert.equal(f.state.touched, 0);
   }
 });
-test('expired or malformed expiration never validates and never updates usage', async () => {
-  for (const target of ['license', 'activation']) for (const value of ['2020-01-01T00:00:00Z', 'invalid']) {
-    const f = fixture(); f.state[target].expires_at = value;
+test('an expired or malformed activation lease never validates, while a legacy license date is ignored', async () => {
+  for (const value of ['2020-01-01T00:00:00Z', 'invalid']) {
+    const f = fixture(); f.state.activation.expires_at = value;
     await assert.rejects(f.run(f.body), { code: 'ACTIVATION_EXPIRED' }); assert.equal(f.state.touched, 0);
   }
+  const permanent = fixture(); permanent.state.license.expires_at = '2020-01-01T00:00:00Z';
+  assert.equal((await permanent.run(permanent.body)).valid, true);
 });
 test('wrong owner, device, inactive account and revoked credentials fail closed', async () => {
   for (const mutate of [f => { f.state.license.student_id = 'other'; }, f => { f.body.deviceId = 'other'; },

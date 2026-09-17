@@ -69,13 +69,19 @@ function harness() {
     return { state, calls, run };
 }
 
-test('producer batch accepts future expiry and never trusts owner scope in its body', async () => {
-    const h = harness(), expiresAt = new Date(Date.now() + 86400000).toISOString();
-    const res = await h.run('post', '/api/producer/license/generate-bulk', { body: { courseId: 'own-course', quantity: 2, expiresAt, producerId: 'another' } });
-    assert.equal(res.statusCode, 200); assert.equal(res.body.expiresAt, expiresAt);
+test('producer batch creates permanent licenses with the administrator device limit and never trusts owner scope in its body', async () => {
+    const h = harness();
+    const res = await h.run('post', '/api/producer/license/generate-bulk', { body: { courseId: 'own-course', quantity: 2, producerId: 'another' } });
+    assert.equal(res.statusCode, 200); assert.equal(Object.hasOwn(res.body, 'expiresAt'), false); assert.equal(res.body.maxDevices, 2);
     const input = h.calls.find(c => c[0] === 'lot')[1];
-    assert.equal(input.producerId, pid); assert.equal(input.lot.expiresAt, expiresAt);
+    assert.equal(input.producerId, pid); assert.equal(Object.hasOwn(input.lot, 'expiresAt'), false); assert.equal(input.lot.maxDevices, 2);
     assert.equal(res.body.keys.length, 2);
+    for (const expiry of [{ expiresAt: new Date(Date.now() + 86400000).toISOString() }, { durationDays: 30 }]) {
+        const refused = await harness().run('post', '/api/producer/license/generate-bulk', { body: { courseId: 'own-course', quantity: 1, ...expiry } });
+        assert.equal(refused.statusCode, 400); assert.equal(refused.body.code, 'LICENSE_EXPIRY_UNSUPPORTED');
+    }
+    const limit = await harness().run('post', '/api/producer/license/generate-bulk', { body: { courseId: 'own-course', quantity: 1, maxDevices: 1 } });
+    assert.equal(limit.statusCode, 403); assert.equal(limit.body.code, 'DEVICE_LIMIT_ADMIN_ONLY');
 });
 
 test('invalid expiry, fractional quantity and device overflow cannot create producer serials', async () => {
@@ -93,7 +99,7 @@ test('producer listing is paginated, uses the authenticated owner, and excludes 
     const h = harness();
     const res = await h.run('get', '/api/producer/licenses/items', { query: { page: '2', lotId, producerId: 'another' } });
     assert.equal(res.statusCode, 200); assert.equal(res.body.page, 2);
-    assert.equal(res.body.licenses[0].effectiveStatus, 'expired');
+    assert.equal(res.body.licenses[0].effectiveStatus, 'free'); assert.equal(Object.hasOwn(res.body.licenses[0], 'expiresAt'), false);
     const input = h.calls.find(c => c[0] === 'list')[1];
     assert.equal(input.producerId, pid); assert.equal(input.offset, 50); assert.equal(input.lotId, lotId);
     assert.doesNotMatch(JSON.stringify(res.body), /hash|NEVER-RETURN/);

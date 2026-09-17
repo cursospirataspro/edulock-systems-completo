@@ -32,7 +32,7 @@ function producerHarness({ limit = 0, used = 150 } = {}) {
             return { keys: Array.from({ length: body.quantity }, (_, i) => 'synthetic-' + i) };
         }
     });
-    for (const name of ['producerLicenseQuota', 'refreshProfile', 'producerLicenseExpiry', 'genLicenses']) {
+    for (const name of ['producerLicenseQuota', 'refreshProfile', 'genLicenses']) {
         vm.runInContext(functionSource('productor', name), context);
     }
     return { context, node, messages, writes, profile };
@@ -55,17 +55,21 @@ test('unlimited producer quota displays correctly and permits new lots after pri
     assert.equal(h.writes.length, 1, 'unlimited quota still respects the batch size limit');
 });
 
-test('finite producer quota rejects an oversized lot and disables generation at the exact cap', async () => {
+test('finite producer quota clamps the proposed quantity, rejects an oversized lot and disables generation at the exact cap', async () => {
     const h = producerHarness({ limit: 4, used: 3 });
     await h.context.refreshProfile();
     assert.match(h.node('hd-quota').textContent, /3\/4 licencias/);
     assert.equal(h.node('lic-qty').max, 1);
+    assert.equal(h.node('lic-qty').value, '1', 'the form never proposes more than the remaining quota');
+    assert.equal(h.node('lic-devices-readonly').textContent, '2');
+    h.node('lic-qty').value = '2';
     await h.context.genLicenses();
     assert.equal(h.writes.length, 0);
     assert.match(h.messages.at(-1), /supera tu cuota/);
     h.node('lic-qty').value = '1';
     await h.context.genLicenses();
     assert.equal(h.writes.length, 1);
+    assert.equal(Object.hasOwn(h.writes[0], 'expiresAt'), false); assert.equal(Object.hasOwn(h.writes[0], 'maxDevices'), false);
     assert.equal(h.node('lic-btn').disabled, true);
     assert.match(h.node('lic-quota').textContent, /Disponibles: 0 licencias/);
 });
@@ -134,69 +138,22 @@ test('owner quota cells retain numeric zero with the real admin escaping functio
     }
 });
 
-test('producer batch converts an optional local expiry to UTC and blocks a past expiry', async () => {
+test('producer batch sends only course, quantity and lot name: no expiry, duration, notes or device limit', async () => {
     const h = producerHarness();
-    h.node('lic-expires').value = '2099-01-02T15:30';
+    h.node('lic-lot-name').value = '  Septiembre ';
     await h.context.genLicenses();
-    assert.equal(h.writes[0].expiresAt, new Date('2099-01-02T15:30').toISOString());
-    h.node('lic-expires').value = '';
-    await h.context.genLicenses();
-    assert.equal(h.writes[1].expiresAt, null);
-    h.node('lic-expires').value = '2020-01-01T00:00';
-    await h.context.genLicenses();
-    assert.equal(h.writes.length, 2);
-    assert.match(h.messages.at(-1), /vencimiento futuro/);
+    assert.deepEqual(Object.keys(h.writes[0]).sort(), ['courseId', 'name', 'quantity']);
+    assert.equal(h.writes[0].name, 'Septiembre');
+    assert.match(h.messages.at(-1), /2 licencias creadas/);
+    assert.equal(source.productor.includes('lic-expires'), false); assert.equal(source.productor.includes('lic-duration'), false);
+    assert.equal(/Vencimiento|Días desde primera activación|Usa duración o fecha fija/.test(source.productor), false, 'no expiry wording remains in the producer panel');
 });
 
-test('producer revocation requires confirmation and refreshes the license controls after success', async () => {
-    let confirmed = false;
-    const calls = [], messages = [];
-    const context = vm.createContext({ requestLicenseRevocation: async () => confirmed, message: (_id, text) => messages.push(text),
-        api: async (...args) => calls.push(args), loadLicenseItems: async () => {}, loadLots: async () => {}, loadActivations: async () => {} });
-    vm.runInContext(functionSource('productor', 'revokeProducerLicense'), context);
-    const license = { id: 'own-license', courseName: 'Course' }, button = { disabled: false };
-    await context.revokeProducerLicense(license, button);
-    assert.equal(calls.length, 0); assert.equal(button.disabled, false);
-    confirmed = true;
-    await context.revokeProducerLicense(license, button);
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0][1], '/api/producer/licenses/own-license/revoke');
-    assert.match(messages[0], /Licencia revocada/);
-    assert.equal(button.disabled, true);
-});
-
-test('a refused producer revocation does not claim success or disable retry', async () => {
-    const messages = [], button = { disabled: false };
-    const context = vm.createContext({ requestLicenseRevocation: async () => true, message: (_id, text) => messages.push(text),
-        api: async () => { throw new Error('Licencia no encontrada'); } });
-    vm.runInContext(functionSource('productor', 'revokeProducerLicense'), context);
-    await context.revokeProducerLicense({ id: 'foreign-license' }, button);
-    assert.equal(button.disabled, false); assert.equal(messages[0], 'Licencia no encontrada');
-});
-
-test('producer individual list renders state, expiry and bounded pagination without serials', async () => {
-    const nodes = new Map(), rows = [], buttons = [], requests = [];
-    const node = id => {
-        if (!nodes.has(id)) nodes.set(id, { value: '', innerHTML: '', textContent: '', disabled: false,
-            replaceChildren() { rows.length = 0; }, append(row) { rows.push(row); } });
-        return nodes.get(id);
-    };
-    node('license-lot-filter').value = 'own-lot';
-    const context = vm.createContext({ $: node, _licensePage: 1, _licenseRequest: 0,
-        document: { createElement: tag => tag === 'tr' ? { innerHTML: '', children: Array.from({ length: 7 }, () => ({ append(button) { buttons.push(button); } })) } : {} },
-        api: async (_method, url) => { requests.push(url); return { page: 2, pageSize: 50, total: 51, licenses: [
-            { id: 'available-id', courseName: '<img src=x onerror=bad()>', status: 'free', effectiveStatus: 'expired', expiresAt: '2020-01-01T00:00:00Z', activeActivations: 0, maxDevices: 2, createdAt: '2019-01-01T00:00:00Z', license_key_hash: 'NEVER-SHOW' },
-            { id: 'revoked-id', courseName: 'Course', status: 'revoked', expiresAt: null, activeActivations: 0, maxDevices: 2 }
-        ] }; }, revokeProducerLicense() {}
-    });
-    for (const name of ['esc', 'licenseDate', 'loadLicenseItems']) vm.runInContext(functionSource('productor', name), context);
-    await context.loadLicenseItems(2);
-    assert.match(requests[0], /page=2&lotId=own-lot/);
-    assert.match(rows[0].innerHTML, /Vencida/);
-    assert.match(rows[0].innerHTML, /&lt;img/);
-    assert.doesNotMatch(rows[0].innerHTML, /<img|NEVER-SHOW/);
-    assert.match(rows[1].innerHTML, /Revocada/);
-    assert.equal(buttons.length, 1, 'revoked licenses offer no second action');
-    assert.equal(node('license-prev').disabled, false);
-    assert.equal(node('license-next').disabled, true);
+test('legacy inline license list, revocation dialog and activation table no longer exist in the producer panel', () => {
+    for (const name of ['revokeProducerLicense', 'requestLicenseRevocation', 'loadLicenseItems', 'loadLots', 'loadActivations', 'licenseDate', 'downloadCsv', 'producerLicenseExpiry']) {
+        assert.equal(new RegExp('function ' + name + '\\(').test(source.productor), false, name + ' was removed');
+    }
+    assert.equal(source.productor.includes('license-revoke-dialog'), false);
+    assert.equal(source.productor.includes('data-page="compradores"'), false);
+    assert.ok(source.productor.includes('data-page="estudiantes"'));
 });

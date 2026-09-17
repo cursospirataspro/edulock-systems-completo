@@ -46,7 +46,7 @@
   details{margin-top:12px} summary{cursor:pointer;color:var(--c-text);padding:6px 0}
   @media(max-width:600px){.wrap{padding:12px}.card{padding:14px}.brand{flex-wrap:wrap}.job{align-items:flex-start;flex-direction:column}table{min-width:520px}}
 </style>
-<link rel="stylesheet" href="/css/producer-workspace.css?v=20260913-workspace3">
+<link rel="stylesheet" href="/css/producer-workspace.css?v=20260916-estudiantes">
 </head>
 <body>
 
@@ -68,7 +68,7 @@
       <button data-page="proyectos" class="nav-item active"><span aria-hidden="true">◫</span> Proyectos</button>
       <button data-page="videos" class="nav-item"><span aria-hidden="true">▷</span> Videos y listas</button>
       <button data-page="licencias" class="nav-item"><span aria-hidden="true">⌘</span> Licencias y lotes</button>
-      <button data-page="compradores" class="nav-item"><span aria-hidden="true">♙</span> Compradores</button>
+      <button data-page="estudiantes" class="nav-item"><span aria-hidden="true">♙</span> Estudiantes</button>
       <button data-page="almacenamiento" class="nav-item"><span aria-hidden="true">▤</span> Almacenamiento</button>
       <button data-page="integraciones" class="nav-item"><span aria-hidden="true">⌁</span> Integraciones</button>
       <button data-page="proteccion" class="nav-item"><span aria-hidden="true">◇</span> Registro de protección</button>
@@ -109,9 +109,9 @@
       <section data-workspace-page="videos" hidden>  <!-- Subir video -->
   <div class="card">
     <h3 style="color:var(--c-primary);margin-bottom:6px">Subir una clase</h3>
-    <p class="muted" style="margin-bottom:12px">Elige el curso y módulo. Primero se envía el archivo; después Bunny lo procesa. El enlace estará disponible cuando el video esté listo.</p>
+    <p class="muted" style="margin-bottom:12px">Elige el curso y módulo. Etapas: envío al servidor → preparación de biblioteca y colección → transferencia a Bunny → procesamiento → listo. El enlace estará disponible cuando el video esté listo.</p>
     <div class="row">
-      <div style="flex:1;min-width:160px"><label for="up-module">Módulo</label><select id="up-module"><option value="">Sin módulo</option></select></div>
+      <div style="flex:1;min-width:160px"><label for="up-module">Módulo</label><select id="up-module"><option value="">Sin módulo</option></select><div id="up-module-status" class="muted" style="margin-top:5px"></div></div>
       <div style="flex:2;min-width:220px"><label for="up-file">Archivo de video</label><input id="up-file" type="file" accept="video/*"></div>
       <div style="flex:1;min-width:160px"><label for="up-title">Título de la clase</label><input id="up-title" maxlength="160" placeholder="Ej: Clase 1 — Bienvenida"></div>
       <button class="btn" id="up-btn" onclick="uploadVideo()">Subir clase</button>
@@ -141,53 +141,38 @@
 <div class="card"><h3>Listas de reproducción</h3><p class="muted">Cada módulo puede compartirse como lista. Las clases conservan sus requisitos de acceso.</p><div id="workspace-playlists"></div></div></section>
       <section data-workspace-page="licencias" hidden>  <!-- Licencias -->
   <div class="card">
-    <h3 style="color:var(--c-primary);margin-bottom:6px">Generar licencias (seriales)</h3>
-    <p class="muted" id="lic-quota" style="margin-bottom:12px"></p>
+    <div class="section-heading"><h3 style="color:var(--c-primary)">Generar licencias</h3><span class="muted" id="lic-quota"></span></div>
     <div class="row">
-      <div style="flex:1;min-width:180px"><label for="lic-course">Curso de las licencias</label><select id="lic-course"><option value="">Selecciona un curso</option></select></div>
-      <div style="width:130px"><label for="lic-qty">Cantidad</label><input id="lic-qty" type="number" min="1" max="5000" value="10"></div>
-      <div style="flex:1;min-width:210px"><label for="lic-expires">Vencimiento (opcional)</label><input id="lic-expires" type="datetime-local"><span class="muted" style="font-size:.75rem">Hora local de tu equipo. Vacío: sin vencimiento.</span></div>
-      <div style="width:140px"><label for="lic-devices">Dispositivos</label><input id="lic-devices" type="number" min="1" value="1"></div><div style="width:165px"><label for="lic-duration">Días desde primera activación</label><input id="lic-duration" type="number" min="1" max="3650" placeholder="Opcional"><span class="muted">Usa duración o fecha fija.</span></div><div style="flex:1;min-width:160px"><label for="lic-lot-name">Nombre del lote</label><input id="lic-lot-name" maxlength="120" placeholder="Ej. Septiembre"></div><div style="flex:1;min-width:160px"><label>Nota (opcional)</label><input id="lic-notes" placeholder="Promo octubre"></div>
+      <div style="flex:1;min-width:180px"><label for="lic-course">Curso</label><select id="lic-course"><option value="">Selecciona un curso</option></select></div>
+      <div style="width:120px"><label for="lic-qty">Cantidad</label><input id="lic-qty" type="number" min="1" max="5000" value="10"></div>
+      <div style="flex:1;min-width:170px"><label for="lic-lot-name">Nombre del lote</label><input id="lic-lot-name" maxlength="120" placeholder="Ej. Septiembre"></div>
+      <div class="readonly-field" style="min-width:150px"><label>Dispositivos por licencia</label><strong id="lic-devices-readonly">—</strong><span class="muted">Lo define el administrador.</span></div>
       <button class="btn" id="lic-btn" onclick="genLicenses()">Generar</button>
     </div>
+    <p class="muted" style="margin-top:8px">Las licencias de curso no vencen. Cada clave se conserva y puede copiarse desde la lista.</p>
     <div id="lic-msg" role="status" aria-live="polite" style="margin-top:10px"></div>
-    <div id="lic-result" class="hidden" style="margin-top:12px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <span class="ok" style="font-size:.85rem">✓ Licencias generadas:</span>
-        <button class="btn ghost" onclick="downloadCsv()">Descargar CSV</button>
-      </div>
-      <textarea id="lic-keys" rows="6" readonly></textarea>
-    </div>
-    <div style="margin-top:14px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <b style="font-size:.9rem">Mis lotes</b><button class="btn ghost" onclick="loadLots()">Actualizar</button>
-      </div>
-      <table><thead><tr><th>Lote / proyecto</th><th>Total</th><th>Disponibles</th><th>Asignadas</th><th>Revocadas</th><th>Vencidas</th><th>Acciones</th></tr></thead>
-        <tbody id="lot-body"><tr><td colspan="7" class="muted">—</td></tr></tbody></table>
-    </div>
+    <div id="lic-result" class="hidden"></div>
   </div>
 
   <div class="card">
-    <div class="row" style="justify-content:space-between;margin-bottom:10px">
-      <h3 style="color:var(--c-primary)">Mis licencias</h3>
-      <div class="row"><label for="license-lot-filter">Lote</label><select id="license-lot-filter" onchange="loadLicenseItems(1)" style="width:240px"><option value="">Todos los lotes</option></select><button class="btn ghost" onclick="loadLicenseItems()">Actualizar</button></div>
+    <div class="section-heading"><h3 style="color:var(--c-primary)">Licencias</h3><div class="actions"><button class="btn ghost small" id="license-refresh" type="button">Actualizar</button></div></div>
+    <div class="toolbar">
+      <label>Lote<select id="license-lot-filter"><option value="">Todos los lotes</option></select></label>
+      <label class="search-field">Buscar por clave o alumno<input id="license-search" type="search" placeholder="XXXX-XXXX-XXXX-XXXX, nombre o correo"></label>
+      <button class="btn ghost" id="license-search-btn" type="button">Buscar</button>
+      <label hidden>Filtrar<select id="license-status-filter"><option value="">Todas</option><option value="reserved">Reservadas</option><option value="suspended">Suspendidas</option><option value="revoked">Revocadas</option></select></label>
     </div>
-    <p class="muted" style="margin-bottom:10px">Busca una licencia o comprador. Las claves nuevas se conservan para descargar el lote; las anteriores sin clave recuperable pueden reemplazarse con confirmación.</p>
-    <div class="toolbar"><label class="search-field">Buscar licencias<input id="license-search" type="search" placeholder="Comprador, nota o terminación de clave"></label><label>Estado<select id="license-status-filter"><option value="">Todos los estados</option><option value="free">Disponibles</option><option value="active">Activas</option><option value="suspended">Suspendidas</option><option value="revoked">Revocadas</option><option value="expired">Vencidas</option></select></label><button class="btn ghost" id="license-search-btn">Buscar</button></div><div id="license-list-msg" role="status" aria-live="polite" style="margin-bottom:10px"></div>
-    <table><thead><tr><th>Licencia / proyecto</th><th>Alumno</th><th>Estado</th><th>Creada</th><th>Vencimiento</th><th>Activaciones vigentes</th><th></th></tr></thead><tbody id="license-body"><tr><td colspan="7" class="muted">Cargando…</td></tr></tbody></table>
-    <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn ghost" id="license-prev" onclick="loadLicenseItems(_licensePage - 1)">Anterior</button><span id="license-page" class="muted"></span><button class="btn ghost" id="license-next" onclick="loadLicenseItems(_licensePage + 1)">Siguiente</button></div>
-  </div>
-
-  <!-- Activaciones (quién usa mis seriales) -->
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h3 style="color:var(--c-primary)">Activaciones / Uso</h3><button class="btn ghost" onclick="loadActivations()">Actualizar</button>
+    <div id="lot-toolbar" class="lot-toolbar" hidden></div>
+    <div class="tabs" id="license-tabs" role="tablist" aria-label="Disponibilidad">
+      <button type="button" class="tab active" data-status="available" role="tab" aria-selected="true">Disponibles <span class="count" id="count-available">0</span></button>
+      <button type="button" class="tab" data-status="in_use" role="tab" aria-selected="false">En uso <span class="count" id="count-in_use">0</span></button>
+      <button type="button" class="tab" data-status="" role="tab" aria-selected="false">Todas <span class="count" id="count-total">0</span></button>
     </div>
-    <p class="muted" style="margin-bottom:10px">Quién activó tus seriales y en qué dispositivo.</p>
-    <table><thead><tr><th>Comprador</th><th>Dispositivo</th><th>Estado</th><th>Activado</th><th>Último uso</th></tr></thead>
-      <tbody id="act-body"><tr><td colspan="5" class="muted">—</td></tr></tbody></table>
+    <div id="license-list-msg" role="status" aria-live="polite"></div>
+    <div id="license-list" class="license-list" aria-live="polite"><p class="muted">Cargando…</p></div>
+    <div class="pagination"><button class="btn ghost small" id="license-prev" type="button">Anterior</button><span id="license-page" class="muted"></span><button class="btn ghost small" id="license-next" type="button">Siguiente</button></div>
   </div></section>
-      <section data-workspace-page="compradores" hidden><div class="section-intro"><div><h2>Compradores</h2><p>Consulta sus licencias y guarda los datos que necesitas para atenderlos.</p></div></div><div class="card"><div class="toolbar"><label class="search-field">Buscar comprador<input id="customer-search" type="search" placeholder="Nombre o correo"></label><button id="customer-search-btn" class="btn ghost">Buscar</button></div><div id="workspace-customers"></div></div></section>
+      <section data-workspace-page="estudiantes" hidden><div class="section-intro"><div><h2>Estudiantes</h2><p>Alumnos con licencias de tus cursos. Aparecen automáticamente cuando activan una licencia; cada productor ve solo sus propios cursos y accesos.</p></div></div><div class="card"><div class="toolbar"><label class="search-field">Buscar estudiante<input id="student-search" type="search" placeholder="Nombre o correo"></label><label>Curso<select id="student-course-filter"><option value="">Todos los cursos</option></select></label><button id="student-search-btn" class="btn ghost" type="button">Buscar</button></div><div id="workspace-students"></div></div></section>
       <section data-workspace-page="almacenamiento" hidden><div class="section-intro"><div><h2>Biblioteca de archivos</h2><p>Videos, PDFs y enlaces de tus proyectos en un solo lugar.</p></div></div><div id="storage-summary" class="stat-grid"></div><div class="card"><div class="toolbar"><label class="search-field">Buscar archivos<input id="storage-search" type="search" placeholder="Nombre del archivo"></label><label>Tipo<select id="storage-kind"><option value="">Todos</option><option value="video">Videos</option><option value="resource">Recursos</option></select></label></div><p class="muted" id="storage-explanation"></p><div id="workspace-storage"></div></div></section>
       <section data-workspace-page="integraciones" hidden><div class="section-intro"><div><h2>Integraciones</h2><p>Conecta la entrega de licencias con tus herramientas.</p></div></div><div id="workspace-integrations"></div></section>
       <section data-workspace-page="proteccion" hidden><div class="section-intro"><div><h2>Registro de protección</h2><p>Consulta los eventos registrados en tus licencias. Un evento requiere revisión y no prueba una infracción.</p></div></div><div id="workspace-security" class="card"></div></section>
@@ -196,14 +181,7 @@
   </div>
 </div>
 <dialog id="workspace-dialog" aria-labelledby="workspace-dialog-title"><form id="workspace-form"><div class="section-heading"><h2 id="workspace-dialog-title"></h2><button type="button" class="btn ghost" id="workspace-dialog-close" aria-label="Cerrar ventana">✕</button></div><div id="workspace-dialog-body"></div><div id="workspace-dialog-msg" role="status" aria-live="polite"></div><div class="dialog-footer"><button type="button" class="btn ghost" id="workspace-dialog-cancel">Cancelar</button><button type="submit" class="btn" id="workspace-dialog-submit">Guardar cambios</button></div></form></dialog>
-<dialog id="license-revoke-dialog" aria-labelledby="license-revoke-title" style="max-width:520px;width:calc(100% - 36px);padding:24px;border:1px solid #cf3030;border-radius:12px;background:#181818;color:#fff">
-  <form method="dialog">
-    <h3 id="license-revoke-title">Revocar licencia</h3>
-    <p id="license-revoke-details" style="margin:12px 0;word-break:break-word"></p>
-    <p style="margin-bottom:18px">Retira el acceso de esta licencia y sus activaciones. No devuelve cupo y no se puede deshacer desde este panel.</p>
-    <div class="row" style="justify-content:flex-end"><button class="btn ghost" value="cancel" autofocus>Cancelar</button><button class="btn" value="revoke">Revocar licencia</button></div>
-  </form>
-</dialog>
+
 
 <script src="/js/resource-editor.js"></script>
 <script>
@@ -212,6 +190,7 @@ function createStreamUploadController(options) {
     const { api: request, prefix, storageKey, getToken, onUpdate, onJobsChanged } = options;
     const delay = options.delay || (ms => new Promise(resolve => setTimeout(resolve, ms)));
     const maxPolls = options.maxPolls || 200;
+    const watchEvery = options.watchEvery || 3000;
     let busy = false;
     let jobs = [];
     try {
@@ -236,12 +215,23 @@ function createStreamUploadController(options) {
     function progress(value) {
         return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
     }
+    // Stage, provider reason and next action come from the server; no secrets travel here.
+    function describeFailure(status) {
+        const parts = [status.error || 'El video no pudo procesarse.'];
+        if (status.stageLabel) parts.push('Etapa: ' + status.stageLabel + '.');
+        if (status.providerMessage) parts.push('Bunny: ' + status.providerMessage + '.');
+        if (status.action) parts.push(status.action);
+        return parts.join(' ');
+    }
     function statusView(status) {
-        if (status.failed) return { phase: 'failed', label: status.error || 'El video no pudo procesarse.', percent: null };
+        if (status.failed) return { phase: 'failed', label: describeFailure(status), percent: null };
         if (status.ready === true) return { phase: 'ready', label: 'Video listo para compartir.', percent: 100 };
         const phase = String(status.phase || '').toLowerCase();
+        if (phase === 'reserved' || phase === 'creating') return {
+            phase: 'preparing', label: 'Preparando la biblioteca del curso y la colección del módulo en Bunny.', percent: null
+        };
         if (/upload|transfer|sending/.test(phase)) return {
-            phase: 'server-upload', label: 'El servidor está enviando el video a Bunny.', percent: progress(status.uploadPercent)
+            phase: 'server-upload', label: 'Transfiriendo el archivo del servidor a Bunny.', percent: progress(status.uploadPercent)
         };
         if (/processing|encoding|transcod/.test(phase) || typeof status.encodeProgress === 'number') return {
             phase: 'processing', label: 'Bunny está procesando el video; aún no está listo.', percent: progress(status.encodeProgress)
@@ -255,7 +245,9 @@ function createStreamUploadController(options) {
             videoId: status.videoId || job.videoId || null,
             ready, failed, retryable: status.retryable === true,
             phase: status.phase || (ready ? 'ready' : failed ? 'failed' : 'pending'),
-            error: failed ? (status.error || 'El video no pudo procesarse.') : null
+            stage: status.stage || null, stageLabel: status.stageLabel || null,
+            action: failed ? (status.action || null) : null,
+            error: failed ? describeFailure(status) : null
         }, statusView(status));
         return ready;
     }
@@ -279,7 +271,7 @@ function createStreamUploadController(options) {
                 continue;
             }
             if (applyStatus(job, status)) return { ...status, operationId: job.operationId };
-            if (status.failed) throw problem(status.error || 'Bunny no pudo procesar el video.', 'UPLOAD_FAILED', job);
+            if (status.failed) throw problem(describeFailure(status), 'UPLOAD_FAILED', job);
             await delay(3000);
         }
         throw problem('El procesamiento sigue pendiente. Puedes continuar el seguimiento sin volver a subir el archivo.', 'STATUS_PENDING', job);
@@ -293,6 +285,15 @@ function createStreamUploadController(options) {
             if (job.moduleId) form.append('moduleId', job.moduleId);
             form.append('operationId', job.operationId);
             const xhr = new XMLHttpRequest();
+            let watcher = null;
+            const stopWatch = () => { if (watcher) { clearInterval(watcher); watcher = null; } };
+            const startWatch = () => {
+                // While the server prepares Bunny and transfers the file, the operation record is the only live progress source.
+                if (watcher || typeof setInterval !== 'function') return;
+                watcher = setInterval(() => {
+                    readStatus(job).then(status => { if (watcher && !status.failed && status.ready !== true) onUpdate({ ...statusView(status), job }); }).catch(() => {});
+                }, watchEvery);
+            };
             xhr.open('POST', prefix + '/upload');
             xhr.setRequestHeader('Authorization', 'Bearer ' + getToken());
             xhr.upload.onprogress = event => {
@@ -301,17 +302,25 @@ function createStreamUploadController(options) {
                     onUpdate({ phase: 'client-upload', label: 'Enviando el archivo de tu equipo al servidor.', percent, job });
                 }
             };
-            xhr.upload.onload = () => changed(job, { phase: 'server-upload' }, {
-                phase: 'server-upload', label: 'Archivo enviado al servidor. Preparando y transfiriendo a Bunny; esperando confirmación.', percent: null
-            });
+            xhr.upload.onload = () => {
+                changed(job, { phase: 'server-upload' }, {
+                    phase: 'preparing', label: 'Archivo recibido en el servidor. Preparando biblioteca y colección; después se transfiere a Bunny.', percent: null
+                });
+                startWatch();
+            };
             xhr.onload = () => {
+                stopWatch();
                 let data;
                 try { data = JSON.parse(xhr.responseText); } catch (_) {
                     reject(problem('El servidor respondió sin un estado válido. Consulta el seguimiento antes de reenviar.', 'UPLOAD_UNCERTAIN', job)); return;
                 }
                 if (xhr.status < 200 || xhr.status >= 300) {
-                    const error = problem(data.error || ('No se aceptó la subida (HTTP ' + xhr.status + ').'), 'UPLOAD_REJECTED', job);
+                    const parts = [data.error || ('No se aceptó la subida (HTTP ' + xhr.status + ').')];
+                    if (data.stageLabel) parts.push('Etapa: ' + data.stageLabel + '.');
+                    if (data.provider && data.provider.message) parts.push('Bunny: ' + data.provider.message + '.');
+                    const error = problem(parts.join(' '), 'UPLOAD_REJECTED', job);
                     error.status = xhr.status;
+                    changed(job, { failed: true, retryable: data.retryable !== false, phase: 'failed', stage: data.stage || null, stageLabel: data.stageLabel || null, error: parts.join(' ') });
                     reject(error); return;
                 }
                 if (!data.videoId && !data.operationId) {
@@ -319,8 +328,8 @@ function createStreamUploadController(options) {
                 }
                 resolve(data);
             };
-            xhr.onerror = xhr.ontimeout = () => reject(problem('Se perdió la conexión. Consulta el seguimiento; si debes reenviar, selecciona el mismo archivo.', 'UPLOAD_UNCERTAIN', job));
-            xhr.onabort = () => reject(problem('Envío interrumpido. El seguimiento permite comprobar si el servidor lo recibió.', 'UPLOAD_UNCERTAIN', job));
+            xhr.onerror = xhr.ontimeout = () => { stopWatch(); reject(problem('Se perdió la conexión. Consulta el seguimiento; si debes reenviar, selecciona el mismo archivo.', 'UPLOAD_UNCERTAIN', job)); };
+            xhr.onabort = () => { stopWatch(); reject(problem('Envío interrumpido. El seguimiento permite comprobar si el servidor lo recibió.', 'UPLOAD_UNCERTAIN', job)); };
             xhr.send(form);
         });
     }
@@ -351,7 +360,7 @@ function createStreamUploadController(options) {
                     phase: 'client-upload', ready: false, createdAt: Date.now() };
                 jobs.push(job);
             }
-            changed(job, { failed: false, retryable: false, phase: 'client-upload' }, {
+            changed(job, { failed: false, retryable: false, error: null, action: null, phase: 'client-upload' }, {
                 phase: 'client-upload', label: 'Enviando el archivo de tu equipo al servidor.', percent: 0
             });
             const response = await sendFile(job, file);
@@ -407,7 +416,10 @@ async function api(method, path, body) {
         // A permission or quota denial is not an expired login.
         if (response.status === 401) logout();
         const error = new Error(data.error || ('Error del servidor (HTTP ' + response.status + ').'));
-        error.status = response.status; error.code = data.code; throw error;
+        error.status = response.status; error.code = data.code;
+        if (data.stage) { error.stage = data.stage; error.stageLabel = data.stageLabel || data.stage; }
+        if (data.provider) error.provider = data.provider;
+        throw error;
     }
     return data;
 }
@@ -428,7 +440,7 @@ function logout() {
     if (_resourceEditor) _resourceEditor.invalidate();
     TOKEN = ''; _me = null; _stream = null; _lastKeys = []; _licensePage = 1; _licenseRequest++;
     localStorage.removeItem('edulock_producer_token');
-    $('lic-keys').value = ''; $('lic-result').classList.add('hidden');
+    $('lic-result').classList.add('hidden');
     $('app').classList.add('hidden'); $('login').classList.remove('hidden');
 }
 function producerLicenseQuota(profile) {
@@ -454,9 +466,14 @@ async function refreshProfile() {
     $('hd-name').textContent = _me.name || _me.email || 'Panel de Productor';
     $('hd-quota').textContent = unlimited ? `${used} licencias generadas · Sin límite · ${devices} disp./licencia`
         : `${used}/${limit} licencias · ${devices} disp./licencia`;
-    $('lic-quota').textContent = (unlimited ? 'Licencias sin límite. Máximo 5000 por lote.' : `Disponibles: ${remaining} licencias.`)
-        + ` Máximo ${devices} dispositivos por licencia.`;
-    $('lic-qty').max = quota.maxBatch;
+    $('lic-quota').textContent = (unlimited ? 'Licencias sin límite. Máximo 5000 por lote.' : `Disponibles: ${remaining} licencias por generar.`)
+        + ` ${devices} dispositivo(s) por licencia, fijado por el administrador.`;
+    $('lic-devices-readonly').textContent = String(devices);
+    // Never offer more than the remaining quota; keep a sensible default.
+    const cap = quota.maxBatch === Infinity ? 5000 : quota.maxBatch;
+    $('lic-qty').max = cap;
+    const currentQty = Number($('lic-qty').value);
+    if (!Number.isInteger(currentQty) || currentQty < 1 || currentQty > cap) $('lic-qty').value = String(Math.max(1, Math.min(10, cap)));
     $('lic-btn').disabled = quota.exhausted;
     return _me;
 }
@@ -469,8 +486,7 @@ async function showApp() {
             onUpdate: showUploadProgress, onJobsChanged: renderUploadJobs });
         await loadCourses();
         renderUploadJobs(_stream.getJobs());
-        await Promise.allSettled([loadVideos(), loadLots(), loadActivations()]);
-        await loadLicenseItems(1);
+        await loadVideos();
     } catch (error) {
         if (TOKEN) message($('app').classList.contains('hidden') ? 'lg-msg' : 'app-msg', error.message, 'err');
     }
@@ -514,6 +530,7 @@ async function selectCourse() {
         const names = new Map(_modules.map(m => [m.id, m.name]));
         const options = _modules.map(m => `<option value="${esc(m.id)}">${esc(m.parentId && names.has(m.parentId) ? names.get(m.parentId) + ' / ' + m.name : m.name)}</option>`).join('');
         $('up-module').innerHTML += options; $('module-parent').innerHTML += options;
+        if (typeof renderModuleCollectionStatus === 'function') renderModuleCollectionStatus();
     } catch (error) { if (requestId === _courseRequest) message('course-status', error.message, 'err'); }
 }
 async function createCourse() {
@@ -555,19 +572,60 @@ function renderUploadJobs(jobs) {
     const pending = jobs.filter(j => !j.ready);
     if (!pending.length) return;
     const heading = document.createElement('p'); heading.className = 'muted';
-    heading.textContent = 'Subidas guardadas. El seguimiento no vuelve a enviar el archivo.'; $('up-jobs').append(heading);
+    heading.textContent = 'Subidas guardadas. «Continuar seguimiento» consulta la operación sin reenviar el archivo; «Reintentar envío» solo aparece cuando el servidor necesita el archivo otra vez.'; $('up-jobs').append(heading);
     for (const job of pending) {
         const row = document.createElement('div'); row.className = 'job';
-        const text = document.createElement('div'); text.textContent = job.title + (job.failed ? ' — requiere revisión' : ' — pendiente');
-        const button = document.createElement('button'); button.className = 'btn ghost'; button.textContent = 'Continuar seguimiento';
-        button.disabled = !!(_stream && _stream.isBusy()); button.onclick = () => resumeUpload(job.operationId);
-        row.append(text, button); $('up-jobs').append(row);
+        const text = document.createElement('div');
+        const title = document.createElement('strong'); title.textContent = job.title; text.append(title);
+        const detail = document.createElement('div'); detail.className = job.failed ? 'err' : 'muted';
+        detail.textContent = job.failed ? (job.error || 'Requiere revisión.') : 'Pendiente de confirmación.'; text.append(detail);
+        const actions = document.createElement('div'); actions.className = 'actions';
+        const follow = document.createElement('button'); follow.type = 'button'; follow.className = 'btn ghost'; follow.textContent = 'Continuar seguimiento';
+        follow.disabled = !!(_stream && _stream.isBusy()); follow.onclick = () => resumeUpload(job.operationId); actions.append(follow);
+        if (job.failed && job.retryable) {
+            const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'btn ghost'; retry.textContent = 'Reintentar envío';
+            retry.disabled = follow.disabled; retry.onclick = () => retryUpload(job); actions.append(retry);
+        }
+        row.append(text, actions); $('up-jobs').append(row);
     }
+}
+async function retryUpload(job) {
+    const file = $('up-file').files[0];
+    if (!file) { message('up-msg', 'Selecciona el mismo archivo («' + job.fileName + '») para reintentar el envío.', 'err'); $('up-file').focus(); return; }
+    if (file.name !== job.fileName || file.size !== job.fileSize) { message('up-msg', 'El archivo seleccionado no coincide con «' + job.fileName + '» (' + job.fileSize + ' bytes). Selecciona el mismo archivo.', 'err'); return; }
+    if ($('up-course').value !== job.courseId) { $('up-course').value = job.courseId; await selectCourse(); }
+    $('up-module').value = job.moduleId || ''; $('up-title').value = job.title;
+    return runUpload(() => _stream.upload({ file, courseId: job.courseId, moduleId: job.moduleId || '', title: job.title }));
+}
+function streamErrorText(error) {
+    const parts = [error.message];
+    if (error.stageLabel) parts.push('Etapa: ' + error.stageLabel + '.');
+    if (error.provider && error.provider.message) parts.push('Bunny: ' + error.provider.message + '.');
+    return parts.join(' ');
+}
+function renderModuleCollectionStatus() {
+    const box = $('up-module-status'); if (!box) return;
+    const moduleId = $('up-module').value, module = _modules.find(m => m.id === moduleId);
+    box.replaceChildren();
+    if (!module) { box.textContent = moduleId ? '' : 'Sin módulo: la clase queda en la biblioteca del curso, fuera de toda colección.'; return; }
+    if (module.bunnyCollectionId) { box.textContent = 'Colección de Bunny confirmada para este módulo.'; return; }
+    box.textContent = 'Este módulo aún no tiene colección en Bunny. Se creará al subir la clase o puedes prepararla ahora. ';
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ghost small'; b.textContent = 'Preparar colección';
+    b.onclick = () => repairModuleCollection($('up-course').value, module.id, b); box.append(b);
+}
+async function repairModuleCollection(courseId, moduleId, button) {
+    if (button) button.disabled = true;
+    try {
+        const data = await api('POST', '/api/producer/courses/' + encodeURIComponent(courseId) + '/modules/' + encodeURIComponent(moduleId) + '/collection', {});
+        const module = _modules.find(m => m.id === moduleId); if (module) module.bunnyCollectionId = data.collectionId;
+        message('course-status', 'Colección confirmada en Bunny para el módulo.', 'ok'); renderModuleCollectionStatus();
+    } catch (error) { message('course-status', streamErrorText(error), 'err'); }
+    finally { if (button) button.disabled = false; }
 }
 function uploadBusy(busy) {
     for (const id of ['up-file','up-title','up-course','up-module','up-btn']) $(id).disabled = busy;
     if (!busy) $('up-btn').disabled = !$('up-course').value;
-    $('up-btn').textContent = busy ? 'En curso…' : 'Subir / reintentar envío';
+    $('up-btn').textContent = busy ? 'En curso…' : 'Subir clase';
 }
 async function runUpload(action) {
     if (!_stream || _stream.isBusy()) return;
@@ -577,7 +635,7 @@ async function runUpload(action) {
         message('up-msg', 'Video listo. Ya puedes generar y copiar su enlace en Mis videos.', 'ok');
         $('up-file').value = ''; $('up-title').value = ''; await loadVideos();
     } catch (error) {
-        message('up-msg', error.message + (error.code === 'UPLOAD_FAILED' ? ' Para reintentar el envío, selecciona el mismo archivo, curso, módulo y título.' : ''), error.code === 'STATUS_PENDING' ? 'warn' : 'err');
+        message('up-msg', error.message + (['UPLOAD_FAILED', 'UPLOAD_REJECTED'].includes(error.code) ? ' Para reintentar el envío usa «Reintentar envío» con el mismo archivo.' : ''), error.code === 'STATUS_PENDING' ? 'warn' : 'err');
     } finally { uploadBusy(false); if (_stream) renderUploadJobs(_stream.getJobs()); }
 }
 async function uploadVideo() {
@@ -633,124 +691,33 @@ async function copyVideoLink() {
         message('video-link-msg', 'Enlace seleccionado. Usa Ctrl+C para copiarlo.', 'muted');
     }
 }
-function producerLicenseExpiry() {
-    const raw = $('lic-expires').value.trim();
-    if (!raw) return null;
-    const date = new Date(raw);
-    if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) throw new Error('Selecciona un vencimiento futuro válido.');
-    return date.toISOString();
-}
 async function genLicenses() {
     const quantity = Number($('lic-qty').value), courseId = $('lic-course').value;
     if (!courseId || !Number.isInteger(quantity) || quantity < 1 || quantity > 5000) { message('lic-msg', 'Selecciona un curso y una cantidad entera de 1 a 5000.', 'err'); return; }
     let quota;
     try { quota = producerLicenseQuota(_me); }
     catch (error) { message('lic-msg', error.message, 'err'); return; }
-    if (quantity > quota.remaining) { message('lic-msg', 'La cantidad supera tu cuota disponible.', 'err'); return; }
+    if (quantity > quota.remaining) { message('lic-msg', `La cantidad supera tu cuota disponible (${quota.remaining}).`, 'err'); return; }
     const button = $('lic-btn'); if (button.disabled) return; button.disabled = true;
     try {
-        const expiresAt = producerLicenseExpiry();
-        const maxDevices = Number($('lic-devices').value || quota.devices);
-        const durationDays = $('lic-duration').value ? Number($('lic-duration').value) : null;
-        if (!Number.isInteger(maxDevices) || maxDevices < 1 || maxDevices > quota.devices) throw new Error('El límite de dispositivos supera tu cuota.');
-        if (durationDays !== null && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 3650)) throw new Error('La duración debe ser de 1 a 3650 días.');
-        if (durationDays && expiresAt) throw new Error('Elige fecha fija o duración desde la primera activación, no ambas.');
-        const data = await api('POST', '/api/producer/license/generate-bulk', { courseId, quantity, expiresAt, durationDays, maxDevices, name:$('lic-lot-name').value.trim() || undefined, notes:$('lic-notes').value.trim() || null });
-        _lastKeys = data.keys || []; $('lic-keys').value = _lastKeys.join('\n'); $('lic-result').classList.remove('hidden');
-        message('lic-msg', `Se generaron ${_lastKeys.length} licencias. Puedes descargar el lote para compartirlas.`, 'ok');
-        await Promise.allSettled([loadLots(), refreshProfile()]);
-        $('license-lot-filter').value = data.lotId || '';
-        await loadLicenseItems(1);
+        // Sin vencimiento y sin límite editable: el servidor aplica el tope de dispositivos fijado por el administrador.
+        const data = await api('POST', '/api/producer/license/generate-bulk', { courseId, quantity, name: $('lic-lot-name').value.trim() || undefined });
+        _lastKeys = data.keys || []; $('lic-lot-name').value = '';
+        message('lic-msg', `${_lastKeys.length} licencias creadas.` + (data.lotId ? ' Ya aparecen en Disponibles; puedes copiarlas o descargar el lote.' : ''), 'ok');
+        await refreshProfile();
+        if (typeof refreshLicenseWorkspace === 'function') await refreshLicenseWorkspace(data.lotId || '');
     } catch (error) { message('lic-msg', error.message, 'err'); }
     finally {
         try { button.disabled = producerLicenseQuota(_me).exhausted; }
         catch (_) { button.disabled = true; }
     }
 }
-function downloadCsv() {
-    if (!_lastKeys.length) return;
-    const blob = new Blob(['serial\n' + _lastKeys.join('\n')], { type:'text/csv' });
-    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'seriales-' + new Date().toISOString().slice(0,10) + '.csv'; link.click(); URL.revokeObjectURL(link.href);
-}
-async function loadLots() {
-    try {
-        const data = await api('GET', '/api/producer/licenses');
-        const lots = data.lots || [], filter = $('license-lot-filter'), previous = filter.value;
-        filter.innerHTML = '<option value="">Todos los lotes</option>' + lots.map(lot => `<option value="${esc(lot.id)}">${esc(lot.course_name || 'Curso')} · ${esc((lot.created_at || '').slice(0,10))} · ${esc(lot.id.slice(0,8))}</option>`).join('');
-        if (lots.some(lot => lot.id === previous)) filter.value = previous;
-        $('lot-body').innerHTML = lots.map(lot => `<tr><td>${esc(lot.course_name || '—')}</td><td>${esc(lot.total || 0)}</td><td class="ok">${esc(lot.free_count || 0)}</td><td>${esc(lot.used_count || 0)}</td><td>${esc(lot.revoked_count || 0)}</td><td>${esc(lot.expired_count || 0)}</td><td>${esc((lot.created_at || '').slice(0,10))}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">Sin lotes.</td></tr>';
-    } catch (error) { $('lot-body').innerHTML = `<tr><td colspan="7" class="err">${esc(error.message)}</td></tr>`; }
-}
-function licenseDate(value) {
-    if (!value) return 'Sin vencimiento';
-    const date = new Date(value);
-    return Number.isFinite(date.getTime()) ? date.toLocaleString() : 'Fecha no válida';
-}
-async function loadLicenseItems(page = _licensePage) {
-    const request = ++_licenseRequest, table = $('license-body'), lot = $('license-lot-filter').value;
-    $('license-prev').disabled = true; $('license-next').disabled = true;
-    try {
-        const data = await api('GET', '/api/producer/licenses/items?page=' + Math.max(1, page) + (lot ? '&lotId=' + encodeURIComponent(lot) : ''));
-        if (request !== _licenseRequest) return;
-        _licensePage = data.page;
-        table.replaceChildren();
-        const labels = { free:'Disponible', active:'Asignada', revoked:'Revocada', expired:'Vencida' };
-        for (const license of data.licenses || []) {
-            const row = document.createElement('tr');
-            const status = license.effectiveStatus || license.status;
-            row.innerHTML = `<td><code style="font-size:.72rem;word-break:break-all">${esc(license.id)}</code><div>${esc(license.courseName || '—')}</div></td><td>${esc(license.customerEmail || 'Sin asignar')}</td><td>${esc(labels[status] || status)}</td><td>${esc(licenseDate(license.createdAt))}</td><td>${esc(licenseDate(license.expiresAt))}</td><td>${esc(license.activeActivations)} / ${esc(license.maxDevices)}</td><td></td>`;
-            if (license.status !== 'revoked') {
-                const button = document.createElement('button'); button.className = 'btn ghost'; button.textContent = 'Revocar';
-                button.onclick = () => revokeProducerLicense(license, button); row.children[6].append(button);
-            }
-            table.append(row);
-        }
-        if (!(data.licenses || []).length) table.innerHTML = '<tr><td colspan="7" class="muted">Sin licencias en esta página.</td></tr>';
-        $('license-page').textContent = `Página ${data.page} · ${data.total} licencias`;
-        $('license-prev').disabled = data.page <= 1;
-        $('license-next').disabled = data.page * data.pageSize >= data.total;
-    } catch (error) {
-        if (request !== _licenseRequest) return;
-        table.innerHTML = `<tr><td colspan="7" class="err">${esc(error.message)}</td></tr>`;
-    }
-}
-function requestLicenseRevocation(license) {
-    const dialog = $('license-revoke-dialog');
-    if (dialog.open) return Promise.resolve(false);
-    $('license-revoke-details').textContent = `Licencia ${license.id} · Curso: ${license.courseName || 'sin nombre'}`;
-    dialog.returnValue = 'cancel';
-    return new Promise(resolve => {
-        const closed = () => resolve(dialog.returnValue === 'revoke');
-        dialog.addEventListener('close', closed, { once: true });
-        try { dialog.showModal(); }
-        catch (_) {
-            dialog.removeEventListener('close', closed);
-            message('license-list-msg', 'No se pudo abrir la confirmación. La licencia no se modificó.', 'err');
-            resolve(false);
-        }
-    });
-}
-async function revokeProducerLicense(license, button) {
-    if (button.disabled) return;
-    button.disabled = true;
-    if (!await requestLicenseRevocation(license)) { button.disabled = false; return; }
-    try {
-        await api('POST', '/api/producer/licenses/' + encodeURIComponent(license.id) + '/revoke', {});
-        message('license-list-msg', 'Licencia revocada. Ya no autoriza la reproducción del curso.', 'ok');
-        await Promise.allSettled([loadLicenseItems(), loadLots(), loadActivations()]);
-    } catch (error) { message('license-list-msg', error.message, 'err'); button.disabled = false; }
-}
-async function loadActivations() {
-    try {
-        const data = await api('GET', '/api/producer/activations');
-        $('act-body').innerHTML = (data.activations || []).map(item => `<tr><td>${esc(item.customerEmail || '—')}</td><td>${esc(item.device)}</td><td>${esc(item.status === 'active' ? 'Activo' : item.status)}</td><td>${esc((item.activatedAt || '').slice(0,10))}</td><td>${esc((item.lastUsed || '').slice(0,10) || '—')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Aún nadie ha activado un serial.</td></tr>';
-    } catch (error) { $('act-body').innerHTML = `<tr><td colspan="5" class="err">${esc(error.message)}</td></tr>`; }
-}
 document.querySelectorAll('table').forEach(table => { const wrap = document.createElement('div'); wrap.className = 'table-wrap'; table.before(wrap); wrap.append(table); });
 $('lg-pass').addEventListener('keydown', event => { if (event.key === 'Enter') doLogin(); });
+$('up-module').addEventListener('change', renderModuleCollectionStatus);
 // Workspace starts after its navigation and controllers are ready.
 
 </script>
-<script src="/js/producer-workspace.js?v=20260913-workspace2"></script>
+<script src="/js/producer-workspace.js?v=20260916-estudiantes"></script>
 </body>
 </html>
