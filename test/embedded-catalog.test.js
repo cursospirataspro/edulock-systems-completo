@@ -124,3 +124,15 @@ test('caso 9: un alumno sin licencia activada no obtiene contenido por el panel'
     await assert.rejects(f.policy.authorizeVideo({ sub: 'student-a', deviceId: 'device-a' }, 'video-a', 'device-a'), { code: 'LICENSE_REQUIRED' });
     await assert.rejects(f.policy.authorizeVideo({ sub: 'student-a', deviceId: 'device-a', allowedVideos: ['*'] }, 'video-a', 'device-a'), { code: 'LICENSE_REQUIRED' });
 });
+
+test('N05: un token que dice no tener licencia no habilita el panel aunque traiga una sesión abierta', async () => {
+    const sesion = { id: 'sesion-1', student_id: 'alumno-1', license_id: 'lic-1', producer_id: 'prod-1', ended_at: null };
+    const db = {
+        getContentSession: async id => (id === 'sesion-1' ? sesion : null),
+        getProducerById: async () => ({ id: 'prod-1', active: 1, embedded_catalog_enabled: true }),
+    };
+    const catalogo = createEmbeddedCatalog({ db });
+    assert.equal(await catalogo.enabledFor({ sub: 'alumno-1', sid: 'sesion-1', hasLicense: true }), true);
+    assert.equal(await catalogo.enabledFor({ sub: 'alumno-1', sid: 'sesion-1', hasLicense: false }), false,
+        'sin licencia declarada no puede habilitarse');
+});
