@@ -380,3 +380,47 @@ Una licencia sigue abriendo un solo curso: el panel enseña lo que la sesión au
 - **Publicado en el servidor:** `EdulockSystems-Player-Setup-1.1.3.exe` y `EdulockSystems-Player-Portable-1.1.3.exe` en `/downloads/`, descargables por HTTPS. `latestVersion` pasa a 1.1.3 y `minVersion` se mantiene en 1.0.0, así que **nadie queda bloqueado**: el alumno ve el aviso de actualización, no una puerta cerrada.
 - **Comprobado en esta PC:** instalación silenciosa correcta, ejecutable instalado 1.1.3.
 - **Android:** sin cambios de código desde 1.1.4 (el último commit de Android es la atestación por hardware, que ya viaja en esa versión). La APK publicada sigue siendo 1.1.4 y funciona con el servidor nuevo: usa Gson, que descarta los campos JSON que no conoce, así que el campo añadido al catálogo no le afecta.
+
+## 18. Prueba total de extremo a extremo con los dos reproductores (2026-09-18)
+
+Recorrido completo con datos sintéticos, en producción, con la APK y el reproductor recién compilados.
+
+### 18.1 Creación de contenido desde el panel del productor (13/13)
+
+Proyecto nuevo con instructor y descripción, módulo, submódulo, subida real de una clase hasta "Clase lista", enlace de la clase, material por enlace externo, distintivo de adjuntos y movimiento de la clase al submódulo con la colección del proveedor sincronizada. Todo por la interfaz real.
+
+### 18.2 Reproductor de Android (moto e32, Android 11, APK 1.1.4 recién compilada)
+
+| Paso | Resultado |
+|------|-----------|
+| Instalación de la APK recién compilada | correcta, mismo certificado que la publicada |
+| Registro del alumno desde la aplicación | cuenta creada y paso directo a "Activa tu licencia", sin aprobación manual |
+| Activación de la licencia | correcta, pasa a "Esperando comando de reproducción" |
+| Reproducción por el enlace de la clase | abre `PlayerActivity` y reproduce |
+| Reproducción completa | el servidor registra `progress 100% pos=20s` |
+| Audio real | la pista del propio paquete pasa a `state:started` durante 18 s y luego `stopped` |
+
+**Aprendizaje importante:** la aplicación de Android inicia sesión contra Firebase, no contra la base del servidor. Una cuenta creada solo en la base responde "correo o contraseña incorrectos" en el teléfono. Las cuentas de prueba para el teléfono deben registrarse desde la propia aplicación.
+
+### 18.3 Reproductor de PC 1.1.3 instalado
+
+Conducido por depuración remota sobre el ejecutable ya instalado, no sobre el código fuente.
+
+| Prueba | Interruptor apagado | Interruptor encendido |
+|--------|--------------------|----------------------|
+| Botón "Mis Cursos" | oculto | visible |
+| "Mis materiales" | visible | oculto (su código intacto) |
+| Reproducción por enlace de clase | reproduce, 15.5 s de 20.1 s | reproduce, 12.8 s |
+| Panel lateral | no abre aunque se fuerce | abre con curso, módulo, submódulo, clase y material |
+| Reproducción desde el panel | no aplica | reproduce, 10.3 s de 20.1 s, clase resaltada |
+| Audio real medido en el proceso | pico 0.128, 32/47 muestras | pico 0.129, 37/37 muestras |
+
+Al volver a apagar el interruptor y reabrir el panel, el reproductor vuelve solo a la experiencia de siempre: botón oculto, "Mis materiales" de vuelta y el árbol vaciado.
+
+### 18.4 Corrección encontrada durante la prueba
+
+El texto de la pantalla de inicio mostraba "v1.1.0" porque `config.json` conservaba una etiqueta antigua. No afectaba a la comprobación de actualizaciones, que usa la versión real del ejecutable (1.1.3), pero se corrigió y se recompilaron el instalador y el portable.
+
+### 18.5 Limpieza
+
+Productor, curso, módulos, clase, material, alumnos, licencias, activaciones y sesiones de prueba borrados de la base. Los dos productores reales siguen con "Mis Cursos" apagado. Queda una cuenta sintética en Firebase (`qa-tel-…@edulock-qa.invalid`) que el servidor no puede borrar por no tener credenciales de administración de Firebase; se elimina a mano desde la consola de Firebase si se desea.
