@@ -109,9 +109,13 @@ test('F02: si el servicio de video falla, el pendiente queda en la cola y se rei
 
     // El pendiente sigue anotado y le toca más tarde: se adelanta su turno como
     // haría el paso del tiempo, y el proceso periódico lo termina.
-    await db.pool.query("UPDATE provider_deletions SET next_attempt_at = NOW() - INTERVAL '1 hour' WHERE state='pending'");
-    const resumen = await stream.runProviderDeletions({ limit: 5 });
-    assert.equal(resumen.done, 1, 'el reintento debe completar el borrado');
+    // Se adelanta el turno SOLO de este pendiente, para no arrastrar los de otras pruebas.
+    const propio = (await db.pool.query('SELECT id FROM provider_deletions WHERE module_id=$1', [moduleId])).rows[0];
+    await db.pool.query("UPDATE provider_deletions SET next_attempt_at = NOW() - INTERVAL '1 hour' WHERE id=$1", [propio.id]);
+    await db.pool.query("UPDATE provider_deletions SET next_attempt_at = NOW() + INTERVAL '1 hour' WHERE id <> $1 AND state='pending'", [propio.id]);
+    await stream.runProviderDeletions({ limit: 5 });
+    const estado = (await db.pool.query('SELECT state FROM provider_deletions WHERE id=$1', [propio.id])).rows[0].state;
+    assert.equal(estado, 'done', 'el reintento debe completar el borrado');
     assert.equal(proveedor.borrados.length, 1);
 });
 
@@ -131,8 +135,10 @@ test('F02: el pendiente sobrevive a un reinicio porque está en la base, no en m
     const otroStream = createStreamService({ db, transport: otroProveedor.transport,
         getAccountKey: async () => 'clave-de-cuenta', createKey: async () => ({ keyId: 'clave-hls' }) });
     await db.pool.query("UPDATE provider_deletions SET next_attempt_at = NOW() - INTERVAL '1 hour' WHERE id=$1", [fila.id]);
-    const resumen = await otroStream.runProviderDeletions({ limit: 5 });
-    assert.ok(resumen.done >= 1, 'el proceso nuevo debe terminar el borrado pendiente');
+    await db.pool.query("UPDATE provider_deletions SET next_attempt_at = NOW() + INTERVAL '1 hour' WHERE id <> $1 AND state='pending'", [fila.id]);
+    await otroStream.runProviderDeletions({ limit: 5 });
+    const estadoFinal = (await db.pool.query('SELECT state FROM provider_deletions WHERE id=$1', [fila.id])).rows[0].state;
+    assert.equal(estadoFinal, 'done', 'el proceso nuevo debe terminar el borrado pendiente');
 });
 
 test('F02: si el recurso ya no estaba, se cierra como hecho y no se reintenta para siempre', async () => {
