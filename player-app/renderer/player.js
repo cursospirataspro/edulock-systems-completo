@@ -128,6 +128,9 @@ async function init() {
         const session = await window.vcbPlayer.getSession();
         if (session && session.token) { STATE.auth = session.token; STATE.isLoggedIn = true; }
         if (session && session.email) STATE.studentEmail = session.email;
+        // La sesión quedó establecida: los paneles que dependen de ella (Mis Cursos)
+        // vuelven a preguntar al servidor en vez de quedarse con lo que supieron antes.
+        document.dispatchEvent(new CustomEvent('edulock:session-changed', { detail: { loggedIn: STATE.isLoggedIn === true } }));
     } catch { /* no bloquear el arranque */ }
 
     // Mostrar botón cerrar sesión
@@ -159,6 +162,7 @@ async function init() {
     if (window.vcbPlayer.onTokenRefreshed) {
         window.vcbPlayer.onTokenRefreshed((newToken) => {
             if (newToken && STATE.isLoggedIn) STATE.auth = newToken;
+            document.dispatchEvent(new CustomEvent('edulock:session-changed', { detail: { loggedIn: STATE.isLoggedIn === true } }));
         });
     }
 

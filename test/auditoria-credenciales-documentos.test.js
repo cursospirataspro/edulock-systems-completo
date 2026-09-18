@@ -188,3 +188,34 @@ test('R03: ya no queda ningún rejectUnauthorized:false incondicional', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'database-pg.js'), 'utf8');
     assert.ok(!/ssl:\s*\(process\.env\.NODE_ENV[^\n]*rejectUnauthorized:\s*false/.test(source));
 });
+
+// ── R06 ──────────────────────────────────────────────────────────────────────
+test('R06: renombrar un módulo desde el panel de admin no cambia su posición', async () => {
+    const cuerpo = routeBody("app.put('/api/modules/:id'");
+    const llamadas = [];
+    const contexto = vm.createContext({
+        db: { updateModule: async (id, patch) => { llamadas.push({ id, patch }); return { id, ...patch }; } },
+        Number,
+    });
+    const handler = vm.runInContext('(async (req, res) => {' + cuerpo.slice(cuerpo.indexOf('{') + 1) + '})', contexto);
+    const respuesta = { code: null, body: null, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } };
+
+    // Solo se renombra: el orden no se envía y no debe tocarse.
+    await handler({ params: { id: 'm1' }, body: { name: 'Nuevo nombre' } }, respuesta);
+    assert.deepEqual(JSON.parse(JSON.stringify(llamadas.at(-1).patch)), { name: 'Nuevo nombre' },
+        'sin orden enviado, la posición no puede formar parte del cambio');
+
+    // Un cero explícito sí se respeta.
+    await handler({ params: { id: 'm1' }, body: { name: 'Otro', sortOrder: 0 } }, respuesta);
+    assert.deepEqual(JSON.parse(JSON.stringify(llamadas.at(-1).patch)), { name: 'Otro', sortOrder: 0 });
+
+    // Una posición válida se aplica.
+    await handler({ params: { id: 'm1' }, body: { name: 'Otro', sortOrder: 7 } }, respuesta);
+    assert.equal(llamadas.at(-1).patch.sortOrder, 7);
+
+    // Una posición inválida se rechaza en vez de guardarse.
+    const antes = llamadas.length;
+    await handler({ params: { id: 'm1' }, body: { name: 'Otro', sortOrder: -3 } }, respuesta);
+    assert.equal(respuesta.code, 400);
+    assert.equal(llamadas.length, antes, 'no se escribe nada con una posición inválida');
+});

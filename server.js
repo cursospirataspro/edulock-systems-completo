@@ -2217,7 +2217,18 @@ app.post('/api/courses/:id/modules', requireAdmin, async (req, res) => {
 app.put('/api/modules/:id', requireAdmin, async (req, res) => {
     const { name, sortOrder } = req.body || {};
     if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name requerido' });
-    const mod = await db.updateModule(req.params.id, { name, sortOrder: sortOrder || 0 });
+    // Un orden ausente no es lo mismo que el orden cero: antes, renombrar sin
+    // enviar posición la convertía en 0 y el módulo saltaba al principio de la
+    // lista. Ahora solo se toca la posición cuando el panel la envía, y un cero
+    // explícito sí se respeta (R06).
+    const patch = { name };
+    if (sortOrder !== undefined && sortOrder !== null) {
+        if (!Number.isSafeInteger(sortOrder) || sortOrder < 0 || sortOrder > 1000000) {
+            return res.status(400).json({ error: 'El orden debe ser un entero entre 0 y 1000000.' });
+        }
+        patch.sortOrder = sortOrder;
+    }
+    const mod = await db.updateModule(req.params.id, patch);
     if (!mod) return res.status(404).json({ error: 'Módulo no encontrado' });
     res.json(mod);
 });

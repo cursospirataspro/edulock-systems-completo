@@ -48,10 +48,24 @@
     }
 
     function clear() {
-        close();
+        close();                       // close() ya adelanta la generacion
         expanded.clear();
         currentVideoId = '';
+        cancelProbe();                 // una consulta en vuelo no puede reabrir nada
         applyEnabled(false);
+    }
+
+    // ── Consulta silenciosa del interruptor ───────────────────────────────────
+    // Tiene el mismo control de generacion que la carga: una respuesta que llega
+    // tarde, despues de cerrar sesion, cambiar de cuenta o revocar la licencia, se
+    // descarta en vez de volver a encender el boton (F09).
+    let probeEpoch = 0;
+    let probeTimer = null;
+    let probeRunning = false;
+
+    function cancelProbe() {
+        probeEpoch++;
+        if (probeTimer) { clearTimeout(probeTimer); probeTimer = null; }
     }
 
     // ── Construcción del árbol ────────────────────────────────────────────────
@@ -271,12 +285,41 @@
     api.onLicenseRegenerated(clear);
     window.addEventListener('beforeunload', clear);
 
-    // Consulta silenciosa al arrancar: si el productor no lo habilitó, el botón ni aparece.
-    setTimeout(() => { void probe(); }, 1200);
-    async function probe() {
-        try {
-            const response = await api.getResourceCatalog();
-            applyEnabled(!!response && response.ok && response.catalog && response.catalog.embeddedCatalogEnabled === true);
-        } catch { applyEnabled(false); }
+    // Consulta silenciosa al arrancar: si el productor no lo habilito, el boton ni aparece.
+    scheduleProbe(1200);
+
+    /** Programa una consulta unica; nunca deja dos en cola ni dos en vuelo. */
+    function scheduleProbe(delay) {
+        if (probeTimer) clearTimeout(probeTimer);
+        const mine = ++probeEpoch;
+        probeTimer = setTimeout(() => { probeTimer = null; void probe(mine, 0); }, delay);
     }
+
+    /**
+     * `attempt` cuenta los intentos ya gastados. Un fallo de conexion se reintenta
+     * un maximo de tres veces con esperas crecientes; agotados los intentos se deja
+     * el boton apagado hasta el proximo cambio de sesion. Nunca hay bucle.
+     */
+    async function probe(generation, attempt) {
+        if (generation !== probeEpoch || probeRunning) return;
+        probeRunning = true;
+        let response = null, failed = false;
+        try { response = await api.getResourceCatalog(); }
+        catch { failed = true; }
+        finally { probeRunning = false; }
+        // La sesion cambio mientras esperabamos: esta respuesta ya no dice nada.
+        if (generation !== probeEpoch) return;
+        if (failed) {
+            if (attempt < 3) {
+                const espera = 2000 * Math.pow(2, attempt);
+                probeTimer = setTimeout(() => { probeTimer = null; void probe(generation, attempt + 1); }, espera);
+            } else applyEnabled(false);
+            return;
+        }
+        applyEnabled(!!response && response.ok && response.catalog && response.catalog.embeddedCatalogEnabled === true);
+    }
+
+    // Al cambiar la sesion (entrar, activar licencia o recibir una nueva) se vuelve
+    // a preguntar, en vez de quedarse con lo que se supo al arrancar.
+    document.addEventListener('edulock:session-changed', () => { cancelProbe(); scheduleProbe(300); });
 })();
