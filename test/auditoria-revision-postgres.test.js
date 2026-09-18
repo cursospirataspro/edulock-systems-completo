@@ -96,9 +96,10 @@ test('mover una clase entre cursos es una sola operación y arrastra sus documen
     await db.pool.query('INSERT INTO courses(id,name,producer_id,created_at) VALUES($1,$2,$3,NOW())',
         [segundo, 'Curso destino', e.producerId]);
     const recurso = randomUUID();
-    await db.pool.query(`INSERT INTO protected_resources(id,target_kind,target_id,course_id,producer_id,name,type,protection,created_at,updated_at)
-        VALUES($1,'video',$2,$3,$4,'Guía','link','public',NOW()::text,NOW()::text)`,
-        [recurso, e.videoId, e.courseId, e.producerId]);
+    // Un recurso de enlace publico: la tabla exige public_url o storage_key, no ambos.
+    await db.pool.query(`INSERT INTO protected_resources(id,target_kind,target_id,course_id,producer_id,name,type,protection,public_url,created_at,updated_at)
+        VALUES($1,'video',$2,$3,$4,'Guía','link','public','https://ejemplo.test/guia.pdf',$5,$5)`,
+        [recurso, e.videoId, e.courseId, e.producerId, new Date().toISOString()]);
 
     const resultado = await db.moveVideo(e.videoId, segundo);
     assert.equal(resultado.courseId, segundo);

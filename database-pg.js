@@ -1626,9 +1626,10 @@ module.exports.deleteCourse = async (id) => {
         await client.query('UPDATE catalog SET course_id=NULL, module_id=NULL WHERE course_id=$1', [id]);
         // Nada puede quedar apuntando a un curso o modulo inexistente.
         const idsModulos = modulos.map(m => m.id);
-        const cerrados = (await client.query(`UPDATE protected_resources SET deleted_at=NOW()
+        const ahoraIso = new Date().toISOString();
+        const cerrados = (await client.query(`UPDATE protected_resources SET deleted_at=$3, updated_at=$3, version=version+1
             WHERE deleted_at IS NULL AND (course_id=$1 OR (target_kind='module' AND target_id = ANY($2::text[])))
-            RETURNING id`, [id, idsModulos])).rowCount;
+            RETURNING id`, [id, idsModulos, ahoraIso])).rowCount;
         await client.query(`DELETE FROM producer_content_settings WHERE entity_id = ANY($1::text[]) OR (entity_kind='course' AND entity_id=$2)`,
             [idsModulos, id]).catch(() => {});
         await client.query(`DELETE FROM stream_resources WHERE resource_key = ANY($1::text[])`,
@@ -1708,8 +1709,9 @@ module.exports.deleteCatalogEntryWithProvider = async (videoId) => {
             queuedDeletions.push(pendiente);
         }
 
-        await client.query(`UPDATE protected_resources SET deleted_at=NOW()
-            WHERE target_kind='video' AND target_id=$1 AND deleted_at IS NULL`, [videoId]);
+        const ahoraIso = new Date().toISOString();
+        await client.query(`UPDATE protected_resources SET deleted_at=$2, updated_at=$2, version=version+1
+            WHERE target_kind='video' AND target_id=$1 AND deleted_at IS NULL`, [videoId, ahoraIso]);
         await client.query("UPDATE stream_operations SET state='deleted', error_code='CONTENT_DELETED' WHERE video_id=$1", [videoId]).catch(() => {});
         await client.query('DELETE FROM edu_content WHERE video_id=$1', [videoId]).catch(() => {});
         await client.query('DELETE FROM catalog WHERE video_id=$1', [videoId]);
@@ -1872,8 +1874,11 @@ module.exports.deleteModule = async (id) => {
         // Las clases se quedan sin modulo (diferencia legitima del panel de admin).
         await client.query('UPDATE catalog SET module_id=NULL WHERE module_id=ANY($1::text[])', [descendants]);
         // Ningun documento ni ajuste puede quedar apuntando a un modulo inexistente.
-        const cerrados = (await client.query(`UPDATE protected_resources SET deleted_at=NOW()
-            WHERE target_kind='module' AND target_id=ANY($1::text[]) AND deleted_at IS NULL RETURNING id`, [descendants])).rowCount;
+        // Mismo contrato que el repositorio de recursos: marca ISO, updated_at y
+        // version, para que las lecturas y la concurrencia sigan cuadrando.
+        const ahoraIso = new Date().toISOString();
+        const cerrados = (await client.query(`UPDATE protected_resources SET deleted_at=$2, updated_at=$2, version=version+1
+            WHERE target_kind='module' AND target_id=ANY($1::text[]) AND deleted_at IS NULL RETURNING id`, [descendants, ahoraIso])).rowCount;
         await client.query(`DELETE FROM producer_content_settings WHERE entity_kind='module' AND entity_id=ANY($1::text[])`, [descendants]).catch(() => {});
         await client.query(`DELETE FROM stream_resources WHERE resource_key = ANY($1::text[])`,
             [descendants.map(x => 'module:' + x)]);
