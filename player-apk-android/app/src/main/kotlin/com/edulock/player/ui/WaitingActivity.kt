@@ -507,8 +507,9 @@ class WaitingActivity : AppCompatActivity() {
 
     private fun currentVersionName(): String {
         return try {
-            packageManager.getPackageInfo(packageName, 0).versionName ?: "1.1.0"
-        } catch (_: Exception) { "1.1.0" }
+            // Respaldo: la version de la compilacion, no un literal que se queda viejo (R05).
+            packageManager.getPackageInfo(packageName, 0).versionName ?: com.edulock.player.BuildConfig.VERSION_NAME
+        } catch (_: Exception) { com.edulock.player.BuildConfig.VERSION_NAME }
     }
 
     private fun setResolving(active: Boolean) {

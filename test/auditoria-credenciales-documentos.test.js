@@ -281,3 +281,124 @@ test('F08: las dos pantallas de Android usan la misma política de reproducción
         assert.ok(texto.includes('VdoDirect'), archivo + ' debe contemplar vdocipher_direct');
     }
 });
+
+// ── N03 ──────────────────────────────────────────────────────────────────────
+test('N03: el filtro de origen compara el host exacto, no una subcadena', () => {
+    const cuerpo = routeBody("app.get('/api/video/:videoId/play'");
+    const inicio = cuerpo.indexOf('const _selfHost');
+    const fin = cuerpo.indexOf('if (!isSameOrigin');
+    const contexto = vm.createContext({ URL, process: { env: { PUBLIC_URL: 'https://edulock.test' } } });
+    const evaluar = vm.runInContext(
+        '(origin, referer, allowedDomains) => {' + cuerpo.slice(inicio, fin) +
+        ' return { isSameOrigin, isDomainAllowed }; }', contexto);
+
+    assert.equal(evaluar('https://edulock.test', '', []).isSameOrigin, true, 'el propio dominio pasa');
+    assert.equal(evaluar('https://app.edulock.test', '', []).isSameOrigin, true, 'un subdominio real pasa');
+    assert.equal(evaluar('https://edulock.test.sitio-ajeno.test', '', []).isSameOrigin, false,
+        'un dominio que solo contiene el nuestro NO puede pasar');
+    assert.equal(evaluar('https://cliente.test', '', ['https://cliente.test']).isDomainAllowed, true);
+    assert.equal(evaluar('https://cliente.test.ajeno.test', '', ['https://cliente.test']).isDomainAllowed, false,
+        'empezar igual no basta para ser un dominio autorizado');
+});
+
+// ── F03 ──────────────────────────────────────────────────────────────────────
+test('F03: borrar un módulo desde admin cierra sus recursos y no deja nada colgando', () => {
+    const fuente = fs.readFileSync(path.join(__dirname, '..', 'database-pg.js'), 'utf8');
+    const inicio = fuente.indexOf('module.exports.deleteModule =');
+    const bloque = fuente.slice(inicio, fuente.indexOf('module.exports.deleteModulesByCourse'));
+    assert.ok(bloque.includes('UPDATE protected_resources SET deleted_at=NOW()'),
+        'ningún documento puede quedar apuntando a un módulo inexistente');
+    assert.ok(bloque.includes('DELETE FROM producer_content_settings'));
+    assert.ok(bloque.includes('DELETE FROM stream_resources WHERE resource_key = ANY'));
+    assert.ok(bloque.includes('enqueueProviderDeletion'),
+        'el borrado en el servicio de video se anota igual que en el panel del productor');
+    assert.ok(bloque.indexOf('enqueueProviderDeletion') < bloque.indexOf('DELETE FROM modules WHERE id=ANY'),
+        'el descriptor remoto se captura antes de borrar');
+});
+
+test('F03: la ruta de admin responde 404 cuando el módulo no existe', () => {
+    const cuerpo = routeBody("app.delete('/api/modules/:id'");
+    assert.ok(cuerpo.includes('res.status(404)'));
+    assert.ok(cuerpo.includes('resultado.deleted.length'));
+});
+
+// ── R01 ──────────────────────────────────────────────────────────────────────
+test('R01: cada clase guarda en qué biblioteca vive y se opera sobre la suya', () => {
+    const fuente = fs.readFileSync(path.join(__dirname, '..', 'database-pg.js'), 'utf8');
+    assert.ok(fuente.includes('ALTER TABLE catalog ADD COLUMN IF NOT EXISTS bunny_library_id'));
+    assert.ok(fuente.includes('module.exports.setVideoLibrary'));
+    assert.ok(fuente.includes('module.exports.getCoursePreviousLibraries'));
+    const stream = fs.readFileSync(path.join(__dirname, '..', 'lib', 'stream-service.js'), 'utf8');
+    assert.ok(stream.includes('async function libraryForVideo('));
+    assert.ok(stream.includes('await libraryForVideo(entry.courseId, videoId)'),
+        'el estado de una clase se consulta en su propia biblioteca');
+    assert.ok(stream.includes('BUNNY_VIDEO_OTHER_LIBRARY'),
+        'una clase de una biblioteca anterior no se reorganiza dentro de la nueva');
+});
+
+// ── R05 ──────────────────────────────────────────────────────────────────────
+const rutaAndroid = (...partes) => path.join(__dirname, '..', 'player-apk-android', 'app', 'src', 'main',
+    'kotlin', 'com', 'edulock', 'player', 'ui', ...partes);
+
+test('R05: Android informa la versión real de la compilación', () => {
+    const catalogo = fs.readFileSync(rutaAndroid('CatalogActivity.kt'), 'utf8');
+    assert.ok(!/appVersion\s*=\s*"1\.0\.0"/.test(catalogo), 'no puede enviar una versión fija');
+    assert.ok(catalogo.includes('BuildConfig.VERSION_NAME'));
+    const espera = fs.readFileSync(rutaAndroid('WaitingActivity.kt'), 'utf8');
+    assert.ok(!/\?: "1\.1\.0"/.test(espera));
+});
+
+test('R05: la apertura de una clase está atada al ciclo de vida y no se duplica', () => {
+    const catalogo = fs.readFileSync(rutaAndroid('CatalogActivity.kt'), 'utf8');
+    const bloque = catalogo.slice(catalogo.indexOf('private fun playVideo'), catalogo.indexOf('private fun sendStartupCheckin'));
+    assert.ok(bloque.includes('lifecycleScope.launch'), 'no puede usar un ámbito suelto');
+    assert.ok(bloque.includes('if (abriendoClase)'), 'un segundo toque no puede abrir otra petición');
+    assert.ok(bloque.includes('abriendoClase = false'));
+    assert.ok(!catalogo.includes('CoroutineScope(Dispatchers.Main).launch'),
+        'ningún trabajo con vistas puede sobrevivir a la pantalla');
+});
+
+test('R05: el reproductor suelta también el WebView al cerrarse', () => {
+    const player = fs.readFileSync(rutaAndroid('PlayerActivity.kt'), 'utf8');
+    const bloque = player.slice(player.indexOf('override fun onDestroy'), player.indexOf('override fun onPause'));
+    assert.ok(bloque.includes('exoPlayer?.release()'));
+    assert.ok(bloque.includes('w.destroy()'), 'el WebView de VdoCipher también debe liberarse');
+});
+
+// ── F04 ──────────────────────────────────────────────────────────────────────
+test('F04: el binario distribuido no admite modo de desarrollo por línea de órdenes', () => {
+    const main = fs.readFileSync(path.join(__dirname, '..', 'player-app', 'main.js'), 'utf8');
+    assert.ok(main.includes("const IS_DEV  = !app.isPackaged && process.argv.includes('--dev')"),
+        'la bandera sola no puede activar el modo de desarrollo');
+    assert.ok(!/const IS_DEV\s+=\s+process\.argv\.includes\('--dev'\);/.test(main));
+});
+
+// ── R04 ──────────────────────────────────────────────────────────────────────
+test('R04: la sesión guardada se protege con el almacén del sistema y migra la antigua', () => {
+    const main = fs.readFileSync(path.join(__dirname, '..', 'player-app', 'main.js'), 'utf8');
+    assert.ok(main.includes('safeStorage'), 'debe usarse el almacén del sistema operativo');
+    assert.ok(main.includes('function writeSessionFile(') && main.includes('function readSessionFile('));
+    assert.ok(!/fs\.writeFileSync\(SESSION_PATH, JSON\.stringify/.test(main),
+        'ya no puede escribirse la sesión en texto plano directamente');
+});
+
+test('R04: los dominios del inicio de sesión se comparan por host y solo se abren http/https', () => {
+    const main = fs.readFileSync(path.join(__dirname, '..', 'player-app', 'main.js'), 'utf8');
+    assert.ok(main.includes('function isAuthWindowUrl('));
+    assert.ok(!main.includes("url.includes('accounts.google.com')"));
+    assert.ok(main.includes('function openExternalSafely('));
+    assert.ok(main.includes('function isTrustedSender('), 'los canales sensibles comprueban quién llama');
+});
+
+// ── R08 ──────────────────────────────────────────────────────────────────────
+test('R08: se distinguen amenaza comprobada, binario sin firma y comprobación no disponible', () => {
+    const main = fs.readFileSync(path.join(__dirname, '..', 'player-app', 'main.js'), 'utf8');
+    const bloque = main.slice(main.indexOf('function inspectProcessSignatures'), main.indexOf('// ── Detección comportamental'));
+    for (const estado of ["'threat'", "'unsigned'", "'unavailable'", "'clean'"]) {
+        assert.ok(bloque.includes(estado), 'falta el estado ' + estado);
+    }
+    assert.ok(bloque.includes('probe-unavailable:process-signatures'),
+        'no haber podido comprobar no puede contarse como hallazgo');
+    assert.ok(!/if \(err\) \{ resolve\(false\); return; \}/.test(bloque),
+        'un fallo del sondeo no puede devolver lo mismo que "limpio"');
+});

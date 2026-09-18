@@ -1434,13 +1434,19 @@ app.get('/api/video/:videoId/play', requireAuth, requireBodyVideo, async (req, r
         const origin  = req.headers['origin']  || '';
         const referer = req.headers['referer'] || '';
         // Same-origin (iframe en el dominio propio) → origin y referer vacíos o propios → permitir
-        const _selfHost = (process.env.PUBLIC_URL || 'edulocksystemsoficial.dpdns.org').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+        const _selfHost = (process.env.PUBLIC_URL || 'edulocksystemsoficial.dpdns.org').replace(/^https?:\/\//, '').replace(/\/.*$/, '').toLowerCase();
+        // Comparacion por host exacto: con includes()/startsWith(), un sitio
+        // llamado «<dominio propio>.ajeno.test» pasaba el filtro (N03).
+        const hostDe = value => { try { return new URL(String(value)).hostname.toLowerCase(); } catch { return ''; } };
+        const mismoHost = (host, dominio) => !!host && !!dominio && (host === dominio || host.endsWith('.' + dominio));
+        const originHost = hostDe(origin), refererHost = hostDe(referer);
         const isSameOrigin = (!origin && !referer)
-            || origin.includes(_selfHost)
-            || referer.includes(_selfHost);
-        const isDomainAllowed = allowedDomains.some(d =>
-            origin.startsWith(d) || referer.startsWith(d)
-        );
+            || mismoHost(originHost, _selfHost)
+            || mismoHost(refererHost, _selfHost);
+        const isDomainAllowed = allowedDomains.some(d => {
+            const permitido = hostDe(d) || String(d).replace(/^https?:\/\//, '').replace(/\/.*$/, '').toLowerCase();
+            return mismoHost(originHost, permitido) || mismoHost(refererHost, permitido);
+        });
         if (!isSameOrigin && !isDomainAllowed && !req.user.admin) {
             return res.status(403).json({ error: 'Reproducción no permitida desde este sitio.' });
         }

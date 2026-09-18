@@ -2250,7 +2250,7 @@ ipcMain.handle('activation-activate-license', async (_e, { licenseKey, deviceId 
 
         // Save Stage 2 JWT (license-scoped)
         const saved = session || {};
-        fs.writeFileSync(SESSION_PATH, JSON.stringify({ ...saved, token: res.body.token }), 'utf8');
+        writeSessionFile({ ...saved, token: res.body.token });
 
         // Save activation state locally (activationToken real: lo valida /api/license/validate-activation)
         activationStore.saveActivation({

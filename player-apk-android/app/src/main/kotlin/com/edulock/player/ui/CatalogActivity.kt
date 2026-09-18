@@ -107,7 +107,7 @@ class CatalogActivity : AppCompatActivity() {
      */
     private fun startLicenseGuard() {
         licenseGuardJob?.cancel()
-        licenseGuardJob = CoroutineScope(Dispatchers.Main).launch {
+        licenseGuardJob = lifecycleScope.launch {
             // Pequeña espera inicial para no competir con la carga del catálogo
             delay(3000)
             while (isActive && !expelled) {
@@ -251,11 +251,18 @@ class CatalogActivity : AppCompatActivity() {
     /**
      * Reproducir video seleccionado
      */
+    /** Evita que dos toques seguidos lancen dos aperturas a la vez (R05). */
+    private var abriendoClase = false
+
     private fun playVideo(video: VideoItem) {
         val realId = video.videoId ?: video.id
-        Log.i(TAG, "▶️ Reproduciendo: ${video.title} (ID: $realId)")
-        
-        CoroutineScope(Dispatchers.Main).launch {
+        if (abriendoClase) { Log.i(TAG, "Ya hay una clase abriendose; se ignora el toque repetido") ; return }
+        abriendoClase = true
+        Log.i(TAG, "Reproduciendo: ${video.title} (ID: $realId)")
+
+        // lifecycleScope: si el alumno sale de la pantalla, la peticion se cancela
+        // y ninguna respuesta tardia toca vistas que ya no existen.
+        lifecycleScope.launch {
             try {
                 loadingView.visibility = android.view.View.VISIBLE
 
@@ -337,6 +344,7 @@ class CatalogActivity : AppCompatActivity() {
                 showError("Error: ${e.message}")
             } finally {
                 loadingView.visibility = android.view.View.GONE
+                abriendoClase = false
             }
         }
     }
@@ -353,7 +361,7 @@ class CatalogActivity : AppCompatActivity() {
      * Checkin de inicio — igual que PC al arrancar (registra dispositivo en el servidor)
      */
     private fun sendStartupCheckin() {
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val jwt = SessionManager.validToken(this@CatalogActivity)
                 if (jwt.isEmpty()) return@launch
@@ -370,7 +378,10 @@ class CatalogActivity : AppCompatActivity() {
                     totalmem    = memInfo.totalMem,
                     deviceModel = di.deviceModel,
                     osRelease   = di.osVersion,
-                    appVersion  = "1.0.0"
+                    // Version real de la compilacion: antes iba un literal fijo "1.0.0",
+                    // asi que el servidor creia que el telefono estaba en una version
+                    // antigua aunque no lo estuviera (R05).
+                    appVersion  = com.edulock.player.BuildConfig.VERSION_NAME
                 )
                 apiService.deviceCheckin(request, "Bearer $jwt")
                 Log.i(TAG, "✅ Checkin enviado: ${di.deviceModel}")

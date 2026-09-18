@@ -1071,6 +1071,12 @@ class PlayerActivity : AppCompatActivity() {
         endSession()
         exoPlayer?.release()
         exoPlayer = null
+        // El WebView de VdoCipher tambien hay que soltarlo: si no, queda vivo con
+        // su proceso y su sesion despues de cerrar la clase (R05).
+        vdoWebView?.let { w ->
+            try { w.stopLoading(); w.loadUrl("about:blank"); (w.parent as? android.view.ViewGroup)?.removeView(w); w.destroy() } catch (_: Exception) {}
+        }
+        vdoWebView = null
     }
 
     override fun onPause() {
