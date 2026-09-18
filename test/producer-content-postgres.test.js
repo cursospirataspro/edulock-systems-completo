@@ -12,6 +12,7 @@ if (!allowed.test(databaseName)) { console.error('REFUSED: producer content test
 for (const key of ['COURSES_SEED', 'CATALOG_SEED', 'CATALOG_SEED_1', 'CATALOG_SEED_2', 'CATALOG_SEED_3', 'ALLOWED_DOMAINS_SEED']) delete process.env[key];
 const db = require('../database-pg');
 const { ensureSchema, createProducerContent, getPublicVideoPresentation } = require('../lib/producer-content');
+const { createStreamService } = require('../lib/stream-service');
 const service = createProducerContent({ db, generatePublicCode: id => id.replaceAll('-', '') });
 const tracked = { producers: [], courses: [], modules: [], catalog: [], licenses: [], license_lots: [], protected_resources: [], stream_operations: [] };
 const id = table => { const value = randomUUID(); tracked[table].push(value); return value; };
@@ -254,40 +255,62 @@ test('when the post-sync check cannot be run, the class stays pending instead of
     assert.match(moved.providerWarning, /no se pudo confirmar/);
     assert.equal((await db.pool.query('SELECT collection_sync_pending FROM catalog WHERE video_id=$1', [bunnyVideo])).rows[0].collection_sync_pending, true, 'the flag stays on in the database');
 });
-test('eliminar contenido pide el borrado en el proveedor y nunca lo hace antes de confirmar la base', async () => {
+test('eliminar contenido encola el borrado en el proveedor dentro de la misma transaccion y lo ejecuta', async () => {
     const f = await fixture();
-    const asked = [];
+    const borrados = [];
+    const transporte = { async json(method, host, path) { if (method === 'DELETE') borrados.push(path); return {}; }, async upload() { return {}; } };
+    const stream = createStreamService({ db, transport: transporte,
+        getAccountKey: async () => 'clave-de-cuenta', createKey: async () => ({ keyId: 'clave-hls' }) });
     const withDelete = createProducerContent({ db, generatePublicCode: id => id.replaceAll('-', ''),
-        deleteProviderAsset: async input => { asked.push(input); return { deleted: true }; } });
+        describeProviderAsset: args => stream.describeProviderAsset(args),
+        runProviderDeletions: args => stream.runProviderDeletions(args) });
 
-    // Una clase: se borra del catálogo y se pide borrar su video.
+    await db.setCourseBunnyLibrary(f.courseId, { libraryId: '424242', libraryKey: 'clave-sintetica' });
+
+    // Una clase creada por esta plataforma: se borra del catalogo y su video se
+    // borra de verdad en el proveedor (no solo "se pide").
     const video = id('catalog');
+    const operacion = id('stream_operations');
     await db.addToCatalog({ videoId: video, title: 'Para borrar', courseId: f.courseId, producerId: f.producerId, status: 'ready', sourceType: 'bunny', bunnyUrl: 'https://vz-test.b-cdn.net/x/playlist.m3u8' });
+    await db.reserveStreamOperation({ id: operacion, actorKey: 'producer:' + f.producerId, courseId: f.courseId, moduleId: null,
+        title: 'Para borrar', fileSize: 10, fileSha256: 'b'.repeat(64) });
+    await db.updateStreamOperation(operacion, { videoId: video, state: 'ready' });
+    await db.setStreamResource('upload:' + operacion, { remoteName: 'Para borrar', state: 'ready', remoteId: video });
     const removed = await withDelete.remove(f.producerId, 'video', video);
     assert.equal(removed.providerFilesDeleted, true);
-    assert.equal(await db.getCatalogById(video), null, 'la clase ya no está en el catálogo');
-    assert.deepEqual({ kind: asked.at(-1).kind, videoId: asked.at(-1).videoId, courseId: asked.at(-1).courseId },
-        { kind: 'video', videoId: video, courseId: f.courseId });
+    assert.equal(await db.getCatalogById(video), null, 'la clase ya no esta en el catalogo');
+    assert.ok(borrados.some(x => x.endsWith('/library/424242/videos/' + video)), 'el video se borro en el proveedor');
 
-    // Un módulo vacío: se borra y se pide borrar su colección.
+    // Un modulo vacio: se borra y su coleccion tambien.
     const emptyModule = id('modules');
-    await db.createModule({ id: emptyModule, courseId: f.courseId, name: 'Vacío', producerId: f.producerId });
+    await db.createModule({ id: emptyModule, courseId: f.courseId, name: 'Vacio', producerId: f.producerId });
+    await db.setModuleBunnyCollection(emptyModule, 'col-vacio');
+    await db.setStreamResource('module:' + emptyModule, { remoteName: 'Vacio', state: 'ready', remoteId: 'col-vacio' });
     assert.equal((await withDelete.remove(f.producerId, 'module', emptyModule)).providerFilesDeleted, true);
-    assert.equal(asked.at(-1).kind, 'module');
-    assert.equal(asked.at(-1).moduleId, emptyModule);
+    assert.ok(borrados.some(x => x.endsWith('/library/424242/collections/col-vacio')));
 
-    // Un fallo del proveedor no deshace el borrado en Edulock, pero se avisa con claridad.
+    // Un fallo del proveedor no deshace el borrado en Edulock: queda pendiente y se avisa.
+    const caido = { async json(method) { if (method === 'DELETE') { const e = new Error('proveedor caido'); e.httpStatus = 502; throw e; } return {}; }, async upload() { return {}; } };
+    const streamCaido = createStreamService({ db, transport: caido, getAccountKey: async () => 'k', createKey: async () => ({ keyId: 'k' }) });
     const failing = createProducerContent({ db, generatePublicCode: id => id.replaceAll('-', ''),
-        deleteProviderAsset: async () => { throw new Error('proveedor caído'); } });
+        describeProviderAsset: args => streamCaido.describeProviderAsset(args),
+        runProviderDeletions: args => streamCaido.runProviderDeletions(args) });
     const other = id('modules');
-    await db.createModule({ id: other, courseId: f.courseId, name: 'Otro vacío', producerId: f.producerId });
+    await db.createModule({ id: other, courseId: f.courseId, name: 'Otro vacio', producerId: f.producerId });
+    await db.setModuleBunnyCollection(other, 'col-otro');
+    await db.setStreamResource('module:' + other, { remoteName: 'Otro vacio', state: 'ready', remoteId: 'col-otro' });
     const failed = await failing.remove(f.producerId, 'module', other);
     assert.equal(failed.providerFilesDeleted, false);
-    assert.match(failed.providerWarning, /no se pudo borrar en el servicio de video/);
-    assert.equal(await db.getModuleById(other), null, 'en Edulock sí quedó borrado');
+    assert.match(failed.providerWarning, /pendiente/);
+    assert.equal(await db.getModuleById(other), null, 'en Edulock si quedo borrado');
+    const pendiente = (await db.pool.query("SELECT state FROM provider_deletions WHERE module_id=$1", [other])).rows[0];
+    assert.equal(pendiente.state, 'pending', 'el borrado externo queda anotado para reintentarse');
 
-    // Con dependencias no se borra nada: ni en la base ni en el proveedor.
-    const before = asked.length;
+    // Con dependencias no se borra nada: ni en la base, ni en el proveedor, ni en la cola.
+    const antes = borrados.length;
+    const encoladosAntes = Number((await db.pool.query('SELECT COUNT(*) n FROM provider_deletions')).rows[0].n);
     await assert.rejects(withDelete.remove(f.producerId, 'course', f.courseId), { code: 'CONTENT_HAS_DEPENDENCIES' });
-    assert.equal(asked.length, before, 'no se pidió ningún borrado al proveedor');
+    assert.equal(borrados.length, antes, 'no se borro nada en el proveedor');
+    assert.equal(Number((await db.pool.query('SELECT COUNT(*) n FROM provider_deletions')).rows[0].n), encoladosAntes,
+        'una operacion rechazada no deja nada encolado');
 });
