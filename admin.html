@@ -7,17 +7,17 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <style>
         :root {
-            --c-primary: #c72b24;
-            --c-primary-h: #e0392f;
-            --c-bg: #0d0d0d;
-            --c-surface: #171717;
-            --c-surface2: #232323;
-            --c-border: #333333;
-            --c-text: #f5f5f5;
-            --c-muted: #9ca3af;
-            --c-success: #2ecc71;
-            --c-warn: #f39c12;
-            --c-error: #ff6b6b;
+            --c-primary: #d81f2a;
+            --c-primary-h: #a1121b;
+            --c-bg: #ffffff;
+            --c-surface: #ffffff;
+            --c-surface2: #f7f5f4;
+            --c-border: #e4dfdd;
+            --c-text: #141010;
+            --c-muted: #6d635d;
+            --c-success: #157347;
+            --c-warn: #8a5a00;
+            --c-error: #d81f2a;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { min-height: 100%; background: var(--c-bg); font-family: 'Segoe UI', Tahoma, sans-serif; color: var(--c-text); }
@@ -109,9 +109,9 @@
         .pa-tab:hover { color: var(--c-text); }
         .pa-tab-active { color: var(--c-primary) !important; border-bottom-color: var(--c-primary) !important; }
         .pa-tab-content { display: block; }
-        .severity-critical { color: #ff3b3b; font-weight: 700; }
-        .severity-high     { color: #ff6b35; font-weight: 600; }
-        .severity-medium   { color: #ffd166; }
+        .severity-critical { color: #a1121b; font-weight: 700; }
+        .severity-high     { color: #c41f28; font-weight: 600; }
+        .severity-medium   { color: #8a5a00; }
         .severity-low      { color: var(--c-muted); }
         .progress-bar-mini {
             display: inline-block; width: 80px; height: 6px;
@@ -145,7 +145,7 @@
         th { text-align: left; padding: 8px 12px; color: var(--c-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--c-border); }
         td { padding: 10px 12px; border-bottom: 1px solid var(--c-border); vertical-align: middle; }
         tr:last-child td { border-bottom: none; }
-        tr:hover td { background: rgba(255,255,255,0.02); }
+        tr:hover td { background: rgba(20,16,16,0.03); }
         .badge {
             display: inline-block; padding: 2px 8px; border-radius: 999px;
             font-size: 0.7rem; font-weight: 600;
@@ -153,7 +153,7 @@
         .badge-ok      { background: rgba(46,204,113,0.15); color: var(--c-success); }
         .badge-warn    { background: rgba(243,156,18,0.15); color: var(--c-warn); }
         .badge-error   { background: rgba(255,107,107,0.15); color: var(--c-error); }
-        .badge-proc    { background: rgba(52,152,219,0.15); color: #3498db; }
+        .badge-proc    { background: rgba(52,152,219,0.15); color: #5a6470; }
 
         /* ---- Copy link ---- */
         .copy-link {
@@ -164,7 +164,7 @@
         /* ---- Domains modal ---- */
         #domains-modal-bg {
             position: fixed; inset: 0; z-index: 200;
-            background: rgba(0,0,0,0.65); display: none;
+            background: rgba(20,16,16,0.35); display: none;
             align-items: center; justify-content: center; padding: 16px;
         }
         #domains-modal-bg.active { display: flex; }
@@ -215,7 +215,7 @@
         tr.dragging { opacity: 0.4; }
         .move-modal-bg {
             position: fixed; inset: 0; z-index: 200;
-            background: rgba(0,0,0,0.65); display: none;
+            background: rgba(20,16,16,0.35); display: none;
             align-items: center; justify-content: center; padding: 16px;
         }
         .move-modal-bg.active { display: flex; }
@@ -294,7 +294,7 @@
         .module-item .mod-actions button:hover { color: var(--c-primary); border-color: var(--c-primary); }
         .module-item .mod-actions .btn-mod-del:hover { color: var(--c-error); border-color: var(--c-error); }
         .submodule-list { margin-left: 22px; border-left: 2px solid var(--c-border); padding-left: 12px; margin-top: 4px; }
-        .module-badge { font-size: 0.68rem; padding: 1px 6px; border-radius: 3px; background: rgba(100,100,255,0.15); color: #aab; margin-right: 4px; }
+        .module-badge { font-size: 0.68rem; padding: 1px 6px; border-radius: 3px; background: rgba(100,100,255,0.15); color: #6d635d; margin-right: 4px; }
 
         /* ---- Watermark admin cards ---- */
         .wm-item-card {
@@ -358,7 +358,7 @@
         /* ---- Bunny import modal ---- */
         #bunny-import-modal-bg {
             position: fixed; inset: 0; z-index: 300;
-            background: rgba(0,0,0,0.75); display: none;
+            background: rgba(20,16,16,0.35); display: none;
             align-items: flex-start; justify-content: center; padding: 24px 16px; overflow-y: auto;
         }
         #bunny-import-modal-bg.active { display: flex; }
@@ -388,7 +388,7 @@
         .tree-file { color: var(--c-muted); margin-left: 18px; }
         .tree-file.matched { color: var(--c-success); }
         .tree-file.unmatched { color: var(--c-error); }
-        .hls-url-display { font-family: monospace; font-size: 0.68rem; color: #5a9e6f; margin-left: 18px; word-break: break-all; opacity: 0.85; cursor: pointer; padding: 1px 0; display: block; }
+        .hls-url-display { font-family: monospace; font-size: 0.68rem; color: #157347; margin-left: 18px; word-break: break-all; opacity: 0.85; cursor: pointer; padding: 1px 0; display: block; }
         .hls-url-display:hover { opacity: 1; text-decoration: underline; }
         .hls-missing-badge { font-size: 0.68rem; color: var(--c-warn); margin-left: 6px; }
         .manual-assign-row { margin-top: 3px; margin-left: 18px; }
@@ -398,7 +398,7 @@
         .bunny-summary .s-ok { color: var(--c-success); }
         .bunny-summary .s-warn { color: var(--c-warn); }
         .lib-option { padding: 10px 14px; border: 1px solid var(--c-border); border-radius: 6px; cursor: pointer; margin-bottom: 6px; transition: background 0.15s; display: flex; align-items: center; gap: 10px; }
-        .lib-option:hover { background: rgba(255,255,255,0.05); }
+        .lib-option:hover { background: rgba(20,16,16,0.04); }
         .lib-option.selected { border-color: var(--c-primary); background: rgba(229,62,62,0.1); }
         .lib-option .lib-name { font-weight: 600; font-size: 0.9rem; }
         .lib-option .lib-id { color: var(--c-muted); font-size: 0.75rem; font-family: monospace; margin-left: auto; }
@@ -448,7 +448,7 @@
         /* ---- Modal usuario (detalle) ---- */
         #user-modal-bg {
             position: fixed; inset: 0; z-index: 500;
-            background: rgba(0,0,0,0.75);
+            background: rgba(20,16,16,0.35);
             display: none; align-items: center; justify-content: center; padding: 16px;
         }
         #user-modal-bg.active { display: flex; }
@@ -456,7 +456,7 @@
             background: var(--c-surface); border: 1px solid var(--c-border);
             border-radius: 14px; width: 100%; max-width: 860px;
             max-height: 88vh; display: flex; flex-direction: column;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            box-shadow: 0 18px 44px rgba(20,16,16,0.14);
         }
         #user-modal-header {
             padding: 20px 24px 14px;
@@ -521,11 +521,11 @@
             aside.open {
                 transform: translate3d(0, 0, 0);
                 -webkit-transform: translate3d(0, 0, 0);
-                box-shadow: 0 0 40px rgba(0,0,0,.65);
+                box-shadow: 0 14px 36px rgba(20,16,16,0.12);
             }
             .sidebar-overlay.show {
                 display: block; position: fixed; inset: 0;
-                background: rgba(0,0,0,.55); z-index: 1050;
+                background: rgba(20,16,16,0.35); z-index: 1050;
             }
             main { padding: 70px 15px 28px; }
             h2 { font-size: 1.15rem; }
@@ -590,10 +590,10 @@
             <a class="active" data-page="dashboard">Dashboard</a>
             <a data-page="catalog">Catalogo</a>
             <a data-page="students">Alumnos</a>
-            <a data-page="playback-audit">Auditoría <span id="nav-unreviewed-badge" style="display:none;background:#e63946;color:#fff;border-radius:10px;padding:1px 6px;font-size:0.7rem;margin-left:4px;vertical-align:middle"></span></a>
+            <a data-page="playback-audit">Auditoría <span id="nav-unreviewed-badge" style="display:none;background:#d81f2a;color:#fff;border-radius:10px;padding:1px 6px;font-size:0.7rem;margin-left:4px;vertical-align:middle"></span></a>
             <a data-page="leak">Detectar Fuga</a>
             <a data-page="watermark">Marcas de agua</a>
-            <a data-page="security">Seguridad <span id="nav-security-badge" style="display:none;background:#e63946;color:#fff;border-radius:10px;padding:1px 6px;font-size:0.7rem;margin-left:4px;vertical-align:middle"></span></a>
+            <a data-page="security">Seguridad <span id="nav-security-badge" style="display:none;background:#d81f2a;color:#fff;border-radius:10px;padding:1px 6px;font-size:0.7rem;margin-left:4px;vertical-align:middle"></span></a>
             <a data-page="player-version">Versión Reproductor</a>
             <a data-page="licenses">Licencias y Ventas</a>
             <a data-page="producers">Productores (Clientes)</a>
@@ -634,7 +634,7 @@
             <div style="display:flex;justify-content:flex-end;gap:10px;margin-bottom:10px">
                 <button class="btn-gear" onclick="openCreateCourseModal()">&#128218; Crear curso</button>
                 <button class="btn-gear" onclick="openDomainsModal()">&#9881; Dominios permitidos</button>
-                <button class="btn-gear" onclick="openBunnyImportModal()" style="color:#f97316;border-color:#f97316">&#128194; Importar desde Bunny</button>
+                <button class="btn-gear" onclick="openBunnyImportModal()" style="color:#8a5a00;border-color:#8a5a00">&#128194; Importar desde Bunny</button>
             </div>
 
             <!-- Vista de cursos (por defecto) -->
@@ -702,7 +702,7 @@
                     <div id="add-bunny-form" style="display:none">
                         <p style="font-size:0.8rem;color:var(--c-muted);margin-bottom:12px">
                             Pega la URL HLS de Bunny Stream. Ejemplo:<br>
-                            <code style="background:#222;padding:2px 6px;border-radius:3px;font-size:0.78rem">https://vz-XXXXXX.b-cdn.net/VIDEO-ID/playlist.m3u8</code>
+                            <code style="background:var(--c-surface2);padding:2px 6px;border-radius:3px;font-size:0.78rem">https://vz-XXXXXX.b-cdn.net/VIDEO-ID/playlist.m3u8</code>
                         </p>
                         <div style="display:grid;grid-template-columns:2fr 3fr auto;gap:10px;align-items:end">
                             <div class="form-row" style="margin:0">
@@ -720,7 +720,7 @@
                     <div id="add-vdo-form" style="display:none">
                         <p style="font-size:0.8rem;color:var(--c-muted);margin-bottom:12px">
                             Pega el Video ID de VdoCipher (lo encuentras en el dashboard de VdoCipher &rarr; botón "Copy ID"). Ejemplo:<br>
-                            <code style="background:#222;padding:2px 6px;border-radius:3px;font-size:0.78rem">1189eab607df4ec2b9bb42570d4dd0f0</code>
+                            <code style="background:var(--c-surface2);padding:2px 6px;border-radius:3px;font-size:0.78rem">1189eab607df4ec2b9bb42570d4dd0f0</code>
                         </p>
                         <div style="display:grid;grid-template-columns:2fr 3fr auto;gap:10px;align-items:end">
                             <div class="form-row" style="margin:0">
@@ -738,7 +738,7 @@
                     <div id="add-vdo-direct-form" style="display:none">
                         <p style="font-size:0.8rem;color:var(--c-muted);margin-bottom:12px">
                             Pega el link directo del player de VdoCipher. Ejemplo:<br>
-                            <code style="background:#222;padding:2px 6px;border-radius:3px;font-size:0.78rem">https://player.vdocipher.com/v2/?otp=...&amp;playbackInfo=...</code>
+                            <code style="background:var(--c-surface2);padding:2px 6px;border-radius:3px;font-size:0.78rem">https://player.vdocipher.com/v2/?otp=...&amp;playbackInfo=...</code>
                         </p>
                         <div style="display:grid;grid-template-columns:2fr 3fr auto;gap:10px;align-items:end">
                             <div class="form-row" style="margin:0">
@@ -755,7 +755,7 @@
                     <!-- Protegido .edu form (modelo InfoProtector) -->
                     <div id="add-edu-form" style="display:none">
                         <p style="font-size:0.8rem;color:var(--c-muted);margin-bottom:12px">
-                            Sube un mp4: el servidor lo <b>convierte a <code style="background:#222;padding:2px 6px;border-radius:3px;font-size:0.78rem">.edu</code> (cifrado)</b>, lo sube a tu Bunny Storage y lo agrega a <b>este curso</b>.
+                            Sube un mp4: el servidor lo <b>convierte a <code style="background:var(--c-surface2);padding:2px 6px;border-radius:3px;font-size:0.78rem">.edu</code> (cifrado)</b>, lo sube a tu Bunny Storage y lo agrega a <b>este curso</b>.
                             Despu&eacute;s usa <b>&laquo;Copiar enlace&raquo;</b> en la fila del video para obtener el sublink de la clase.
                         </p>
                         <div style="display:grid;grid-template-columns:2fr 3fr auto;gap:10px;align-items:end">
@@ -972,7 +972,7 @@
     <div id="bulk-bar" class="bulk-bar">
         <span class="bulk-count" id="bulk-count">0 seleccionados</span>
         <button class="btn-bulk-move" onclick="openBulkMoveModal()">Mover seleccionados</button>
-        <button class="btn-bulk-move" style="background:#dc2626" onclick="deleteSelectedVideos()">Eliminar seleccionados</button>
+        <button class="btn-bulk-move" style="background:#d81f2a" onclick="deleteSelectedVideos()">Eliminar seleccionados</button>
         <button class="btn-bulk-cancel" onclick="clearBulkSelection()">Cancelar</button>
     </div>
 
@@ -1061,7 +1061,7 @@
                     <!-- CSV -->
                     <div>
                         <p style="font-size:0.8rem;color:var(--c-muted);margin-bottom:8px">
-                            <strong>CSV</strong> &mdash; columnas: <code style="background:#222;padding:1px 5px;border-radius:3px">email,studentId,nombre</code>
+                            <strong>CSV</strong> &mdash; columnas: <code style="background:var(--c-surface2);padding:1px 5px;border-radius:3px">email,studentId,nombre</code>
                         </p>
                         <div id="import-drop">
                             <p>📎 Arrastra un .csv aquí o haz clic</p>
@@ -1076,7 +1076,7 @@
                     <div>
                         <p style="font-size:0.8rem;color:var(--c-muted);margin-bottom:8px">
                             <strong>JSON</strong> &mdash; pega un array:
-                            <code style="background:#222;padding:1px 5px;border-radius:3px">[{&quot;email&quot;:&quot;...&quot;,&quot;studentId&quot;:&quot;...&quot;}]</code>
+                            <code style="background:var(--c-surface2);padding:1px 5px;border-radius:3px">[{&quot;email&quot;:&quot;...&quot;,&quot;studentId&quot;:&quot;...&quot;}]</code>
                         </p>
                         <textarea id="json-import" rows="4"
                             style="width:100%;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:0.78rem;padding:8px;resize:vertical;font-family:monospace"
@@ -1134,7 +1134,7 @@
             <!-- Tabs internos -->
             <div style="display:flex;gap:0;margin-bottom:18px;border-bottom:1px solid var(--c-border);flex-wrap:wrap">
                 <button class="pa-tab pa-tab-active" data-tab="general"    onclick="switchPaTab('general')">Log General</button>
-                <button class="pa-tab" data-tab="suspicious" onclick="switchPaTab('suspicious')">Actividad Sospechosa <span id="badge-suspicious" style="background:#e63946;color:#fff;border-radius:10px;padding:1px 6px;font-size:0.68rem;margin-left:4px;display:none"></span></button>
+                <button class="pa-tab" data-tab="suspicious" onclick="switchPaTab('suspicious')">Actividad Sospechosa <span id="badge-suspicious" style="background:#d81f2a;color:#fff;border-radius:10px;padding:1px 6px;font-size:0.68rem;margin-left:4px;display:none"></span></button>
                 <button class="pa-tab" data-tab="devices"    onclick="switchPaTab('devices')">Dispositivos</button>
                 <button class="pa-tab" data-tab="progress"   onclick="switchPaTab('progress')">Progreso</button>
                 <button class="pa-tab" data-tab="history"    onclick="switchPaTab('history')">Historial Diario</button>
@@ -1452,7 +1452,7 @@
                         <span style="color:var(--c-success);font-size:0.85rem">✓ Seriales generados (cópialos ahora, no se pueden recuperar después):</span>
                         <button class="btn btn-ghost" onclick="downloadLotCsv()">Descargar CSV</button>
                     </div>
-                    <textarea id="lot-keys" readonly style="width:100%;height:140px;background:#000;border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-family:monospace;font-size:0.85rem;padding:10px"></textarea>
+                    <textarea id="lot-keys" readonly style="width:100%;height:140px;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-family:monospace;font-size:0.85rem;padding:10px"></textarea>
                 </div>
             </div>
 
@@ -1489,7 +1489,7 @@
                     </div>
                     <button class="btn btn-primary" onclick="createIntegrationKey()">Crear clave</button>
                 </div>
-                <div id="ik-new" style="display:none;background:#000;border:1px solid var(--c-primary);border-radius:6px;padding:10px;margin-bottom:12px;font-family:monospace;font-size:0.85rem;word-break:break-all"></div>
+                <div id="ik-new" style="display:none;background:var(--c-surface2);border:1px solid var(--c-primary);border-radius:6px;padding:10px;margin-bottom:12px;font-family:monospace;font-size:0.85rem;word-break:break-all"></div>
                 <div class="table-wrap">
                     <table style="width:100%;border-collapse:collapse;font-size:0.85rem">
                         <thead><tr style="text-align:left;color:var(--c-muted)">
@@ -1575,7 +1575,7 @@
                         <input id="pr-maxdev" type="number" min="1" value="2" style="width:100%;padding:8px 10px;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:0.9rem"></div>
                     <button class="btn btn-primary" onclick="createProducer()">Crear</button>
                 </div>
-                <div id="pr-new" style="display:none;background:#000;border:1px solid var(--c-primary);border-radius:6px;padding:12px;margin-top:14px;font-family:monospace;font-size:0.85rem;word-break:break-all"></div>
+                <div id="pr-new" style="display:none;background:var(--c-surface2);border:1px solid var(--c-primary);border-radius:6px;padding:12px;margin-top:14px;font-family:monospace;font-size:0.85rem;word-break:break-all"></div>
                 <div id="pr-msg" role="status" aria-live="polite" style="margin-top:10px"></div>
             </div>
 
@@ -1616,7 +1616,7 @@
             <div class="card" style="margin-top:0">
                 <h3>Como leer la marca de agua</h3>
                 <p style="font-size:0.83rem;color:var(--c-muted);line-height:1.6">
-                    La marca de agua visible en el video tiene el formato <code style="background:#222;padding:2px 6px;border-radius:3px">FP:&lt;fingerprint&gt;</code> seguido del identificador del usuario.
+                    La marca de agua visible en el video tiene el formato <code style="background:var(--c-surface2);padding:2px 6px;border-radius:3px">FP:&lt;fingerprint&gt;</code> seguido del identificador del usuario.
                     El fingerprint es un codigo hex de 16 caracteres. Copialo aqui para identificar al usuario que filtro el video.
                     <br><br>
                     Para marcas de agua <strong>invisibles</strong> (esteganografia), necesitas integrar un servicio como Imatag o Nagra.
@@ -1712,7 +1712,7 @@
                             </div>
                             <div class="form-row" style="margin:0 0 12px 0;">
                                 <label>Color</label>
-                                <input type="color" id="wm-email-color" value="#ff2d2d" onchange="updateWmPreview()">
+                                <input type="color" id="wm-email-color" value="#c41f28" onchange="updateWmPreview()">
                             </div>
                             <div class="form-row" style="margin:0;display:flex;align-items:center;gap:12px;">
                                 <div style="flex:1;">
@@ -1827,7 +1827,7 @@
                 <div class="card" style="margin-top:18px;">
                     <h3 style="margin:0 0 10px 0">Vista previa</h3>
                     <div id="wm-preview-box" style="background:#090909;border:1px solid var(--c-border);border-radius:14px;padding:20px;min-height:220px;position:relative;overflow:hidden;color:#fff;font-family:'Segoe UI',sans-serif;">
-                        <div id="wm-preview-email" style="position:absolute;top:22px;left:22px;font-size:35px;font-weight:700;color:#ff2d2d;">alumno@correo.com</div>
+                        <div id="wm-preview-email" style="position:absolute;top:22px;left:22px;font-size:35px;font-weight:700;color:#c41f28;">alumno@correo.com</div>
                         <div id="wm-preview-ip" style="position:absolute;top:22px;right:22px;font-size:16px;font-weight:600;color:#ffffff;">190.24.10.5</div>
                         <div id="wm-preview-code" style="position:absolute;bottom:22px;left:22px;font-size:16px;font-weight:600;color:#ffffff;">CDP-1042</div>
                         <div id="wm-preview-datetime" style="position:absolute;bottom:22px;right:22px;font-size:16px;font-weight:600;color:rgba(255,255,255,0.6);">11/7/2026, 10:24:28 p.m.</div>
@@ -1854,7 +1854,7 @@
                     nuevos y las subidas nuevas usan la cuenta nueva automáticamente. <b>Auto-sync</b> solo refresca las claves de firma de las bibliotecas ya vinculadas.
                 </p>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                    <button class="btn" type="button" onclick="syncBunnyTokenKeys()" id="btk-sync-btn" style="background:#7c3aed;white-space:nowrap">Auto-sync todas las bibliotecas</button>
+                    <button class="btn" type="button" onclick="syncBunnyTokenKeys()" id="btk-sync-btn" style="white-space:nowrap">Auto-sync todas las bibliotecas</button>
                     <span style="color:var(--c-muted);font-size:0.78rem">— o pegar manualmente:</span>
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
@@ -1897,7 +1897,7 @@
                 <p style="font-size:0.82rem;color:var(--c-muted);margin:6px 0 4px;line-height:1.5">
                     Cuando un alumno <b>ve</b> un video, su reproductor pide los trozos (segmentos) al ritmo
                     de la reproducción. <b>Adelantar el video o moverse de un lado a otro NO cuenta como descarga</b>,
-                    aunque pida más trozos. Solo marcamos <span style="color:#ff6b6b;font-weight:600">⚠️ Posible descarga</span>
+                    aunque pida más trozos. Solo marcamos <span style="color:#c41f28;font-weight:600">⚠️ Posible descarga</span>
                     cuando alguien pide los trozos <b>muchísimo más rápido</b> de lo que dura el video
                     (señal de bajada masiva, no de ver). Cada alumno aparece <b>una sola vez</b>:
                     haz clic en su fila para ver el detalle por video y dispositivo.
@@ -2180,7 +2180,7 @@ function showDbInitBanner(show) {
     if (!banner) {
         banner = document.createElement('div');
         banner.id = 'db-init-banner';
-        banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#b45309;color:#fff;text-align:center;padding:10px 16px;font-size:0.9rem;display:none';
+        banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#8a5a00;color:#fff;text-align:center;padding:10px 16px;font-size:0.9rem;display:none';
         banner.textContent = '⏳ Conectando con la base de datos… reintentando automáticamente';
         document.body.prepend(banner);
     }
@@ -2325,8 +2325,8 @@ async function loadCourseVideos(courseId) {
             const srcBadge = v.sourceType === 'edu'
                 ? '<span style="background:#d81f2a;color:#fff;padding:2px 7px;border-radius:4px;font-size:0.7rem;font-weight:600">&#128274; .edu</span>'
                 : v.sourceType === 'bunny'
-                ? '<span style="background:#f97316;color:#fff;padding:2px 7px;border-radius:4px;font-size:0.7rem;font-weight:600">Bunny</span>'
-                : '<span style="background:#334155;color:#94a3b8;padding:2px 7px;border-radius:4px;font-size:0.7rem">Local</span>';
+                ? '<span style="background:#8a5a00;color:#fff;padding:2px 7px;border-radius:4px;font-size:0.7rem;font-weight:600">Bunny</span>'
+                : '<span style="background:#334155;color:#6d635d;padding:2px 7px;border-radius:4px;font-size:0.7rem">Local</span>';
             const link = v.status === 'ready'
                 ? `<span class="copy-link" onclick="generateAndCopyLink('${esc(v.videoId)}', this)" style="cursor:pointer">Copiar enlace</span>`
                 : '';
@@ -2348,7 +2348,7 @@ async function loadCourseVideos(courseId) {
                 <td>
                     ${link}
                     <button class="btn btn-ghost" style="padding:3px 8px;font-size:0.7rem;margin-left:4px" onclick="openMoveModal('${esc(v.videoId)}','${esc(v.title || v.videoId)}')">Mover</button>
-                    <button class="btn btn-ghost js-resource-button" style="padding:3px 8px;font-size:0.7rem;margin-left:4px;color:#60a5fa;border-color:#60a5fa" data-resource-kind="video" data-resource-id="${esc(v.videoId)}" data-resource-title="${esc(v.title||v.videoId)}">📎 Recursos</button>
+                    <button class="btn btn-ghost js-resource-button" style="padding:3px 8px;font-size:0.7rem;margin-left:4px;color:#5a6470;border-color:#5a6470" data-resource-kind="video" data-resource-id="${esc(v.videoId)}" data-resource-title="${esc(v.title||v.videoId)}">📎 Recursos</button>
                     <button class="btn btn-ghost" style="padding:3px 8px;font-size:0.7rem;margin-left:4px" onclick="deleteVideo('${esc(v.videoId)}')">Eliminar</button>
                 </td>
             </tr>`;
@@ -2478,7 +2478,7 @@ function renderDocsList() {
                 <div style="font-size:0.85rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.name)}</div>
                 <div style="font-size:0.7rem;color:var(--c-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.url)}</div>
             </div>
-            <button class="btn btn-ghost" style="padding:2px 8px;font-size:0.7rem;color:#f87171" onclick="removeDocEntry(${i})">✕</button>
+            <button class="btn btn-ghost" style="padding:2px 8px;font-size:0.7rem;color:#c41f28" onclick="removeDocEntry(${i})">✕</button>
         </div>`).join('');
 }
 
@@ -2903,7 +2903,7 @@ async function runAdminStream(action, courseId) {
         if (currentCourseId === courseId) await loadCourseVideos(courseId);
     } catch (error) {
         message.textContent = error.message + (error.code === 'UPLOAD_FAILED' ? ' Para reintentar el envío, selecciona el mismo archivo, módulo y título.' : '');
-        message.style.color = error.code === 'STATUS_PENDING' ? 'var(--c-warn, #f39c12)' : 'var(--c-error)';
+        message.style.color = error.code === 'STATUS_PENDING' ? 'var(--c-warn, #8a5a00)' : 'var(--c-error)';
     } finally { adminUploadBusy(false); renderAdminStreamJobs(); }
 }
 async function addStreamVideo() {
@@ -2926,7 +2926,7 @@ function showProvisioningNotice(data, noun) {
     let notice = $('bunny-provisioning-notice');
     if (!notice) {
         notice = document.createElement('div'); notice.id = 'bunny-provisioning-notice'; notice.setAttribute('role', 'status');
-        notice.style.cssText = 'padding:12px;margin-bottom:12px;border:1px solid var(--c-border);border-radius:8px;color:var(--c-warn, #f39c12)';
+        notice.style.cssText = 'padding:12px;margin-bottom:12px;border:1px solid var(--c-border);border-radius:8px;color:var(--c-warn, #8a5a00)';
         $('courses-view').parentElement.prepend(notice);
     }
     notice.textContent = noun + ' guardado. La preparación en Bunny está pendiente: ' + warning + '. No necesitas volver a crearlo.';
@@ -3642,15 +3642,15 @@ function renderStudents() {
             <td>${activeBadge}</td>
             <td style="font-size:0.75rem">${lastLogin}</td>
             <td style="white-space:nowrap">
-                <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#38bdf8;color:#38bdf8"
+                <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#5a6470;color:#5a6470"
                     onclick="openStudentDetail('${esc(s.id)}','${esc(s.email)}')">Detalle</button>
                 <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;margin-left:4px"
                     onclick="toggleStudent('${esc(s.id)}',${!s.active})">${s.active ? 'Desactivar' : 'Activar'}</button>
-                <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;margin-left:4px;border-color:#e0392f;color:#e0392f"
+                <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;margin-left:4px;border-color:#a1121b;color:#a1121b"
                     onclick="generateLicense('${esc(s.id)}','${esc(s.email)}')">Generar clave</button>
-                <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;margin-left:4px;border-color:#fb923c;color:#fb923c"
+                <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;margin-left:4px;border-color:#8a5a00;color:#8a5a00"
                     onclick="resetActivations('${esc(s.id)}','${esc(s.email)}')">Reset activac.</button>
-                <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;margin-left:4px;border-color:#ff6b6b;color:#ff6b6b"
+                <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;margin-left:4px;border-color:#c41f28;color:#c41f28"
                     onclick="deleteStudent('${esc(s.id)}','${esc(s.email)}')">Eliminar</button>
             </td>
         </tr>`;
@@ -3875,9 +3875,9 @@ async function openStudentDetail(id, email) {
                 return tb > ta ? b : a;
             }, null);
             const statusLabel = {
-                active: '<span style="color:#4caf50">Activa</span>',
-                revoked: '<span style="color:#e63946">Revocada</span>',
-                expired: '<span style="color:#9e9e9e">Expirada</span>',
+                active: '<span style="color:#157347">Activa</span>',
+                revoked: '<span style="color:#d81f2a">Revocada</span>',
+                expired: '<span style="color:#9a918c">Expirada</span>',
             }[cur.status] || esc(cur.status || '—');
 
             infoHtml = `<table style="width:100%;border-collapse:collapse;font-size:0.84rem">
@@ -3937,9 +3937,9 @@ async function openStudentDetail(id, email) {
                 ${infoHtml}
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
                     <button class="btn btn-ghost" style="font-size:0.78rem" onclick="copyLicenseBackup('${esc(id)}')">Copiar licencia</button>
-                    <button class="btn btn-ghost" style="font-size:0.78rem;border-color:#e0392f;color:#e0392f" onclick="regenerateLicense('${esc(id)}','${esc(email)}','${esc(curLicId)}',${curActive})">Regenerar licencia</button>
-                    <button class="btn btn-ghost" style="font-size:0.78rem;border-color:#38bdf8;color:#38bdf8" onclick="resendLicense('${esc(id)}','${esc(email)}')">Reenviar licencia</button>
-                    <button class="btn btn-ghost" style="font-size:0.78rem;border-color:#ef4444;color:#ef4444" onclick="resetActivations('${esc(id)}','${esc(email)}')">Resetear dispositivos</button>
+                    <button class="btn btn-ghost" style="font-size:0.78rem;border-color:#a1121b;color:#a1121b" onclick="regenerateLicense('${esc(id)}','${esc(email)}','${esc(curLicId)}',${curActive})">Regenerar licencia</button>
+                    <button class="btn btn-ghost" style="font-size:0.78rem;border-color:#5a6470;color:#5a6470" onclick="resendLicense('${esc(id)}','${esc(email)}')">Reenviar licencia</button>
+                    <button class="btn btn-ghost" style="font-size:0.78rem;border-color:#c41f28;color:#c41f28" onclick="resetActivations('${esc(id)}','${esc(email)}')">Resetear dispositivos</button>
                     <button class="btn btn-ghost" style="font-size:0.78rem" onclick="openStudentDetail('${esc(id)}','${esc(email)}')">Ver historial</button>
                 </div>
                 ${backupNote}
@@ -3950,7 +3950,7 @@ async function openStudentDetail(id, email) {
         if (modalContent) modalContent.innerHTML = body;
     } catch (err) {
         const modalContent = document.getElementById('user-modal-body');
-        if (modalContent) modalContent.innerHTML = `<p style="color:#ff6b6b">Error: ${esc(err.message)}</p>`;
+        if (modalContent) modalContent.innerHTML = `<p style="color:#c41f28">Error: ${esc(err.message)}</p>`;
     }
 }
 
@@ -4094,13 +4094,13 @@ async function generateAndCopyLink(videoId, el) {
         const d = await api('GET', `/api/admin/video/${videoId}/public-code`);
         const coverUrl = d.coverUrl;  // https://.../cover/EDU-XXXXXXXX-XXXX
         await navigator.clipboard.writeText(coverUrl).catch(() => {});
-        if (el) { el.textContent = '✓ Portada copiada!'; el.style.color = '#4caf50'; }
+        if (el) { el.textContent = '✓ Portada copiada!'; el.style.color = '#157347'; }
         setTimeout(() => {
             if (el) { el.textContent = orig; el.style.color = ''; el.style.pointerEvents = ''; }
         }, 2500);
         if (!navigator.clipboard) prompt('Enlace de portada del video:', coverUrl);
     } catch (err) {
-        if (el) { el.textContent = 'Error'; el.style.color = '#e63946'; }
+        if (el) { el.textContent = 'Error'; el.style.color = '#d81f2a'; }
         setTimeout(() => {
             if (el) { el.textContent = orig; el.style.color = ''; el.style.pointerEvents = ''; }
         }, 2500);
@@ -4186,10 +4186,10 @@ async function loadBunnyTokenKeyStatus() {
     try {
         const d = await api('GET', '/api/bunny/token-key');
         const parts = [];
-        if (d.accountConfigured) parts.push('<span style="color:#4ade80">✓ Account API Key activa (huella ' + (d.accountFingerprint || '') + ') — firma automática</span>');
-        else parts.push('<span style="color:#ff6b6b">Sin Account API Key — pégala aquí</span>');
-        if (d.manualTokenKey) parts.push('<span style="color:#ffb454">· clave de firma manual guardada</span>');
-        else if (d.source === 'env') parts.push('<span style="color:#ffb454">· firma de respaldo por env var</span>');
+        if (d.accountConfigured) parts.push('<span style="color:#157347">✓ Account API Key activa (huella ' + (d.accountFingerprint || '') + ') — firma automática</span>');
+        else parts.push('<span style="color:#c41f28">Sin Account API Key — pégala aquí</span>');
+        if (d.manualTokenKey) parts.push('<span style="color:#8a5a00">· clave de firma manual guardada</span>');
+        else if (d.source === 'env') parts.push('<span style="color:#8a5a00">· firma de respaldo por env var</span>');
         src.innerHTML = parts.join(' ');
     } catch { src.textContent = ''; }
 }
@@ -4202,11 +4202,11 @@ async function syncBunnyTokenKeys() {
         const d = await api('POST', '/api/bunny/sync-token-keys');
         if (status) {
             status.textContent = '✓ Sincronizado: ' + d.libraries + ' bibliotecas encontradas, ' + d.synced + ' cursos actualizados' + (d.errors ? ' (' + d.errors + ' errores)' : '');
-            status.style.color = '#4ade80';
+            status.style.color = '#157347';
         }
         loadBunnyTokenKeyStatus();
     } catch (e) {
-        if (status) { status.textContent = 'Error: ' + e.message; status.style.color = '#ff6b6b'; }
+        if (status) { status.textContent = 'Error: ' + e.message; status.style.color = '#c41f28'; }
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = 'Auto-sync todas las bibliotecas'; }
     }
@@ -4226,15 +4226,15 @@ async function saveBunnyTokenKey() {
                 const a = d.account || {};
                 status.textContent = '✓ Account API Key verificada y guardada (' + (a.email || 'cuenta') + ', ' + (a.libraries ?? '?') + ' bibliotecas' +
                     (a.accountDisabled ? ', CUENTA DESHABILITADA en Bunny' : '') + (a.cardVerified ? '' : ', tarjeta sin verificar') + '). Activa de inmediato.';
-                status.style.color = a.accountDisabled ? '#ff6b6b' : '#4ade80';
+                status.style.color = a.accountDisabled ? '#c41f28' : '#157347';
                 if (typeof loadBunnyAccountKey === 'function') loadBunnyAccountKey();
-            } else if (d.kind === 'token') { status.textContent = '✓ Guardada como clave de firma manual (no es una Account API Key válida)'; status.style.color = '#ffb454'; }
-            else { status.textContent = '✓ Clave de firma manual borrada'; status.style.color = '#4ade80'; }
+            } else if (d.kind === 'token') { status.textContent = '✓ Guardada como clave de firma manual (no es una Account API Key válida)'; status.style.color = '#8a5a00'; }
+            else { status.textContent = '✓ Clave de firma manual borrada'; status.style.color = '#157347'; }
         }
         input.value = '';
         loadBunnyTokenKeyStatus();
     } catch (e) {
-        if (status) { status.textContent = 'Error: ' + e.message; status.style.color = '#ff6b6b'; }
+        if (status) { status.textContent = 'Error: ' + e.message; status.style.color = '#c41f28'; }
     }
 }
 
@@ -4336,7 +4336,7 @@ async function clearWmScope() {
         await api('POST', '/api/watermark/config', { courseId: scope, os, config: {} , clear: true });
         await loadWmConfig();
         $('wm-config-status').textContent = 'Configuración propia eliminada; ahora hereda.';
-    } catch (err) { $('wm-config-status').textContent = 'Error: ' + err.message; $('wm-config-status').style.color = '#ff6b6b'; }
+    } catch (err) { $('wm-config-status').textContent = 'Error: ' + err.message; $('wm-config-status').style.color = '#c41f28'; }
 }
 
 function updateWmSizeLabel(key) {
@@ -4385,7 +4385,7 @@ async function loadWmConfig() {
         setWmField('wm-email-visible', cfg.email?.on ?? true);
         setWmField('wm-email-size', cfg.email?.size ?? 35);
         setWmField('wm-email-weight', cfg.email?.weight ?? 700);
-        setWmField('wm-email-color', cfg.email?.color ?? '#ff2d2d');
+        setWmField('wm-email-color', cfg.email?.color ?? '#c41f28');
         setWmField('wm-ip-visible', cfg.ip?.on ?? true);
         setWmField('wm-ip-size', cfg.ip?.size ?? 16);
         setWmField('wm-ip-weight', cfg.ip?.weight ?? 600);
@@ -4406,10 +4406,10 @@ async function loadWmConfig() {
         $('wm-config-status').textContent = (courseId !== '__default__' && !d.hasOwn)
             ? 'Este ámbito no tiene configuración propia: se muestra la heredada. Al mover un control se creará la suya.'
             : 'Configuración cargada';
-        $('wm-config-status').style.color = '#4ade80';
+        $('wm-config-status').style.color = '#157347';
     } catch (err) {
         $('wm-config-status').textContent = 'Error al cargar: ' + err.message;
-        $('wm-config-status').style.color = '#ff6b6b';
+        $('wm-config-status').style.color = '#c41f28';
     }
 }
 
@@ -4455,10 +4455,10 @@ async function saveWmConfig(auto = false) {
         updateWmPreview();
         const clearBtn = $('wm-clear-scope-btn'); if (clearBtn) clearBtn.style.display = courseId !== '__default__' ? '' : 'none';
         $('wm-config-status').textContent = (auto ? 'Guardado automáticamente' : 'Configuración guardada') + ' y enviado en vivo (' + os + ') · ' + new Date().toLocaleTimeString();
-        $('wm-config-status').style.color = '#4ade80';
+        $('wm-config-status').style.color = '#157347';
     } catch (err) {
         $('wm-config-status').textContent = 'Error al guardar: ' + err.message;
-        $('wm-config-status').style.color = '#ff6b6b';
+        $('wm-config-status').style.color = '#c41f28';
     }
 }
 
@@ -4471,7 +4471,7 @@ function resetWmConfig() {
     setWmField('wm-email-visible', true);
     setWmField('wm-email-size', 35);
     setWmField('wm-email-weight', 700);
-    setWmField('wm-email-color', '#ff2d2d');
+    setWmField('wm-email-color', '#c41f28');
     setWmField('wm-ip-visible', true);
     setWmField('wm-ip-size', 16);
     setWmField('wm-ip-weight', 600);
@@ -4513,7 +4513,7 @@ async function loadSecurity() {
                     const date = r.created_at ? new Date(r.created_at).toLocaleString() : '—';
                     const dev  = (r.device_id || '').replace(/-/g, '').slice(0, 8).toUpperCase() || '—';
                     return `<tr>
-                        <td style="font-size:0.78rem;color:#ffb454">${esc(r.event || '—')}</td>
+                        <td style="font-size:0.78rem;color:#8a5a00">${esc(r.event || '—')}</td>
                         <td style="font-family:monospace;font-size:0.72rem">${esc(dev)}</td>
                         <td style="font-size:0.72rem">${esc(r.ip || '—')}</td>
                         <td style="font-size:0.74rem;max-width:280px">${esc((r.details || '—').slice(0, 160))}</td>
@@ -4540,9 +4540,9 @@ async function loadSecurity() {
                 if (!items.length) {
                     summary.innerHTML = '<span style="color:var(--c-muted)">Sin actividad de reproducción en este período.</span>';
                 } else if (flagged > 0) {
-                    summary.innerHTML = `<span style="color:#ff6b6b;font-weight:600">⚠️ ${flagged} caso${flagged !== 1 ? 's' : ''} sospechoso${flagged !== 1 ? 's' : ''} de descarga</span> · ${items.length} alumno${items.length !== 1 ? 's' : ''} con actividad en las últimas ${d.hours} h`;
+                    summary.innerHTML = `<span style="color:#c41f28;font-weight:600">⚠️ ${flagged} caso${flagged !== 1 ? 's' : ''} sospechoso${flagged !== 1 ? 's' : ''} de descarga</span> · ${items.length} alumno${items.length !== 1 ? 's' : ''} con actividad en las últimas ${d.hours} h`;
                 } else {
-                    summary.innerHTML = `<span style="color:#4ade80;font-weight:600">✅ Todo normal</span> · ${items.length} alumno${items.length !== 1 ? 's' : ''} viendo videos, ninguno descargando (últimas ${d.hours} h)`;
+                    summary.innerHTML = `<span style="color:#157347;font-weight:600">✅ Todo normal</span> · ${items.length} alumno${items.length !== 1 ? 's' : ''} viendo videos, ninguno descargando (últimas ${d.hours} h)`;
                 }
             }
             if (!items.length) {
@@ -4561,8 +4561,8 @@ async function loadSecurity() {
                     const last     = lastSeen ? new Date(lastSeen).toLocaleString() : '—';
                     const bg       = susp ? 'background:rgba(230,57,70,0.12)' : '';
                     const estado   = susp
-                        ? '<span style="color:#ff6b6b;font-weight:600;white-space:nowrap">⚠️ Posible descarga</span>'
-                        : '<span style="color:#4ade80;white-space:nowrap">✅ Normal</span>';
+                        ? '<span style="color:#c41f28;font-weight:600;white-space:nowrap">⚠️ Posible descarga</span>'
+                        : '<span style="color:#157347;white-space:nowrap">✅ Normal</span>';
 
                     // Detalle por video/dispositivo dentro del modal.
                     const detail = list
@@ -4572,13 +4572,13 @@ async function loadSecurity() {
                             const first = r.first_seen ? new Date(r.first_seen).toLocaleString() : '—';
                             const lst   = r.last_seen  ? new Date(r.last_seen).toLocaleString()  : '—';
                             const est   = r.suspicious
-                                ? '<span style="color:#ff6b6b;font-weight:600;white-space:nowrap">⚠️ Posible descarga</span>'
-                                : '<span style="color:#4ade80;white-space:nowrap">✅ Normal</span>';
+                                ? '<span style="color:#c41f28;font-weight:600;white-space:nowrap">⚠️ Posible descarga</span>'
+                                : '<span style="color:#157347;white-space:nowrap">✅ Normal</span>';
                             return `<tr>
                                 <td>${est}</td>
                                 <td style="font-family:monospace;font-size:0.72rem">${esc((r.video_id || '').slice(0, 8))}</td>
                                 <td style="font-family:monospace;font-size:0.72rem">${esc(dev)}</td>
-                                <td style="font-weight:600;${r.suspicious ? 'color:#ff6b6b' : ''}">${r.total_requests}</td>
+                                <td style="font-weight:600;${r.suspicious ? 'color:#c41f28' : ''}">${r.total_requests}</td>
                                 <td style="font-size:0.75rem">${r.rate_per_min || 0} trozos/min</td>
                                 <td style="font-size:0.72rem;color:var(--c-muted)">${first}<br>↓<br>${lst}</td>
                             </tr>`;
@@ -4602,7 +4602,7 @@ async function loadSecurity() {
                         <td>${estado}</td>
                         <td style="font-size:0.78rem">${esc(label)}</td>
                         <td><span class="user-count-badge">${videos}</span></td>
-                        <td style="font-weight:600;${susp ? 'color:#ff6b6b' : ''}">${totReq}</td>
+                        <td style="font-weight:600;${susp ? 'color:#c41f28' : ''}">${totReq}</td>
                         <td style="font-size:0.76rem">${last}</td>
                         <td style="font-size:0.72rem;color:var(--c-muted)">clic para ver detalle ›</td>
                     </tr>`);
@@ -4707,7 +4707,7 @@ async function loadStudentDevicesAdmin() {
         }
         const activeCount = devs.filter(dv => dv.status === 'active').length;
         const detail = devs.map(dv => {
-            const sc = dv.status==='active'?'#4caf50':dv.status==='blocked'?'#f44336':'#888';
+            const sc = dv.status==='active'?'#157347':dv.status==='blocked'?'#c41f28':'#6d635d';
             return `<tr>
                 <td style="font-family:monospace;font-size:0.75rem">${esc(dv.fingerprint||dv.id||'—')}</td>
                 <td style="font-size:0.75rem">${esc(dv.browser||'—')}</td>
@@ -4726,7 +4726,7 @@ async function loadStudentDevicesAdmin() {
         $('devices-actions').style.display = 'flex';
         $('btn-reset-devices').title = 'Resetear dispositivos de ' + (found?.email || sid);
     } catch (err) {
-        tbody.innerHTML = '<tr><td colspan="6" style="color:#ff6b6b">' + esc(err.message) + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="color:#c41f28">' + esc(err.message) + '</td></tr>';
     }
 }
 
@@ -4750,10 +4750,10 @@ async function saveStudentDeviceLimit() {
     if (msg) { msg.style.color = 'var(--c-muted)'; msg.textContent = 'Guardando...'; }
     try {
         const r = await api('PUT', '/api/admin/students/' + encodeURIComponent(_paCurrentStudent) + '/max-devices', { maxDevices: n });
-        if (msg) { msg.style.color = '#4caf50'; msg.textContent = '✓ Límite guardado: ' + (r.maxDevices ?? n) + ' dispositivo(s)'; }
+        if (msg) { msg.style.color = '#157347'; msg.textContent = '✓ Límite guardado: ' + (r.maxDevices ?? n) + ' dispositivo(s)'; }
         $('device-limit-input').value = (r.maxDevices ?? n);
     } catch (err) {
-        if (msg) { msg.style.color = '#ff6b6b'; msg.textContent = 'Error: ' + err.message; }
+        if (msg) { msg.style.color = '#c41f28'; msg.textContent = 'Error: ' + err.message; }
     } finally {
         if (btn) btn.disabled = false;
     }
@@ -4772,7 +4772,7 @@ async function loadMyAdminDevices() {
         }
         const activeCount = devs.filter(dv => dv.status === 'active').length;
         const detail = devs.map(dv => {
-            const sc = dv.status==='active'?'#4caf50':dv.status==='blocked'?'#f44336':'#888';
+            const sc = dv.status==='active'?'#157347':dv.status==='blocked'?'#c41f28':'#6d635d';
             return `<tr>
                 <td style="font-family:monospace;font-size:0.75rem">${esc(dv.fingerprint||dv.id||'—')}</td>
                 <td style="font-size:0.75rem">${esc(dv.browser||'—')}</td>
@@ -4789,7 +4789,7 @@ async function loadMyAdminDevices() {
             <tbody>${detail}</tbody></table></div></div>`;
         openUserModal('Administrador', `${devs.length} dispositivos · ${activeCount} activos`, modalBody);
     } catch (err) {
-        tbody.innerHTML = '<tr><td colspan="6" style="color:#ff6b6b">' + esc(err.message) + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="color:#c41f28">' + esc(err.message) + '</td></tr>';
     }
 }
 
@@ -4846,9 +4846,9 @@ async function savePlayerVersion() {
     }
     try {
         await api('PUT', '/api/player/version', { minVersion: min, latestVersion: latest, downloadUrl: url || null, message: msg || null, downloads, versions });
-        if ($('pv-status')) { $('pv-status').textContent = '✓ Guardado'; $('pv-status').style.color = '#4caf50'; }
+        if ($('pv-status')) { $('pv-status').textContent = '✓ Guardado'; $('pv-status').style.color = '#157347'; }
     } catch (e) {
-        if ($('pv-status')) { $('pv-status').textContent = 'Error: ' + e.message; $('pv-status').style.color = '#e63946'; }
+        if ($('pv-status')) { $('pv-status').textContent = 'Error: ' + e.message; $('pv-status').style.color = '#d81f2a'; }
     }
 }
 
@@ -4881,9 +4881,9 @@ async function saveSecurityWhitelist() {
     };
     try {
         await api('PUT', '/api/security/whitelist', body);
-        if ($('wl-status')) { $('wl-status').textContent = '✓ Guardado'; $('wl-status').style.color = '#4caf50'; }
+        if ($('wl-status')) { $('wl-status').textContent = '✓ Guardado'; $('wl-status').style.color = '#157347'; }
     } catch (e) {
-        if ($('wl-status')) { $('wl-status').textContent = 'Error: ' + e.message; $('wl-status').style.color = '#e63946'; }
+        if ($('wl-status')) { $('wl-status').textContent = 'Error: ' + e.message; $('wl-status').style.color = '#d81f2a'; }
     }
 }
 
@@ -5011,11 +5011,11 @@ async function openUserHistoryModal(uid, email) {
         const detail = items.map(it => {
             const vid = esc(it.videoId ? it.videoId.slice(0,8)+'...' : '—');
             const dev = esc(it.deviceId||it.ip||'—');
-            return `<tr><td>${vid}</td><td style="font-size:0.72rem;font-family:monospace">${dev}</td><td style="font-size:0.76rem">${new Date(it.deliveredAt).toLocaleString()}</td><td>${it.id ? `<button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#ff6b6b;color:#ff6b6b" onclick="deleteAuditEntry(${it.id})">🗑</button>` : '—'}</td></tr>`;
+            return `<tr><td>${vid}</td><td style="font-size:0.72rem;font-family:monospace">${dev}</td><td style="font-size:0.76rem">${new Date(it.deliveredAt).toLocaleString()}</td><td>${it.id ? `<button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#c41f28;color:#c41f28" onclick="deleteAuditEntry(${it.id})">🗑</button>` : '—'}</td></tr>`;
         }).join('');
         const body = `<div class="user-modal-section">
             <h4>Reproducciones (${items.length})</h4>
-            <div style="margin-bottom:8px"><button class="btn btn-ghost" style="border-color:#ff6b6b;color:#ff6b6b;font-size:0.78rem" data-uid="${esc(uid)}" onclick="deleteAllAuditForUser(this.dataset.uid)">🗑 Eliminar todo el historial de este usuario</button></div>
+            <div style="margin-bottom:8px"><button class="btn btn-ghost" style="border-color:#c41f28;color:#c41f28;font-size:0.78rem" data-uid="${esc(uid)}" onclick="deleteAllAuditForUser(this.dataset.uid)">🗑 Eliminar todo el historial de este usuario</button></div>
             <div class="table-wrap"><table>
             <thead><tr><th>VideoID</th><th>Dispositivo / IP</th><th>Fecha</th><th></th></tr></thead>
             <tbody>${detail || '<tr><td colspan="4" style="color:var(--c-muted)">Sin registros</td></tr>'}</tbody></table></div></div>`;
@@ -5024,7 +5024,7 @@ async function openUserHistoryModal(uid, email) {
         if (modalContent) modalContent.innerHTML = body;
     } catch(err) {
         const modalContent = document.getElementById('user-modal-body');
-        if (modalContent) modalContent.innerHTML = `<p style="color:#ff6b6b">Error: ${esc(err.message)}</p>`;
+        if (modalContent) modalContent.innerHTML = `<p style="color:#c41f28">Error: ${esc(err.message)}</p>`;
     }
 }
 
@@ -5050,7 +5050,7 @@ loadDashboard = (function(_orig) {
                         <td>${label}</td>
                         <td><span class="user-count-badge">${u.count}</span></td>
                         <td>${last}</td>
-                        <td><button class="btn btn-ghost" style="padding:3px 8px;font-size:0.75rem;border-color:#ff6b6b;color:#ff6b6b" data-uid="${esc(u.uid)}" onclick="event.stopPropagation();deleteAllAuditForUser(this.dataset.uid)">🗑 Eliminar todo</button></td>
+                        <td><button class="btn btn-ghost" style="padding:3px 8px;font-size:0.75rem;border-color:#c41f28;color:#c41f28" data-uid="${esc(u.uid)}" onclick="event.stopPropagation();deleteAllAuditForUser(this.dataset.uid)">🗑 Eliminar todo</button></td>
                     </tr>`;
                 });
                 tbody.innerHTML = rows.join('');
@@ -5091,7 +5091,7 @@ loadAudit = (function() {
                 const labelRaw = e.studentEmail && e.studentEmail !== uid ? e.studentEmail : uid;
                 const detail = items.map(it => {
                     const modelLine = it.deviceModel
-                        ? `<div style="color:#aaa;font-size:0.68rem;margin-top:2px">${esc(it.deviceModel)}${it.deviceOs ? ' · ' + esc(it.deviceOs) : ''}</div>`
+                        ? `<div style="color:#6d635d;font-size:0.68rem;margin-top:2px">${esc(it.deviceModel)}${it.deviceOs ? ' · ' + esc(it.deviceOs) : ''}</div>`
                         : '';
                     return `<tr>
                         <td style="font-family:monospace;font-size:0.75rem">${esc(it.fingerprint||'—')}</td>
@@ -5099,13 +5099,13 @@ loadAudit = (function() {
                         <td style="font-family:monospace;font-size:0.72rem">${esc(it.videoId ? it.videoId.slice(0,8)+'...' : '—')}</td>
                         <td style="font-size:0.76rem">${esc(it.ip||'—')}</td>
                         <td style="font-size:0.76rem">${new Date(it.deliveredAt).toLocaleString()}</td>
-                        <td>${it.id ? `<button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#ff6b6b;color:#ff6b6b" onclick="event.stopPropagation();deleteAuditEntry(${it.id})">🗑</button>` : '—'}</td>
+                        <td>${it.id ? `<button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#c41f28;color:#c41f28" onclick="event.stopPropagation();deleteAuditEntry(${it.id})">🗑</button>` : '—'}</td>
                     </tr>`;
                 }).join('');
                 const modalBody = `<div class="user-modal-section">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
                         <h4 style="margin:0">Entregas registradas (${items.length}) — ${videos} video(s) distinto(s)</h4>
-                        <button class="btn btn-ghost" style="border-color:#ff6b6b;color:#ff6b6b;font-size:0.8rem;padding:5px 12px" onclick="deleteAllAuditForUser('${labelRaw.replace(/'/g,"\\'")}')">🗑 Eliminar todo</button>
+                        <button class="btn btn-ghost" style="border-color:#c41f28;color:#c41f28;font-size:0.8rem;padding:5px 12px" onclick="deleteAllAuditForUser('${labelRaw.replace(/'/g,"\\'")}')">🗑 Eliminar todo</button>
                     </div>
                     <div class="table-wrap"><table>
                     <thead><tr><th>Fingerprint</th><th>Dispositivo</th><th>VideoID</th><th>IP</th><th>Fecha</th><th></th></tr></thead>
@@ -5174,7 +5174,7 @@ loadSuspiciousActivity = (function() {
                         <td style="font-family:monospace;font-size:0.72rem">${esc((r.device_id||'').replace(/-/g,'').slice(0,8).toUpperCase()||'—')}</td>
                         <td style="font-size:0.75rem">${date}</td>
                         <td>${reviewed}</td>
-                        <td><button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#ff6b6b;color:#ff6b6b" onclick="event.stopPropagation();deleteSuspiciousEntry(${r.id})">🗑</button></td>
+                        <td><button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#c41f28;color:#c41f28" onclick="event.stopPropagation();deleteSuspiciousEntry(${r.id})">🗑</button></td>
                     </tr>`;
                 }).join('');
                 const modalBody = `<div class="user-modal-section">
@@ -5194,7 +5194,7 @@ loadSuspiciousActivity = (function() {
             }
             tbody.innerHTML = rowsHtml.join('');
         } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="8" style="color:#ff6b6b">' + esc(err.message) + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="color:#c41f28">' + esc(err.message) + '</td></tr>';
         }
     };
 })();
@@ -5223,7 +5223,7 @@ loadAllDevices = (function() {
                     : esc((sid||'—').slice(0,24));
                 const lastSeen = items.reduce((a,b) => (a.last_seen||'') > (b.last_seen||'') ? a : b);
                 const detail = items.map(dv2 => {
-                    const statusColor = dv2.status==='active'?'#4caf50':dv2.status==='blocked'?'#f44336':'#888';
+                    const statusColor = dv2.status==='active'?'#157347':dv2.status==='blocked'?'#c41f28':'#6d635d';
                     return `<tr>
                         <td style="font-family:monospace;font-size:0.75rem">${esc(dv2.fingerprint||dv2.id||'—')}</td>
                         <td style="font-size:0.75rem">${esc(dv2.browser||'—')}</td>
@@ -5232,7 +5232,7 @@ loadAllDevices = (function() {
                         <td style="font-size:0.75rem">${dv2.first_seen ? new Date(dv2.first_seen).toLocaleDateString() : '—'}</td>
                         <td style="font-size:0.75rem">${dv2.last_seen ? new Date(dv2.last_seen).toLocaleString() : '—'}</td>
                         <td style="font-size:0.75rem">${esc(dv2.city||'—')}</td>
-                        <td>${dv2.id ? `<button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#ff6b6b;color:#ff6b6b" onclick="event.stopPropagation();deleteDevice('${dv2.id}')">🗑</button>` : '—'}</td>
+                        <td>${dv2.id ? `<button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#c41f28;color:#c41f28" onclick="event.stopPropagation();deleteDevice('${dv2.id}')">🗑</button>` : '—'}</td>
                     </tr>`;
                 }).join('');
                 const modalBody = `<div class="user-modal-section">
@@ -5253,7 +5253,7 @@ loadAllDevices = (function() {
             }
             tbody.innerHTML = rows.join('');
         } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="9" style="color:#ff6b6b">' + esc(err.message) + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" style="color:#c41f28">' + esc(err.message) + '</td></tr>';
         }
     };
 })();
@@ -5291,11 +5291,11 @@ loadProgressAll = (function() {
                 const completed = items.filter(i => i.completed).length;
                 const avgPct    = Math.round(items.reduce((a,b) => a + (b.progress_percent||0), 0) / items.length);
                 const last      = items.reduce((a,b) => (a.last_seen_at||'') > (b.last_seen_at||'') ? a : b);
-                const barColor  = avgPct >= 90 ? '#4caf50' : avgPct >= 50 ? '#ffd166' : '#e63946';
+                const barColor  = avgPct >= 90 ? '#157347' : avgPct >= 50 ? '#8a5a00' : '#d81f2a';
 
                 const detail = items.map(it => {
                     const pct2 = Math.round(it.progress_percent||0);
-                    const bar2 = pct2 >= 90 ? '#4caf50' : pct2 >= 50 ? '#ffd166' : '#e63946';
+                    const bar2 = pct2 >= 90 ? '#157347' : pct2 >= 50 ? '#8a5a00' : '#d81f2a';
                     const pos  = it.last_position ? Math.floor(it.last_position/60)+'m '+(it.last_position%60)+'s' : '—';
                     return `<tr>
                         <td style="font-size:0.78rem;max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(it.videoTitle||it.video_title||it.video_id||'—')}</td>
@@ -5304,10 +5304,10 @@ loadProgressAll = (function() {
                             <span style="font-size:0.75rem">${pct2}%</span>
                         </td>
                         <td style="font-size:0.75rem">${pos}</td>
-                        <td>${it.completed ? '<span style="color:#4caf50">✅</span>' : '—'}</td>
+                        <td>${it.completed ? '<span style="color:#157347">✅</span>' : '—'}</td>
                         <td style="font-family:monospace;font-size:0.72rem">${esc(it.device_code||(it.device_id||'—').slice(0,16))}</td>
                         <td style="font-size:0.75rem">${it.last_seen_at ? new Date(it.last_seen_at).toLocaleString() : '—'}</td>
-                        <td><button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#ff6b6b;color:#ff6b6b" onclick="event.stopPropagation();deleteProgressEntry('${it.student_id}','${it.video_id}')">🗑</button></td>
+                        <td><button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#c41f28;color:#c41f28" onclick="event.stopPropagation();deleteProgressEntry('${it.student_id}','${it.video_id}')">🗑</button></td>
                     </tr>`;
                 }).join('');
                 const modalBody = `<div class="user-modal-section">
@@ -5324,14 +5324,14 @@ loadProgressAll = (function() {
                         <div class="progress-bar-mini"><span style="width:${avgPct}%;background:${barColor}"></span></div>
                         <span style="font-size:0.75rem">${avgPct}%</span>
                     </td>
-                    <td>${completed > 0 ? `<span style="color:#4caf50">${completed} ✅</span>` : '—'}</td>
+                    <td>${completed > 0 ? `<span style="color:#157347">${completed} ✅</span>` : '—'}</td>
                     <td style="font-size:0.76rem">${last.last_seen_at ? new Date(last.last_seen_at).toLocaleString() : '—'}</td>
                     <td style="font-size:0.72rem;color:var(--c-muted)">clic para ver detalle ›</td>
                 </tr>`);
             }
             tbody.innerHTML = rows.join('');
         } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="8" style="color:#ff6b6b">' + esc(err.message) + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="color:#c41f28">' + esc(err.message) + '</td></tr>';
         }
     };
 })();
@@ -5371,7 +5371,7 @@ loadHistory = (function() {
 
                 const detail = items.map(it => {
                     const pct2 = Math.round(it.progress_percent||0);
-                    const bar2 = pct2 >= 90 ? '#4caf50' : pct2 >= 50 ? '#ffd166' : '#e63946';
+                    const bar2 = pct2 >= 90 ? '#157347' : pct2 >= 50 ? '#8a5a00' : '#d81f2a';
                     return `<tr>
                         <td style="font-size:0.76rem">${it.last_seen_at ? new Date(it.last_seen_at).toLocaleString() : '—'}</td>
                         <td style="font-size:0.76rem;max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(it.video_title||it.video_id||'—')}</td>
@@ -5382,7 +5382,7 @@ loadHistory = (function() {
                         <td style="font-family:monospace;font-size:0.72rem">${esc(it.device_code||(it.device_id||'—').slice(0,16))}</td>
                         <td style="font-size:0.75rem">${esc(it.device_city||'—')}</td>
                         <td style="font-family:monospace;font-size:0.75rem">${esc(it.student_code||'—')}</td>
-                        <td><button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#ff6b6b;color:#ff6b6b" onclick="event.stopPropagation();deleteProgressEntry('${it.student_id}','${it.video_id}')">🗑</button></td>
+                        <td><button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#c41f28;color:#c41f28" onclick="event.stopPropagation();deleteProgressEntry('${it.student_id}','${it.video_id}')">🗑</button></td>
                     </tr>`;
                 }).join('');
                 const modalBody = `<div class="user-modal-section">
@@ -5395,7 +5395,7 @@ loadHistory = (function() {
                 rows.push(`<tr class="user-row" onclick="_openModal(${_mi_h})">
                     <td style="font-size:0.78rem">${label}</td>
                     <td><span class="user-count-badge">${items.length}</span></td>
-                    <td><span class="user-count-badge" style="background:rgba(52,152,219,0.18);color:#3498db">${videos}</span></td>
+                    <td><span class="user-count-badge" style="background:rgba(52,152,219,0.18);color:#5a6470">${videos}</span></td>
                     <td style="font-size:0.76rem">${last.last_seen_at ? new Date(last.last_seen_at).toLocaleString() : '—'}</td>
                     <td style="font-size:0.76rem">${esc(last.device_city||'—')}</td>
                     <td style="font-size:0.72rem;color:var(--c-muted)">clic para ver detalle ›</td>
@@ -5403,7 +5403,7 @@ loadHistory = (function() {
             }
             tbody.innerHTML = rows.join('');
         } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="8" style="color:#ff6b6b">' + esc(err.message) + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="color:#c41f28">' + esc(err.message) + '</td></tr>';
         }
     };
 })();

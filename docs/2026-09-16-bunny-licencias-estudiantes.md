@@ -482,3 +482,34 @@ Cambio de regla pedido por el propietario. Hasta hoy nada se borraba en Bunny; a
 ### 20.4 Lo que no se pudo probar todavía
 
 **La cuenta de Bunny del propietario está suspendida** (`Suspended: true`, `AccountDisabled: true`, comprobado el 2026-09-18). Por eso este borrado está verificado contra un proveedor simulado y contra la base real, pero **no contra Bunny**. En cuanto haya una cuenta activa conviene repetir la comprobación: crear un curso de prueba, subir una clase, borrarla y confirmar en el panel de Bunny que el video, la colección y la biblioteca desaparecen.
+
+## 21. Paleta clara y profesional en los dos paneles (2026-09-18)
+
+Pedido del propietario: los paneles de administración y de productor pasan a **fondo blanco** con la misma combinación de negro y rojo que ya usan el reproductor de PC y la APK. **Solo cambia el color**: ninguna regla de disposición, tamaño, tipografía o comportamiento se tocó.
+
+### 21.1 Paleta
+
+Tomada de `colors.xml` de la APK, que es la referencia que le gusta al propietario:
+
+| Uso | Color |
+|-----|-------|
+| Fondo de página | `#ffffff` |
+| Tarjetas | `#ffffff` |
+| Campos, cabeceras de tabla, barra lateral | `#f7f5f4` |
+| Bordes | `#e4dfdd` |
+| Texto | `#141010` |
+| Texto de apoyo | `#6d635d` |
+| Rojo de marca | `#d81f2a` (pulsado `#a1121b`, error `#c41f28`) |
+| Estados | correcto `#157347`, atención `#8a5a00`, neutro `#5a6470` |
+
+### 21.2 Cómo se hizo
+
+- Las variables de los dos paneles se redefinieron con esa paleta.
+- En `producer-workspace.css`, todos los colores del tema oscuro se tradujeron: los grises por inversión de luminosidad sobre la escala de la paleta, y los tonos con color (rojos, verdes, ámbares, azulados) con un mapa explícito. Los degradados oscuros pasaron a colores planos.
+- En `admin.html` se reemplazaron los acentos que estaban pensados para fondo oscuro (rojos claros, verdes fosforescentes, naranjas, azules) por los de la paleta, y los recuadros de claves y ejemplos dejaron de ser negros.
+- Las transparencias pensadas para fondo oscuro (`rgba(255,255,255,…)`) se invirtieron, y las sombras se suavizaron para fondo claro.
+- Los únicos colores ajenos que quedan a propósito son los cuatro del logotipo de Google en el botón de acceso, y el recuadro de vista previa de la marca de agua, que sigue oscuro **porque simula el video**.
+
+### 21.3 Comprobación
+
+Revisión automática de contraste sobre las 10 páginas del panel de administración (texto contra su fondo real, calculado en el navegador): **cero casos por debajo de la relación 3:1**. Antes del ajuste había tres. El panel del productor se revisó a la vista en el servidor de prueba. Suites de los paneles: 42/42.
