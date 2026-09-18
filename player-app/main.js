@@ -9,7 +9,7 @@ const { certificateDecision, parseByteRange, findBlockedProcess, classifyRdpSess
     normalizeHardwareUuid } = require('./security-policy');
 const { powershellCommand, driverProbe, unsignedDriverProbe, dllProbe } = require('./platform-probes');
 const { normalizeAuthResponse, connectionFailure } = require('./auth-response');
-const { parseResourceLink } = require('./protected-resources');
+const { parseResourceLink, trustedSender } = require('./protected-resources');
 const { createResourceWindows } = require('./resource-window');
 
 const {
@@ -74,13 +74,15 @@ function isAuthWindowUrl(url) {
  * pagina (file://), no de contenido remoto incrustado.
  */
 function isTrustedSender(event) {
+    // Se reutiliza la comprobacion estricta que ya usa el visor de documentos:
+    // exige la ventana correcta, el marco principal y la direccion EXACTA del
+    // archivo autorizado. Antes bastaba con que la direccion empezara por file://,
+    // lo que dejaba pasar cualquier otra pagina local cargada en esa ventana.
     try {
-        const sender = event && event.sender;
-        if (!sender || sender.isDestroyed()) return false;
-        const propias = [mainWindow, authWindow].filter(Boolean).map(w => w.webContents);
-        if (!propias.includes(sender)) return false;
-        const origen = sender.getURL() || '';
-        return origen.startsWith('file://');
+        const { pathToFileURL } = require('url');
+        const pagina = nombre => pathToFileURL(path.join(__dirname, 'renderer', nombre)).href;
+        return trustedSender(event, mainWindow, pagina('index.html'))
+            || trustedSender(event, authWindow, pagina('auth.html'));
     } catch { return false; }
 }
 
@@ -1118,13 +1120,27 @@ function _decodeJwtPayload(token) {
 // el comportamiento anterior y se deja constancia, en vez de impedir el uso.
 function writeSessionFile(data) {
     const plano = JSON.stringify(data);
-    try {
-        if (safeStorage && safeStorage.isEncryptionAvailable()) {
+    const disponible = (() => { try { return !!(safeStorage && safeStorage.isEncryptionAvailable()); } catch { return false; } })();
+    if (disponible) {
+        // Si el sistema ofrece cifrado, el token NO se escribe en claro pase lo que
+        // pase: si cifrar falla, se borra la sesion del disco y se devuelve false.
+        // La sesion sigue viva en memoria; lo unico que se pierde es recordarla al
+        // reabrir, que es preferible a dejar el token legible en el disco.
+        try {
             const sobre = JSON.stringify({ v: 1, enc: safeStorage.encryptString(plano).toString('base64') });
             fs.writeFileSync(SESSION_PATH, sobre, { encoding: 'utf8', mode: 0o600 });
             return true;
+        } catch (e) {
+            log.error('[SESSION] el cifrado esta disponible pero fallo; la sesion NO se guarda en claro:', e.message);
+            try { if (fs.existsSync(SESSION_PATH)) fs.unlinkSync(SESSION_PATH); } catch {}
+            return false;
         }
-    } catch (e) { log.warn('[SESSION] no se pudo cifrar la sesion:', e.message); }
+    }
+    // El sistema no ofrece almacen cifrado (por ejemplo, Linux sin llavero, donde
+    // Electron puede caer en basic_text, que no protege nada). Se guarda como antes
+    // para no dejar al alumno sin sesion, con permisos restringidos y dejando
+    // constancia clara de que ese equipo no puede proteger el archivo.
+    log.warn('[SESSION] este sistema no ofrece almacen cifrado: la sesion se guarda sin cifrar en ' + SESSION_PATH);
     fs.writeFileSync(SESSION_PATH, plano, { encoding: 'utf8', mode: 0o600 });
     return true;
 }

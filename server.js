@@ -304,8 +304,27 @@ function signBunnyUrl(url, expiresIn = 3600, securityKey = BUNNY_TOKEN_KEY) {
     return parsed.href;
 }
 async function signCourseBunnyUrl(url,entry) {
-    const lib=entry.courseId?await db.getCourseBunny(entry.courseId):null;
-    let key = lib?.tokenKey || BUNNY_TOKEN_KEY || '';
+    // La clase puede vivir en una biblioteca ANTERIOR del curso: firmar su URL con
+    // la clave de la biblioteca actual produce una firma que el CDN rechaza. Se
+    // resuelve la biblioteca de esta clase concreta (R01).
+    const lib = entry.courseId ? await db.getCourseBunny(entry.courseId) : null;
+    let anotada = null;
+    try { anotada = entry.videoId && typeof db.getVideoLibraryId === 'function' ? await db.getVideoLibraryId(entry.videoId) : null; } catch { anotada = null; }
+    const esOtra = anotada && lib?.libraryId && String(anotada) !== String(lib.libraryId);
+    let key = '';
+    if (esOtra) {
+        // Biblioteca anterior: su clave de firma se busca entre las archivadas y,
+        // si no está, se pide al proveedor para ESA biblioteca. Nunca se usa la de
+        // la biblioteca actual ni se sobrescribe la del curso con ella.
+        try {
+            const previas = typeof db.getCoursePreviousLibraries === 'function' ? await db.getCoursePreviousLibraries(entry.courseId) : [];
+            const previa = previas.find(x => String(x.libraryId) === String(anotada));
+            if (previa?.tokenKey) key = previa.tokenKey;
+        } catch {}
+        if (!key) key = await fetchPullZoneTokenKey(anotada);
+        return signBunnyUrl(url, 3600, key);
+    }
+    key = lib?.tokenKey || BUNNY_TOKEN_KEY || '';
     if (!key && lib?.libraryId) {
         key = await fetchPullZoneTokenKey(lib.libraryId);
         if (key && entry.courseId) {
@@ -1732,19 +1751,27 @@ app.delete('/api/video/bulk', requireAdmin, async (req, res) => {
     for (const id of videoIds) {
         if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'videoId inválido: ' + id });
     }
-    let deleted = 0;
+    let deleted = 0, fallidos = [], encolados = 0;
     for (const videoId of videoIds) {
         try {
-            await db.deleteCatalogEntry(videoId);
+            const resultado = await db.deleteCatalogEntryWithProvider(videoId);
+            if (!resultado.deleted) { fallidos.push(videoId); continue; }
+            encolados += resultado.queuedDeletions.length;
             if (LOCAL_MODE) {
                 const dir = path.join('./public/hls', 'hls', videoId);
                 if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
             }
             deleted++;
-        } catch (e) { /* skip single failures */ }
+        } catch (e) {
+            // Un fallo individual no detiene el lote, pero se informa: antes se
+            // perdía en silencio y la respuesta decía que todo había ido bien.
+            console.error('[video/bulk] no se pudo borrar', videoId, e.message);
+            fallidos.push(videoId);
+        }
     }
-    syncCatalogSeed();
-    res.json({ ok: true, deleted });
+    if (encolados) { try { await streamService.runProviderDeletions({ limit: Math.min(encolados, 20) }); } catch {} }
+    await syncCatalogSeed();
+    res.json({ ok: true, deleted, failed: fallidos.length, failedIds: fallidos.slice(0, 20), providerQueued: encolados });
 });
 
 /**
@@ -1754,13 +1781,25 @@ app.delete('/api/video/bulk', requireAdmin, async (req, res) => {
 app.delete('/api/video/:videoId', requireAdmin, async (req, res) => {
     const { videoId } = req.params;
     if (!/^[0-9a-f-]{36}$/i.test(videoId)) return res.status(400).json({ error: 'videoId inválido' });
-    await db.deleteCatalogEntry(videoId);
+    // Misma regla que el panel del productor: el borrado del video en el servicio
+    // de video se anota en la misma transacción y lo ejecuta la cola (F03).
+    const resultado = await db.deleteCatalogEntryWithProvider(videoId);
+    if (!resultado.deleted) return res.status(404).json({ error: 'Video no encontrado' });
     if (LOCAL_MODE) {
         const dir = path.join('./public/hls', 'hls', videoId);
         if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
     }
-    syncCatalogSeed();
-    res.json({ ok: true });
+    let providerFilesDeleted = false;
+    if (resultado.queuedDeletions.length) {
+        try {
+            await streamService.runProviderDeletions({ limit: 5 });
+            const estado = await db.getProviderDeletion(resultado.queuedDeletions[0]);
+            providerFilesDeleted = !!estado && (estado.state === 'done' || estado.state === 'gone');
+        } catch { providerFilesDeleted = false; }
+    }
+    await syncCatalogSeed();
+    res.json({ ok: true, providerFilesDeleted, providerNote: resultado.providerNote || null,
+        providerPending: resultado.queuedDeletions.length > 0 && !providerFilesDeleted });
 });
 
 // ================================================================
@@ -2167,7 +2206,8 @@ app.delete('/api/courses/:id', requireAdmin, async (req, res) => {
         } catch { providerFilesDeleted = false; }
     }
     res.json({ ok: true, resourcesClosed: resultado.resourcesClosed,
-        providerFilesDeleted, providerPending: resultado.queuedDeletions.length && !providerFilesDeleted });
+        providerFilesDeleted, providerPending: resultado.queuedDeletions.length && !providerFilesDeleted,
+        providerKept: resultado.providerKept || 0, providerNote: resultado.providerNote || null });
 });
 
 /** GET /api/courses/unassigned/videos — Videos sin curso (MUST be before :id route) */
@@ -2186,11 +2226,15 @@ app.get('/api/courses/:id/videos', requireAdmin, async (req, res) => {
 app.post('/api/courses/move-video', requireAdmin, async (req, res) => {
     const { videoId, courseId, moduleId } = req.body || {};
     if (!videoId) return res.status(400).json({ error: 'videoId requerido' });
-    await db.moveVideoToCourse(videoId, courseId || null);
-    // Si se indica módulo, asignarlo; si moduleId===null explícito, desasignar
-    if (moduleId !== undefined) await db.moveVideoToModule(videoId, moduleId || null);
-    syncCatalogSeed();
-    res.json({ ok: true });
+    // Una sola operación: antes eran dos escrituras y un fallo en la segunda
+    // dejaba la primera aplicada, con los documentos en el curso anterior (F03).
+    try {
+        const resultado = await db.moveVideo(videoId, courseId || null, moduleId);
+        await syncCatalogSeed();
+        res.json({ ok: true, ...resultado });
+    } catch (error) {
+        res.status(error.statusCode || 400).json({ error: error.message, code: error.code });
+    }
 });
 
 /** POST /api/courses/bulk-move — Mover multiples videos a un curso */
@@ -2264,7 +2308,8 @@ app.delete('/api/modules/:id', requireAdmin, async (req, res) => {
         } catch { providerFilesDeleted = false; }
     }
     res.json({ ok: true, deleted: resultado.deleted.length, resourcesClosed: resultado.resourcesClosed,
-        providerFilesDeleted, providerPending: resultado.queuedDeletions.length && !providerFilesDeleted });
+        providerFilesDeleted, providerPending: resultado.queuedDeletions.length && !providerFilesDeleted,
+        providerKept: resultado.providerKept || 0, providerNote: resultado.providerNote || null });
 });
 
 /** POST /api/courses/set-module — Asigna un video a un módulo específico */

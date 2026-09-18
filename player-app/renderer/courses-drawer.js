@@ -62,6 +62,19 @@
     let probeEpoch = 0;
     let probeTimer = null;
     let probeRunning = false;
+    let probePending = false;   // una consulta pedida mientras habia otra en vuelo
+
+    // El puente NO lanza: siempre resuelve { ok:false, code, error }. Un error de
+    // red llega con el codigo del sistema (ECONNREFUSED y similares) o con el
+    // generico RESOURCE_UNAVAILABLE, asi que no se puede enumerar la lista de
+    // fallos. Se hace al reves: estas son las respuestas en las que el servidor SI
+    // contesto algo definitivo sobre la autorizacion; no se reintentan. Cualquier
+    // otra cosa se trata como fallo pasajero y se reintenta (F09).
+    const RESPUESTA_DEFINITIVA = new Set(['SESSION_ENDED', 'AUTH_REQUIRED', 'LICENSE_REQUIRED',
+        'RESOURCE_LOGIN_REQUIRED', 'RESOURCE_ACCESS_DENIED', 'RESOURCE_LEASE_EXPIRED',
+        'RESOURCE_SESSION_CHANGED', 'RESOURCE_ACCOUNT_TOKEN_REQUIRED', 'RESOURCE_FORBIDDEN']);
+    const esFalloPasajero = respuesta => !respuesta
+        || (respuesta.ok !== true && !RESPUESTA_DEFINITIVA.has(respuesta.code || ''));
 
     function cancelProbe() {
         probeEpoch++;
@@ -301,22 +314,38 @@
      * el boton apagado hasta el proximo cambio de sesion. Nunca hay bucle.
      */
     async function probe(generation, attempt) {
-        if (generation !== probeEpoch || probeRunning) return;
+        if (generation !== probeEpoch) return;
+        if (probeRunning) {
+            // Habia otra consulta en vuelo. Antes se salia sin mas y la sesion
+            // nueva se quedaba sin preguntar: ahora se anota para repetirla en
+            // cuanto termine la anterior.
+            probePending = true;
+            return;
+        }
         probeRunning = true;
         let response = null, failed = false;
         try { response = await api.getResourceCatalog(); }
-        catch { failed = true; }
+        catch { failed = true; }          // por si algun dia el puente lanzara
         finally { probeRunning = false; }
-        // La sesion cambio mientras esperabamos: esta respuesta ya no dice nada.
-        if (generation !== probeEpoch) return;
-        if (failed) {
+
+        // Si mientras esperabamos cambio la sesion, esta respuesta ya no dice nada
+        // de la sesion actual; y si quedo una consulta pedida, se lanza ahora.
+        if (generation !== probeEpoch) {
+            if (probePending) { probePending = false; scheduleProbe(0); }
+            return;
+        }
+        if (probePending) { probePending = false; scheduleProbe(0); return; }
+
+        // El puente devuelve { ok:false, code } en vez de lanzar: sin esto, una
+        // caida de conexion dejaba el boton apagado y sin reintento (F09).
+        if (failed || esFalloPasajero(response)) {
             if (attempt < 3) {
                 const espera = 2000 * Math.pow(2, attempt);
                 probeTimer = setTimeout(() => { probeTimer = null; void probe(generation, attempt + 1); }, espera);
             } else applyEnabled(false);
             return;
         }
-        applyEnabled(!!response && response.ok && response.catalog && response.catalog.embeddedCatalogEnabled === true);
+        applyEnabled(response.ok === true && !!response.catalog && response.catalog.embeddedCatalogEnabled === true);
     }
 
     // Al cambiar la sesion (entrar, activar licencia o recibir una nueva) se vuelve

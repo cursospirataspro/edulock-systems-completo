@@ -1595,7 +1595,17 @@ module.exports.deleteCourse = async (id) => {
         const queuedDeletions = [];
         const encolar = async entrada => { await module.exports.enqueueProviderDeletion(client, entrada); queuedDeletions.push(entrada.id); };
 
-        if (curso.bunny_library_id && curso.bunny_library_key) {
+        // Esta operacion CONSERVA las clases: quedan en el catalogo sin curso. Por
+        // eso no puede programarse el borrado de la biblioteca ni de las colecciones
+        // de las que esas clases dependen para reproducirse: se estaria borrando el
+        // origen del contenido que se acaba de decidir conservar. Solo se borra en
+        // el proveedor cuando no queda ninguna clase apoyada en esa biblioteca.
+        const clasesVivas = Number((await client.query(
+            `SELECT COUNT(*) AS n FROM catalog WHERE course_id=$1 OR bunny_library_id=$2`,
+            [id, curso.bunny_library_id || null])).rows[0].n);
+        const conservaClases = clasesVivas > 0;
+
+        if (curso.bunny_library_id && curso.bunny_library_key && !conservaClases) {
             for (const m of modulos) {
                 if (!m.bunny_collection_id || !m.owned_collection) continue;
                 if (String(m.owned_collection) !== String(m.bunny_collection_id)) continue;
@@ -1631,7 +1641,12 @@ module.exports.deleteCourse = async (id) => {
         // admin si lo permite y esas filas quedan apuntando a un curso que ya no
         // existe. Es una contradiccion entre las dos rutas que decide el
         // propietario: no se resuelve aqui borrando datos de alumnos.
-        return { deleted: true, queuedDeletions, resourcesClosed: cerrados };
+        return { deleted: true, queuedDeletions, resourcesClosed: cerrados,
+            // Se dice con claridad por que no se borro nada en el proveedor.
+            providerKept: conservaClases ? clasesVivas : 0,
+            providerNote: conservaClases
+                ? 'La biblioteca y sus colecciones se conservan porque ' + clasesVivas + ' clase(s) siguen en el catalogo y dependen de ellas.'
+                : null };
     });
 };
 
@@ -1648,6 +1663,107 @@ module.exports.moveVideoToCourse = async (videoId, courseId) => {
     const maxRes = await q('SELECT COALESCE(MAX(sort_order),0) as m FROM catalog WHERE course_id=$1', [courseId || null]);
     const maxSort = parseInt(maxRes.rows[0]?.m || 0, 10);
     await q('UPDATE catalog SET course_id=$1, module_id=NULL, sort_order=$2 WHERE video_id=$3', [courseId || null, maxSort + 1, videoId]);
+};
+
+/**
+ * Mueve una clase de curso y de modulo en UNA sola operacion atomica, y deja
+ * coordinado todo lo que depende de esa asociacion: los recursos protegidos y el
+ * contenido .edu. Antes eran dos escrituras sueltas: si la segunda fallaba, la
+ * primera ya estaba aplicada y el documento se quedaba en el curso anterior (F03).
+ *
+ * `moduleId === undefined` significa "no tocar el modulo"; `null` significa
+ * "quitarlo del modulo".
+ */
+/**
+ * Borra una clase del catalogo y, en la MISMA transaccion, anota el borrado de su
+ * video en el servicio de video —solo si consta que lo creo esta plataforma—.
+ * Es la misma regla que aplica el panel del productor (F02, R02, F03).
+ */
+module.exports.deleteCatalogEntryWithProvider = async (videoId) => {
+    return transaction(async client => {
+        const fila = (await client.query(
+            `SELECT c.video_id, c.course_id, c.bunny_library_id, c.producer_id,
+                    cur.bunny_library_id AS curso_library, cur.bunny_library_key AS curso_key,
+                    op.id AS operacion, r.remote_id AS propio
+             FROM catalog c
+             LEFT JOIN courses cur ON cur.id = c.course_id
+             LEFT JOIN stream_operations op ON op.video_id = c.video_id
+             LEFT JOIN stream_resources r ON r.resource_key = 'upload:' || op.id
+             WHERE c.video_id = $1 FOR UPDATE OF c`, [videoId])).rows[0];
+        if (!fila) return { deleted: false, queuedDeletions: [] };
+
+        const queuedDeletions = [];
+        // La clase puede vivir en una biblioteca anterior del curso (R01).
+        const libraryId = fila.bunny_library_id || fila.curso_library || null;
+        const mismaBiblioteca = !fila.bunny_library_id || !fila.curso_library
+            || String(fila.bunny_library_id) === String(fila.curso_library);
+        const libraryKey = mismaBiblioteca ? fila.curso_key : null;
+        const propio = fila.propio && String(fila.propio) === String(videoId);
+        if (libraryId && libraryKey && propio) {
+            const pendiente = crypto.randomUUID();
+            await module.exports.enqueueProviderDeletion(client, {
+                id: pendiente, kind: 'video', producerId: fila.producer_id || null,
+                courseId: fila.course_id || null, moduleId: null, videoId,
+                libraryId, libraryKey, remoteId: videoId });
+            queuedDeletions.push(pendiente);
+        }
+
+        await client.query(`UPDATE protected_resources SET deleted_at=NOW()
+            WHERE target_kind='video' AND target_id=$1 AND deleted_at IS NULL`, [videoId]);
+        await client.query("UPDATE stream_operations SET state='deleted', error_code='CONTENT_DELETED' WHERE video_id=$1", [videoId]).catch(() => {});
+        await client.query('DELETE FROM edu_content WHERE video_id=$1', [videoId]).catch(() => {});
+        await client.query('DELETE FROM catalog WHERE video_id=$1', [videoId]);
+        await client.query('INSERT INTO deleted_videos(video_id,deleted_at) VALUES($1,$2) ON CONFLICT(video_id) DO NOTHING',
+            [videoId, new Date().toISOString()]).catch(() => {});
+        return { deleted: true, queuedDeletions,
+            providerNote: queuedDeletions.length ? null : 'el video no lo creó esta plataforma o falta la clave de su biblioteca' };
+    });
+};
+
+module.exports.moveVideo = async (videoId, courseId, moduleId = undefined) => {
+    return transaction(async client => {
+        await client.query('LOCK TABLE catalog,modules,courses,protected_resources,edu_content IN SHARE ROW EXCLUSIVE MODE');
+        const video = (await client.query('SELECT * FROM catalog WHERE video_id=$1 FOR UPDATE', [videoId])).rows[0];
+        if (!video) throw dbError('VIDEO_NOT_FOUND', 'Video no encontrado.', 404);
+
+        const cursoDestino = courseId || null;
+        if (cursoDestino) {
+            const curso = (await client.query('SELECT id,producer_id FROM courses WHERE id=$1 FOR SHARE', [cursoDestino])).rows[0];
+            if (!curso) throw dbError('COURSE_NOT_FOUND', 'Curso no encontrado.', 404);
+            if ((curso.producer_id || null) !== (video.producer_id || null)) {
+                throw dbError('COURSE_OWNER_CONFLICT', 'No se puede mover contenido entre productores.', 403);
+            }
+        }
+
+        // El modulo se valida CONTRA EL CURSO DE DESTINO, no contra el anterior.
+        let moduloDestino = moduleId === undefined ? (video.module_id || null) : (moduleId || null);
+        if (moduloDestino) {
+            const mod = (await client.query('SELECT id,course_id FROM modules WHERE id=$1 FOR SHARE', [moduloDestino])).rows[0];
+            if (!mod || String(mod.course_id) !== String(cursoDestino)) {
+                throw dbError('MODULE_COURSE_MISMATCH', 'El módulo no pertenece al curso de destino.', 400);
+            }
+        }
+        // Cambiar de curso sin indicar modulo deja la clase fuera de todo modulo:
+        // un modulo del curso anterior no existe en el nuevo.
+        if (moduleId === undefined && String(video.course_id || '') !== String(cursoDestino || '')) moduloDestino = null;
+
+        const maxRes = await client.query('SELECT COALESCE(MAX(sort_order),0) AS m FROM catalog WHERE course_id=$1', [cursoDestino]);
+        const maxSort = parseInt(maxRes.rows[0]?.m || 0, 10);
+        await client.query('UPDATE catalog SET course_id=$1, module_id=$2, sort_order=$3 WHERE video_id=$4',
+            [cursoDestino, moduloDestino, maxSort + 1, videoId]);
+
+        // Lo que colgaba de la clase viaja con ella, en la misma transaccion.
+        // protected_resources guarda el curso del recurso (no el modulo), asi que
+        // eso es lo que hay que mover con la clase para que no quede apuntando al
+        // curso anterior.
+        const recursos = (await client.query(
+            `UPDATE protected_resources SET course_id=$1
+             WHERE target_kind='video' AND target_id=$2 AND deleted_at IS NULL RETURNING id`,
+            [cursoDestino, videoId])).rowCount;
+        await client.query('UPDATE edu_content SET course_id=$1 WHERE video_id=$2', [cursoDestino, videoId]).catch(() => {});
+
+        return { ok: true, videoId, courseId: cursoDestino, moduleId: moduloDestino, resourcesMoved: recursos };
+    });
 };
 
 module.exports.reorderVideos = async (videoOrders) => {
@@ -1731,10 +1847,19 @@ module.exports.deleteModule = async (id) => {
             JOIN courses c ON c.id = m.course_id
             LEFT JOIN stream_resources r ON r.resource_key = 'module:' || m.id
             WHERE m.id = ANY($1::text[])`, [descendants])).rows;
+        // Igual que al borrar un curso: esta operacion deja las clases en el
+        // catalogo (sin modulo), asi que no se borra en el proveedor nada de lo que
+        // esas clases dependan. Se cuenta por modulo.
+        const clasesPorModulo = new Map();
+        for (const fila of (await client.query(
+            `SELECT module_id, COUNT(*) AS n FROM catalog WHERE module_id = ANY($1::text[]) GROUP BY module_id`,
+            [descendants])).rows) clasesPorModulo.set(fila.module_id, Number(fila.n));
+        let conservadas = 0;
         const queuedDeletions = [];
         for (const fila of remotos) {
             if (!fila.bunny_collection_id || !fila.bunny_library_id || !fila.bunny_library_key) continue;
             if (!fila.owned_remote_id || String(fila.owned_remote_id) !== String(fila.bunny_collection_id)) continue;
+            if (clasesPorModulo.get(fila.id)) { conservadas += clasesPorModulo.get(fila.id); continue; }
             const pendiente = crypto.randomUUID();
             await module.exports.enqueueProviderDeletion(client, {
                 id: pendiente, kind: 'module', producerId: fila.producer_id || null,
@@ -1753,7 +1878,11 @@ module.exports.deleteModule = async (id) => {
         await client.query(`DELETE FROM stream_resources WHERE resource_key = ANY($1::text[])`,
             [descendants.map(x => 'module:' + x)]);
         await client.query('DELETE FROM modules WHERE id=ANY($1::text[])', [descendants]);
-        return { deleted: descendants, resourcesClosed: cerrados, queuedDeletions };
+        return { deleted: descendants, resourcesClosed: cerrados, queuedDeletions,
+            providerKept: conservadas,
+            providerNote: conservadas
+                ? 'Las colecciones se conservan porque ' + conservadas + ' clase(s) siguen en el catalogo y dependen de ellas.'
+                : null };
     });
 };
 
@@ -1823,6 +1952,9 @@ module.exports.getCoursePreviousLibraries = async courseId => {
     if (!Array.isArray(list)) return [];
     return list.map(e => ({ libraryId: e?.libraryId ? String(e.libraryId) : null,
         libraryKey: e?.libraryKey ? decField(e.libraryKey) : null,
+        // La clave de firma de la biblioteca anterior hace falta para poder seguir
+        // firmando las URL de las clases que quedaron alli (R01).
+        tokenKey: e?.tokenKey ? decField(e.tokenKey) : null,
         pullZone: e?.pullZone || null, archivedAt: e?.archivedAt || null }));
 };
 
