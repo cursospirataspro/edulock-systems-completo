@@ -1737,17 +1737,22 @@ module.exports.moveVideo = async (videoId, courseId, moduleId = undefined) => {
             }
         }
 
+        // Primero se decide el modulo de destino y despues se valida, en ese orden:
+        // cambiar de curso sin indicar modulo deja la clase fuera de todo modulo,
+        // porque un modulo del curso anterior no existe en el nuevo.
+        const cambiaDeCurso = String(video.course_id || '') !== String(cursoDestino || '');
+        let moduloDestino;
+        if (moduleId !== undefined) moduloDestino = moduleId || null;
+        else if (cambiaDeCurso) moduloDestino = null;
+        else moduloDestino = video.module_id || null;
+
         // El modulo se valida CONTRA EL CURSO DE DESTINO, no contra el anterior.
-        let moduloDestino = moduleId === undefined ? (video.module_id || null) : (moduleId || null);
         if (moduloDestino) {
             const mod = (await client.query('SELECT id,course_id FROM modules WHERE id=$1 FOR SHARE', [moduloDestino])).rows[0];
             if (!mod || String(mod.course_id) !== String(cursoDestino)) {
                 throw dbError('MODULE_COURSE_MISMATCH', 'El módulo no pertenece al curso de destino.', 400);
             }
         }
-        // Cambiar de curso sin indicar modulo deja la clase fuera de todo modulo:
-        // un modulo del curso anterior no existe en el nuevo.
-        if (moduleId === undefined && String(video.course_id || '') !== String(cursoDestino || '')) moduloDestino = null;
 
         const maxRes = await client.query('SELECT COALESCE(MAX(sort_order),0) AS m FROM catalog WHERE course_id=$1', [cursoDestino]);
         const maxSort = parseInt(maxRes.rows[0]?.m || 0, 10);
