@@ -80,11 +80,20 @@
             android:visibility="gone" />
 
         <Button
-            android:id="@+id/waiting_catalog"
+            android:id="@+id/waiting_courses"
             style="@style/Widget.Edulock.Button.Outline"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="36dp"
+            android:text="@string/courses_open"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/waiting_catalog"
+            style="@style/Widget.Edulock.Button.Outline"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
             android:text="@string/resources_open_documents" />
 
     </LinearLayout>

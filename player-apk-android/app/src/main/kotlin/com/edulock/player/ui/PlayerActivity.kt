@@ -12,6 +12,9 @@ import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.SimpleExoPlayer
 import com.google.android.exoplayer2.source.hls.HlsMediaSource
+import com.google.android.exoplayer2.drm.DefaultDrmSessionManager
+import com.google.android.exoplayer2.drm.FrameworkMediaDrm
+import com.google.android.exoplayer2.drm.HttpMediaDrmCallback
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSource
 import com.google.android.exoplayer2.ui.StyledPlayerView
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector
@@ -61,12 +64,47 @@ import java.util.concurrent.TimeUnit
  */
 class PlayerActivity : AppCompatActivity() {
 
+    // DRM de la clase en curso (vacio = sin DRM, reproduccion de siempre).
+    private var drmScheme: String? = null
+    private var drmLicenseUrl: String? = null
+    private var drmHeaders: Map<String, String>? = null
+
+    /**
+     * Crea la sesion de Widevine cuando el servidor entrega una licencia para la clase.
+     * Devuelve null cuando no hay DRM (comportamiento actual) o cuando el dispositivo no
+     * soporta Widevine, para que el fallo se vea como "no disponible" y no como una caida.
+     */
+    private fun buildWidevineManager(
+        scheme: String?,
+        licenseUrl: String?,
+        headers: Map<String, String>?
+    ): DefaultDrmSessionManager? {
+        if (scheme.isNullOrBlank() || licenseUrl.isNullOrBlank()) return null
+        if (!scheme.equals("widevine", ignoreCase = true)) {
+            Log.w(TAG, "Esquema de DRM no soportado: $scheme")
+            return null
+        }
+        return try {
+            val callback = HttpMediaDrmCallback(licenseUrl, DefaultHttpDataSource.Factory())
+            headers?.forEach { (name, value) -> callback.setKeyRequestProperty(name, value) }
+            DefaultDrmSessionManager.Builder()
+                .setUuidAndExoMediaDrmProvider(C.WIDEVINE_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
+                .setMultiSession(false)
+                .build(callback)
+        } catch (e: Exception) {
+            Log.e(TAG, "No se pudo preparar Widevine: ${e.message}")
+            null
+        }
+    }
+
     companion object {
         private const val TAG = "PlayerActivity"
         const val EXTRA_VIDEO_ID = "videoId"
         const val EXTRA_VIDEO_TITLE = "videoTitle"
         const val EXTRA_MANIFEST_URL = "manifestUrl"
         const val EXTRA_MEDIA_TOKEN = "mediaToken"
+        const val EXTRA_DRM_SCHEME = "drmScheme"
+        const val EXTRA_DRM_LICENSE_URL = "drmLicenseUrl"
         const val EXTRA_WATERMARK_TEXT = "watermarkText"
         const val EXTRA_SESSION_ID = "sessionId"
         const val EXTRA_SOURCE_TYPE = "sourceType"
@@ -154,6 +192,11 @@ class PlayerActivity : AppCompatActivity() {
         val sourceType = intent.getStringExtra(EXTRA_SOURCE_TYPE) ?: "bunny"
         val manifestUrl = intent.getStringExtra(EXTRA_MANIFEST_URL) ?: ""
         val mediaToken = intent.getStringExtra(EXTRA_MEDIA_TOKEN) ?: ""
+        // DRM opcional: solo llega cuando el servidor entrega licencia para esta clase.
+        drmScheme = intent.getStringExtra(EXTRA_DRM_SCHEME)
+        drmLicenseUrl = intent.getStringExtra(EXTRA_DRM_LICENSE_URL)
+        drmHeaders = if (mediaToken.isNotBlank())
+            mapOf("Authorization" to "Bearer $mediaToken", "X-Native-App" to "1") else null
         val watermarkText = intent.getStringExtra(EXTRA_WATERMARK_TEXT) ?: ""
         val vdoOtp = intent.getStringExtra(EXTRA_VDO_OTP) ?: ""
         val vdoPlaybackInfo = intent.getStringExtra(EXTRA_VDO_PLAYBACK_INFO) ?: ""
@@ -336,9 +379,15 @@ class PlayerActivity : AppCompatActivity() {
                 .setConnectTimeoutMs(30000)
                 .setReadTimeoutMs(30000)
 
+            // DRM Widevine: solo si el servidor entrego esquema y licencia para esta clase.
+            // Widevine forma parte de Android (MediaDrm); no requiere ningun servicio de firma
+            // externo. Sin estos datos, la reproduccion es la de siempre.
+            val drmManager = buildWidevineManager(drmScheme, drmLicenseUrl, drmHeaders)
+
             // HlsMediaSource que usa nuestro DataSource autenticado
-            val hlsSource = HlsMediaSource.Factory(dataSourceFactory)
-                .createMediaSource(MediaItem.fromUri(authedManifestUrl))
+            val hlsFactory = HlsMediaSource.Factory(dataSourceFactory)
+            if (drmManager != null) hlsFactory.setDrmSessionManagerProvider { drmManager }
+            val hlsSource = hlsFactory.createMediaSource(MediaItem.fromUri(authedManifestUrl))
 
             // TrackSelector para control de calidad
             trackSelector = DefaultTrackSelector(this).apply {

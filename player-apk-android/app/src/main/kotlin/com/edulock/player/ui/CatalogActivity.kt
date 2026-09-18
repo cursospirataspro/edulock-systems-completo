@@ -81,7 +81,9 @@ class CatalogActivity : AppCompatActivity() {
         recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.adapter = adapter
         findViewById<android.widget.Button>(R.id.logout_button).setOnClickListener { finish() }
-        if (docsOnly) findViewById<android.widget.TextView?>(R.id.catalog_title)?.setText(R.string.resources_open_documents)
+        findViewById<android.widget.TextView?>(R.id.catalog_title)?.setText(
+            if (docsOnly) R.string.resources_open_documents else R.string.courses_title
+        )
 
         // Cargar videos
         loadVideos()
@@ -186,8 +188,14 @@ class CatalogActivity : AppCompatActivity() {
                     appendResources(v.documents, v.title ?: "Video", flatVideos)
                 }
 
-                // Modo "Mis documentos": los videos solo se abren por enlace externo (paridad con PC).
-                if (docsOnly) flatVideos.retainAll { it.resourceItem != null }
+                // El servidor manda: si el productor no tiene "Mis Cursos" activado, esta pantalla
+                // vuelve a ser solo documentos aunque se haya abierto en modo cursos.
+                val catalogAllowed = response.embeddedCatalogEnabled == true
+                val onlyDocs = docsOnly || !catalogAllowed
+                if (onlyDocs) flatVideos.retainAll { it.resourceItem != null }
+                findViewById<android.widget.TextView?>(R.id.catalog_title)?.setText(
+                    if (onlyDocs) R.string.resources_open_documents else R.string.courses_title
+                )
 
                 if (flatVideos.isNotEmpty()) {
                     videos.clear()
@@ -196,7 +204,7 @@ class CatalogActivity : AppCompatActivity() {
                     Log.i(TAG, "✅ ${videos.size} elementos cargados (docsOnly=$docsOnly)")
                 } else {
                     videos.clear(); adapter.notifyDataSetChanged()
-                    showError(if (docsOnly) "No hay documentos disponibles en tus cursos" else "No hay cursos ni recursos disponibles")
+                    showError(if (onlyDocs) "No hay documentos disponibles en tus cursos" else getString(R.string.courses_empty))
                 }
 
             } catch (e: Exception) {
@@ -281,6 +289,8 @@ class CatalogActivity : AppCompatActivity() {
                         putExtra(PlayerActivity.EXTRA_VIDEO_ID, realId)
                         putExtra(PlayerActivity.EXTRA_VIDEO_TITLE, video.title)
                         putExtra(PlayerActivity.EXTRA_MANIFEST_URL, playResponse.manifestUrl)
+                        putExtra(PlayerActivity.EXTRA_DRM_SCHEME, playResponse.drmScheme)
+                        putExtra(PlayerActivity.EXTRA_DRM_LICENSE_URL, playResponse.drmLicenseUrl)
                         putExtra(PlayerActivity.EXTRA_MEDIA_TOKEN, playResponse.mediaToken)
                         putExtra(PlayerActivity.EXTRA_WATERMARK_TEXT, playResponse.watermarkText ?: "")
                         putExtra(PlayerActivity.EXTRA_COURSE_ID, playResponse.courseId ?: "__default__")

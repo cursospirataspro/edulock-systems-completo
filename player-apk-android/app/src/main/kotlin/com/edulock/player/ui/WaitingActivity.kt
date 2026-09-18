@@ -14,9 +14,11 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.lifecycle.lifecycleScope
 import com.edulock.player.R
 import com.edulock.player.api.ApiClient
 import com.edulock.player.api.LicenseManager
+import com.edulock.player.utils.SessionManager
 import com.edulock.player.api.data.DeviceCheckinRequest
 import com.edulock.player.api.data.ResolveCommandRequest
 import com.edulock.player.api.data.ResolvePermRequest
@@ -103,11 +105,20 @@ class WaitingActivity : AppCompatActivity() {
                     .putExtra(CatalogActivity.EXTRA_DOCS_ONLY, true))
             }
         }
+        // "Mis Cursos": solo aparece si el servidor lo habilita para el productor de esta
+        // sesion. Mientras tanto, la pantalla es exactamente la de siempre.
+        findViewById<Button>(R.id.waiting_courses).setOnClickListener {
+            startActivity(Intent(this@WaitingActivity, CatalogActivity::class.java)
+                .putExtra(CatalogActivity.EXTRA_DOCS_ONLY, false))
+        }
 
         Log.i(TAG, "🕒 Esperando comando de reproducción…")
 
         // Checkin de inicio (igual que PC al abrir la app)
         sendStartupCheckin()
+
+        // Estado del panel "Mis Cursos" (lo decide el servidor, no la app)
+        refreshEmbeddedCatalog()
 
         // Guardia de licencia: valida al abrir y cada 60s. Si el admin regeneró/
         // revocó la licencia, expulsa a la pantalla de licencia (igual que el PC).
@@ -312,6 +323,9 @@ class WaitingActivity : AppCompatActivity() {
                 }
                 intent.putExtra(PlayerActivity.EXTRA_SOURCE_TYPE, "bunny")
                 intent.putExtra(PlayerActivity.EXTRA_MANIFEST_URL, manifest)
+                // DRM opcional entregado por el servidor para esta clase.
+                intent.putExtra(PlayerActivity.EXTRA_DRM_SCHEME, data.drmScheme)
+                intent.putExtra(PlayerActivity.EXTRA_DRM_LICENSE_URL, data.drmLicenseUrl)
                 // El manifest se autentica con el token bloqueado al video. Los
                 // enlaces `t=`/`cmd=` devuelven `mediaToken`; los enlaces
                 // permanentes `p=` devuelven `sessionToken` (role:perm, también
@@ -431,6 +445,32 @@ class WaitingActivity : AppCompatActivity() {
     }
 
     // ── Sesión / utilidades ───────────────────────────────────────────────────
+
+    /**
+     * Pregunta al servidor si este alumno debe ver "Mis Cursos". El servidor deriva el
+     * productor de la sesion de contenido; la app nunca decide por su cuenta. Si falla la
+     * consulta, se mantiene la experiencia de siempre (boton oculto).
+     */
+    private fun refreshEmbeddedCatalog() {
+        lifecycleScope.launch {
+            val enabled = try {
+                val token = SessionManager.validToken(this@WaitingActivity)
+                if (token.isEmpty()) false
+                else withContext(Dispatchers.IO) {
+                    apiService.getVideoList("Bearer $token").embeddedCatalogEnabled == true
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "No se pudo consultar Mis Cursos: ${e.message}")
+                false
+            }
+            val courses = findViewById<Button>(R.id.waiting_courses)
+            val docs = findViewById<Button>(R.id.waiting_catalog)
+            courses.visibility = if (enabled) View.VISIBLE else View.GONE
+            // Con el panel activo los materiales viven dentro de "Mis Cursos"; el boton de
+            // documentos se oculta para no duplicar y vuelve en cuanto se apaga el interruptor.
+            docs.visibility = if (enabled) View.GONE else View.VISIBLE
+        }
+    }
 
     private fun onLogout() {
         // Cierra la sesión en el servidor y localmente; la licencia y el dispositivo se conservan.

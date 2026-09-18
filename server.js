@@ -6321,7 +6321,11 @@ const producerLicenseWorkspace = createProducerLicenseWorkspace({ pool: db.pool,
 const producerMail = createProducerMail({ db, secret: JWT_SECRET, getLicenseSerial: producerLicenseWorkspace.readLicenseSerial });
 producerLicenseWorkspace.mount(app, requireProducer);
 const producerContentService = mountProducerContent(app, { db, requireProducer, generatePublicCode, getPublicBase,
-    syncCollection: ({ producerId, videoId, courseId, moduleId }) => streamService.syncVideoCollection({ courseId, videoId, moduleId, actor: { producerId } }) });
+    syncCollection: ({ producerId, videoId, courseId, moduleId }) => streamService.syncVideoCollection({ courseId, videoId, moduleId, actor: { producerId } }),
+    // Al eliminar contenido en Edulock se elimina tambien en el proveedor de video:
+    // curso -> biblioteca, modulo -> coleccion, clase -> video. Solo lo creado por la plataforma.
+    deleteProviderAsset: ({ kind, producerId, courseId, moduleId, videoId }) =>
+        streamService.deleteProviderAsset({ kind, courseId, moduleId, videoId, actor: { producerId } }) });
 mountProducerBusiness(app, { db, requireProducer, requireAdmin, hashPassword, verifyPassword, secret: JWT_SECRET, getPublicBase,
     mailConfigured: producerMail.configured,
     issueProducerToken: p => jwt.sign({ sub: p.id, producerId: p.id, email: p.email, role: 'producer', label: p.name || p.email, authVersion: Number(p.auth_version || 0) }, JWT_SECRET, { expiresIn: JWT_EXPIRES, issuer: 'reproductor-cursos' }) });

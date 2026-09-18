@@ -424,3 +424,61 @@ El texto de la pantalla de inicio mostraba "v1.1.0" porque `config.json` conserv
 ### 18.5 Limpieza
 
 Productor, curso, módulos, clase, material, alumnos, licencias, activaciones y sesiones de prueba borrados de la base. Los dos productores reales siguen con "Mis Cursos" apagado. Queda una cuenta sintética en Firebase (`qa-tel-…@edulock-qa.invalid`) que el servidor no puede borrar por no tener credenciales de administración de Firebase; se elimina a mano desde la consola de Firebase si se desea.
+
+## 19. "Mis Cursos" en Android y reproducción con DRM en la APK (2026-09-18)
+
+### 19.1 "Mis Cursos" en el teléfono, con el mismo interruptor
+
+La APK ya tenía una pantalla de catálogo (`CatalogActivity`) que leía `/api/my-catalog`, pero solo se usaba en modo documentos ("Mis documentos (PDF)"), porque hasta ahora las clases se abrían únicamente por sus enlaces. Ahora la misma pantalla sirve de "Mis Cursos", gobernada por **el mismo interruptor del productor** que en el reproductor de PC:
+
+| Archivo | Cambio |
+|---------|--------|
+| `api/data/Models.kt` | `CatalogResponse` acepta `embeddedCatalogEnabled` (y `ResolveResponse`/`PlayUrlResponse` aceptan los campos de DRM) |
+| `ui/WaitingActivity.kt` | consulta el interruptor al abrir; si está encendido muestra "Mis Cursos" y oculta "Mis documentos (PDF)", que vuelve en cuanto se apaga |
+| `ui/CatalogActivity.kt` | en modo cursos vuelve a comprobar el interruptor en la respuesta del servidor; si está apagado se limita a documentos aunque se haya abierto en modo cursos |
+| `res/layout/activity_waiting.xml`, `res/values/strings.xml` | botón y textos nuevos |
+
+Comportamiento, igual que en la PC: **apagado** (valor por omisión de todos los productores) la aplicación es exactamente la de hoy, las clases se abren por sus enlaces y aparece "Mis documentos (PDF)". **Encendido**, el alumno navega su curso dentro de la aplicación; cada clase vuelve a pasar por la autorización del servidor antes de reproducirse, porque la pantalla usa la misma ruta de siempre.
+
+### 19.2 DRM en Android: no hace falta un "Castlabs" para el teléfono
+
+En el reproductor de PC, la firma VMP de Castlabs es necesaria porque es una aplicación de escritorio que **incrusta** el módulo de Widevine. En Android, Widevine **forma parte del propio sistema operativo** (`MediaDrm`): cualquier aplicación puede usarlo con ExoPlayer, sin servicio de firma, sin licencia extra y sin coste. Ese es el equivalente que faltaba.
+
+Comprobado en el moto e32 conectado: el servicio `android.hardware.drm@1.3-service.widevine` está en ejecución y las librerías `libwvhidl.so` y `liboemcrypto.so` están presentes. El teléfono puede reproducir contenido con Widevine.
+
+Lo que faltaba era decirle a ExoPlayer que lo use. Ahora `PlayerActivity` construye una sesión de Widevine (`DefaultDrmSessionManager` + `HttpMediaDrmCallback`) **solo cuando el servidor entrega esquema y licencia** para esa clase, reenviando el token de reproducción como cabecera. Sin esos datos, la reproducción es exactamente la de hoy: HLS con la clave servida por el servidor.
+
+**Qué falta para usarlo de verdad:** el contenido actual usa el DRM básico de Bunny, que es cifrado HLS con clave servida por el servidor, no Widevine. El día que se active un origen con Widevine (por ejemplo el DRM premium de Bunny), el servidor solo tiene que devolver `drmScheme: "widevine"` y `drmLicenseUrl` en la respuesta de reproducción, y la APK lo usará sola. No hay que volver a tocar la aplicación.
+
+## 20. El borrado en Edulock ahora borra también en el proveedor de video (2026-09-18)
+
+Cambio de regla pedido por el propietario. Hasta hoy nada se borraba en Bunny; ahora sí:
+
+| Qué eliminas en el panel | Qué se borra en el proveedor |
+|--------------------------|------------------------------|
+| Una clase | su video |
+| Un módulo | su colección |
+| Un curso | su biblioteca |
+
+### 20.1 Salvaguardas
+
+- **Solo se borra lo que creó esta plataforma.** Cada biblioteca y cada colección se comprueban contra `stream_resources`: si el identificador remoto no coincide (biblioteca adoptada, colección creada a mano), no se borra nada y se informa el motivo.
+- **Nunca en cascada.** El panel sigue impidiendo borrar un curso o un módulo que tenga algo dentro. En la práctica, cuando llega el borrado, la colección o la biblioteca ya están vacías.
+- **Primero la base, después el proveedor.** Si el proveedor falla, queda un archivo huérfano recuperable y el panel lo dice; nunca al revés, que sería un borrado irreversible sin registro.
+- **Repetir el borrado no es un error:** si el recurso ya no está en el proveedor (404), se considera hecho.
+- **Aislamiento intacto:** un productor no puede pedir el borrado de contenido de otro (`COURSE_FORBIDDEN`).
+- Los avisos de confirmación del panel se reescribieron para decir la verdad: antes prometían que no se borraba nada en el proveedor.
+
+### 20.2 Archivos
+
+`lib/stream-service.js` (`deleteProviderAsset` y tres etapas nuevas de mensaje), `lib/producer-content.js` (gancho `deleteProviderAsset` llamado tras confirmar la transacción), `server.js` (conexión del gancho), `public/js/producer-workspace.js` (textos de confirmación), `productor.html` (versión de assets `?v=20260918-borrado`).
+
+### 20.3 Pruebas
+
+- `test/stream-service.test.js`: dos pruebas nuevas. Borrado real de video, colección y biblioteca contra un proveedor simulado; y la comprobación de que **no** se borra lo que la plataforma no creó ni lo de otro productor (ninguna petición de borrado sale).
+- `test/producer-content-postgres.test.js`: una prueba nueva contra PostgreSQL real. La clase y el módulo se borran y se pide el borrado al proveedor con los datos correctos; un fallo del proveedor deja el borrado hecho en Edulock con aviso claro; y con dependencias no se pide nada al proveedor.
+- En el VPS, contra la base QA: 48/48. Suite local completa: 389/400 (los mismos 10 preexistentes más las suites Postgres que se niegan a correr sin base QA).
+
+### 20.4 Lo que no se pudo probar todavía
+
+**La cuenta de Bunny del propietario está suspendida** (`Suspended: true`, `AccountDisabled: true`, comprobado el 2026-09-18). Por eso este borrado está verificado contra un proveedor simulado y contra la base real, pero **no contra Bunny**. En cuanto haya una cuenta activa conviene repetir la comprobación: crear un curso de prueba, subir una clase, borrarla y confirmar en el panel de Bunny que el video, la colección y la biblioteca desaparecen.

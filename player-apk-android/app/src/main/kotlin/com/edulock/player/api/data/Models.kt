@@ -124,7 +124,10 @@ data class CatalogResponse(
     val courses: List<Course>? = null,
     val videos: List<VideoItem>? = null,
     val error: String? = null,
-    val requiresLicense: Boolean? = null
+    val requiresLicense: Boolean? = null,
+    /** "Mis Cursos": el servidor decide si este alumno puede navegar su curso dentro de la app.
+     *  Ausente o false = experiencia de siempre (las clases se abren por sus enlaces). */
+    val embeddedCatalogEnabled: Boolean? = null
 )
 
 /** Un curso del catálogo. */
@@ -193,7 +196,12 @@ data class PlayUrlResponse(
     val ttl: Long? = null,
     val courseId: String? = null,
     val watermarkConfig: com.google.gson.JsonElement? = null,
-    val error: String? = null
+    val error: String? = null,
+    /** DRM opcional. Si el servidor entrega un esquema y su licencia, ExoPlayer la usa;
+     *  si no vienen, la reproduccion sigue siendo la de siempre (HLS con clave del servidor). */
+    val drmScheme: String? = null,
+    val drmLicenseUrl: String? = null,
+    val drmHeaders: Map<String, String>? = null
 )
 
 /** GET /api/video/{videoId}/drm-key — clave DRM para descifrar contenido. */
@@ -390,7 +398,10 @@ data class ResolveResponse(
     val ttl: Long? = null,
     val courseId: String? = null,
     val watermarkConfig: com.google.gson.JsonElement? = null,
-    val error: String? = null
+    val error: String? = null,
+    /** DRM opcional (mismo contrato que PlayUrlResponse). */
+    val drmScheme: String? = null,
+    val drmLicenseUrl: String? = null
 )
 
 /** POST /api/auth/logout — cierra la sesión de contenido en el servidor (conserva licencia y dispositivo). */

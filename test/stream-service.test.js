@@ -67,6 +67,20 @@ function fakeTransport() {
         async json(method, host, apiPath, key, body) {
             state.calls.push({ method, host, path: apiPath, body });
             const url = new URL(`https://${host}${apiPath}`);
+            if (method === 'DELETE') {
+                // Borrado en el proveedor: biblioteca, coleccion o video.
+                if (url.pathname === '/videolibrary/101') { state.libraries = state.libraries.filter(l => String(l.Id) !== '101'); return { success: true }; }
+                const collection = url.pathname.match(/^\/library\/101\/collections\/(.+)$/);
+                if (collection) {
+                    if (state.lostCollections) throw rejection(404, 'collection.notFound', 'Collection not found');
+                    state.collections = state.collections.filter(c => c.guid !== collection[1]); return { success: true };
+                }
+                const video = url.pathname.match(/^\/library\/101\/videos\/(.+)$/);
+                if (video) {
+                    if (!state.videos.some(v => v.guid === video[1])) throw rejection(404, 'video.notFound', 'Video not found');
+                    state.videos = state.videos.filter(v => v.guid !== video[1]); return { success: true };
+                }
+            }
             if (url.pathname === '/videolibrary' && method === 'GET') return { Items: state.libraries, TotalItems: state.libraries.length };
             if (url.pathname === '/videolibrary' && method === 'POST') {
                 const value = { Id: 101, Name: body.Name, ApiKey: 'synthetic-library-key', PullZoneId: 102, StorageZoneId: 103 };
@@ -526,4 +540,50 @@ test('the background reconciliation never closes a stale sync: a newer move, or 
     blind.db.getCatalogById = async () => { throw new Error('base de datos no disponible'); };
     assert.deepEqual(await blind.service.reconcileVideoCollections({ limit: 5 }), { synced: 0, errors: [] });
     assert.deepEqual(blind.cleared, []);
+});
+
+test('al eliminar contenido se borra tambien en el proveedor, y solo lo que creo esta plataforma', async () => {
+    const { service, transport, db } = setup();
+    transport.state.libraries.push({ Id: 101, Name: 'Prueba', ApiKey: 'synthetic-library-key', PullZoneId: 102, StorageZoneId: 103 });
+    transport.state.collections.push({ guid: COLLECTION, name: 'Módulo sintético [module:' + MODULE + ']' });
+    transport.state.videos.push({ guid: VIDEO, title: 'Clase', collectionId: COLLECTION });
+    db.state.library = { libraryId: '101', libraryKey: 'synthetic-library-key', pullZone: 'synthetic.b-cdn.net', tokenKey: null, drm: true };
+    db.state.collection = COLLECTION;
+    db.state.resources.set(`course:${COURSE}`, { remote_name: 'curso', remote_id: '101', state: 'ready' });
+    db.state.resources.set(`module:${MODULE}`, { remote_name: 'módulo', remote_id: COLLECTION, state: 'ready' });
+
+    // Clase: el video desaparece del proveedor.
+    assert.deepEqual(await service.deleteProviderAsset({ kind: 'video', courseId: COURSE, videoId: VIDEO, actor: ADMIN }), { deleted: true });
+    assert.equal(transport.state.videos.length, 0);
+    // Repetir el borrado no es un error: ya no estaba.
+    const again = await service.deleteProviderAsset({ kind: 'video', courseId: COURSE, videoId: VIDEO, actor: ADMIN });
+    assert.equal(again.deleted, false);
+
+    // Módulo: se borra su colección y se olvida el registro.
+    assert.equal((await service.deleteProviderAsset({ kind: 'module', courseId: COURSE, moduleId: MODULE, actor: ADMIN })).deleted, true);
+    assert.equal(transport.state.collections.length, 0);
+    assert.equal(db.state.resources.has(`module:${MODULE}`), false);
+
+    // Curso: se borra su biblioteca.
+    assert.equal((await service.deleteProviderAsset({ kind: 'course', courseId: COURSE, actor: ADMIN })).deleted, true);
+    assert.equal(transport.state.libraries.length, 0);
+    assert.equal(db.state.resources.has(`course:${COURSE}`), false);
+});
+
+test('nunca borra contenido que esta plataforma no creo, ni de cursos ajenos', async () => {
+    const { service, transport, db } = setup();
+    transport.state.libraries.push({ Id: 101, Name: 'Ajena', ApiKey: 'synthetic-library-key', PullZoneId: 102, StorageZoneId: 103 });
+    transport.state.collections.push({ guid: COLLECTION, name: 'Colección ajena' });
+    db.state.library = { libraryId: '101', libraryKey: 'synthetic-library-key', pullZone: 'synthetic.b-cdn.net', tokenKey: null, drm: true };
+    db.state.collection = COLLECTION;
+    // Sin registro propio: biblioteca y colección adoptadas, no se tocan.
+    const course = await service.deleteProviderAsset({ kind: 'course', courseId: COURSE, actor: ADMIN });
+    const module = await service.deleteProviderAsset({ kind: 'module', courseId: COURSE, moduleId: MODULE, actor: ADMIN });
+    assert.equal(course.deleted, false); assert.match(course.reason, /no la creó esta plataforma/);
+    assert.equal(module.deleted, false); assert.match(module.reason, /no la creó esta plataforma/);
+    assert.equal(transport.state.libraries.length, 1);
+    assert.equal(transport.state.collections.length, 1);
+    assert.equal(transport.state.calls.some(c => c.method === 'DELETE'), false, 'no se envió ningún borrado');
+    // Un productor ajeno no puede borrar nada de este curso.
+    await assert.rejects(service.deleteProviderAsset({ kind: 'course', courseId: COURSE, actor: { producerId: 'otro' } }), { code: 'COURSE_FORBIDDEN' });
 });

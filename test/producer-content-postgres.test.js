@@ -254,3 +254,40 @@ test('when the post-sync check cannot be run, the class stays pending instead of
     assert.match(moved.providerWarning, /no se pudo confirmar/);
     assert.equal((await db.pool.query('SELECT collection_sync_pending FROM catalog WHERE video_id=$1', [bunnyVideo])).rows[0].collection_sync_pending, true, 'the flag stays on in the database');
 });
+test('eliminar contenido pide el borrado en el proveedor y nunca lo hace antes de confirmar la base', async () => {
+    const f = await fixture();
+    const asked = [];
+    const withDelete = createProducerContent({ db, generatePublicCode: id => id.replaceAll('-', ''),
+        deleteProviderAsset: async input => { asked.push(input); return { deleted: true }; } });
+
+    // Una clase: se borra del catálogo y se pide borrar su video.
+    const video = id('catalog');
+    await db.addToCatalog({ videoId: video, title: 'Para borrar', courseId: f.courseId, producerId: f.producerId, status: 'ready', sourceType: 'bunny', bunnyUrl: 'https://vz-test.b-cdn.net/x/playlist.m3u8' });
+    const removed = await withDelete.remove(f.producerId, 'video', video);
+    assert.equal(removed.providerFilesDeleted, true);
+    assert.equal(await db.getCatalogById(video), null, 'la clase ya no está en el catálogo');
+    assert.deepEqual({ kind: asked.at(-1).kind, videoId: asked.at(-1).videoId, courseId: asked.at(-1).courseId },
+        { kind: 'video', videoId: video, courseId: f.courseId });
+
+    // Un módulo vacío: se borra y se pide borrar su colección.
+    const emptyModule = id('modules');
+    await db.createModule({ id: emptyModule, courseId: f.courseId, name: 'Vacío', producerId: f.producerId });
+    assert.equal((await withDelete.remove(f.producerId, 'module', emptyModule)).providerFilesDeleted, true);
+    assert.equal(asked.at(-1).kind, 'module');
+    assert.equal(asked.at(-1).moduleId, emptyModule);
+
+    // Un fallo del proveedor no deshace el borrado en Edulock, pero se avisa con claridad.
+    const failing = createProducerContent({ db, generatePublicCode: id => id.replaceAll('-', ''),
+        deleteProviderAsset: async () => { throw new Error('proveedor caído'); } });
+    const other = id('modules');
+    await db.createModule({ id: other, courseId: f.courseId, name: 'Otro vacío', producerId: f.producerId });
+    const failed = await failing.remove(f.producerId, 'module', other);
+    assert.equal(failed.providerFilesDeleted, false);
+    assert.match(failed.providerWarning, /no se pudo borrar en el servicio de video/);
+    assert.equal(await db.getModuleById(other), null, 'en Edulock sí quedó borrado');
+
+    // Con dependencias no se borra nada: ni en la base ni en el proveedor.
+    const before = asked.length;
+    await assert.rejects(withDelete.remove(f.producerId, 'course', f.courseId), { code: 'CONTENT_HAS_DEPENDENCIES' });
+    assert.equal(asked.length, before, 'no se pidió ningún borrado al proveedor');
+});

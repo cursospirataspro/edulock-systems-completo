@@ -2,6 +2,9 @@
 <resources>
     <string name="resources_open_catalog">Mis cursos y recursos</string>
     <string name="resources_open_documents">Mis documentos (PDF)</string>
+    <string name="courses_open">Mis Cursos</string>
+    <string name="courses_title">Mis Cursos</string>
+    <string name="courses_empty">Todavía no hay clases publicadas en tu curso.</string>
     <string name="app_name">Edulock Systems Player</string>
     <string name="app_description">Reproductor seguro de cursos con DRM y marca de agua forense</string>
     
