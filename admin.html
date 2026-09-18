@@ -2326,7 +2326,7 @@ async function loadCourseVideos(courseId) {
                 ? '<span style="background:#d81f2a;color:#fff;padding:2px 7px;border-radius:4px;font-size:0.7rem;font-weight:600">&#128274; .edu</span>'
                 : v.sourceType === 'bunny'
                 ? '<span style="background:#8a5a00;color:#fff;padding:2px 7px;border-radius:4px;font-size:0.7rem;font-weight:600">Bunny</span>'
-                : '<span style="background:#334155;color:#6d635d;padding:2px 7px;border-radius:4px;font-size:0.7rem">Local</span>';
+                : '<span style="background:#5a6470;color:#fff;padding:2px 7px;border-radius:4px;font-size:0.7rem;font-weight:600">Local</span>';
             const link = v.status === 'ready'
                 ? `<span class="copy-link" onclick="generateAndCopyLink('${esc(v.videoId)}', this)" style="cursor:pointer">Copiar enlace</span>`
                 : '';
