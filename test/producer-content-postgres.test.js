@@ -243,3 +243,14 @@ test('when a class is moved again while the provider is still syncing the first 
     assert.equal(pending?.moduleId, f.childId, 'the reconciliation will place the class in its current module');
     assert.deepEqual(synced, [f.moduleId, f.childId]);
 });
+test('when the post-sync check cannot be run, the class stays pending instead of being treated as confirmed', async () => {
+    const f = await fixture();
+    const bunnyVideo = id('catalog'); await db.addToCatalog({ videoId: bunnyVideo, title: 'Bunny blind', courseId: f.courseId, producerId: f.producerId, status: 'ready', sourceType: 'bunny', bunnyUrl: 'https://vz-test.b-cdn.net/x/playlist.m3u8' });
+    const blindDb = { ...db, getCatalogById: async () => { throw new Error('base de datos no disponible'); } };
+    const service2 = createProducerContent({ db: blindDb, generatePublicCode: id => id.replaceAll('-', ''), syncCollection: async () => {} });
+    const moved = await service2.updateVideo(f.producerId, bunnyVideo, { moduleId: f.moduleId });
+    assert.equal(moved.moduleId, f.moduleId);
+    assert.equal(moved.collectionSyncPending, true, 'not being able to check is never a confirmation');
+    assert.match(moved.providerWarning, /no se pudo confirmar/);
+    assert.equal((await db.pool.query('SELECT collection_sync_pending FROM catalog WHERE video_id=$1', [bunnyVideo])).rows[0].collection_sync_pending, true, 'the flag stays on in the database');
+});

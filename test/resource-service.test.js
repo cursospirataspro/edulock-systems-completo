@@ -108,10 +108,16 @@ test('replacing a Libre file without choosing mode keeps Libre', async () => {
     const f = fixture(); const result = await f.service.upload(f.actor, { ...f.input, protection: 'public' }, f.file);
     assert.equal((await f.service.replaceFile(f.actor, result.id, { expectedVersion: 1 }, f.file)).protection, 'public');
 });
-test('external link protection needs replacement file and clears the original URL', async () => {
+test('an external link is never turned into a file stored on the server, not even by replacing its file', async () => {
     const f = fixture(); const result = await f.service.createLink(f.actor, { ...f.input, protection: 'public', url: 'https://example.invalid/a.pdf' });
     await assert.rejects(f.service.edit(f.actor, result.id, { protection: 'protected', expectedVersion: 1 }), { code: 'RESOURCE_FILE_REQUIRED' });
-    await f.service.replaceFile(f.actor, result.id, { protection: 'protected', expectedVersion: 1 }, f.file); assert.equal(f.state.resource.publicUrl, null);
+    await assert.rejects(f.service.replaceFile(f.actor, result.id, { protection: 'protected', expectedVersion: 1 }, f.file), { code: 'RESOURCE_REPLACE_LINK_FORBIDDEN' });
+    await assert.rejects(f.service.replaceFile(f.actor, result.id, { expectedVersion: 1 }, f.file), { code: 'RESOURCE_REPLACE_LINK_FORBIDDEN' });
+    assert.equal(f.state.resource.publicUrl, 'https://example.invalid/a.pdf', 'the link keeps its URL');
+    assert.equal(f.state.resource.storageKey, null); assert.deepEqual(f.state.storagePuts, [], 'nothing was written to the server storage');
+    // A PDF already hosted (historical) can still replace its file.
+    const hosted = await f.service.upload(f.actor, { ...f.input, targetId: 'module-a', protection: 'protected' }, f.file);
+    assert.equal((await f.service.replaceFile(f.actor, hosted.id, { expectedVersion: 1 }, f.file)).protection, 'protected');
 });
 test('a failed SQL upload discards only its new encrypted orphan', async () => {
     const f = fixture(); f.state.createError = true; await assert.rejects(f.service.upload(f.actor, f.input, f.file)); assert.equal(f.state.discard.length, 1);

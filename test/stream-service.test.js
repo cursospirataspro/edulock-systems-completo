@@ -497,3 +497,33 @@ test('a just-created library is not used until the Stream API accepts its key', 
     };
     await assert.rejects(fresh.service.ensureCourseLibrary({ courseId: COURSE, actor: ADMIN }), { code: 'BUNNY_LIBRARY_KEY_PENDING', retryable: true, stage: 'library-activate' });
 });
+
+test('the background reconciliation never closes a stale sync: a newer move, or a check it cannot run, keeps the class pending', async () => {
+    const OTHER_MODULE = '00000000-0000-4000-8000-0000000000aa';
+    const base = () => {
+        const { service, transport, db } = setup();
+        transport.state.libraries.push({ Id: 101, Name: 'Prueba', ApiKey: 'synthetic-library-key', PullZoneId: 102, StorageZoneId: 103 });
+        transport.state.collections.push({ guid: COLLECTION, name: 'Módulo sintético [module:' + MODULE + ']' });
+        transport.state.videos.push({ guid: VIDEO, title: 'Clase', collectionId: '' });
+        db.state.library = { libraryId: '101', libraryKey: 'synthetic-library-key', pullZone: 'synthetic.b-cdn.net', tokenKey: null, drm: true };
+        db.state.collection = COLLECTION;
+        db.getPendingCollectionSyncs = async () => [{ videoId: VIDEO, courseId: COURSE, moduleId: MODULE }];
+        const cleared = []; db.setCollectionSyncPending = async (id, pending) => cleared.push([id, pending]);
+        return { service, transport, db, cleared };
+    };
+    // The class is still in the module that was synced: the flag is cleared.
+    const ok = base();
+    ok.db.getCatalogById = async () => ({ videoId: VIDEO, courseId: COURSE, moduleId: MODULE });
+    assert.deepEqual(await ok.service.reconcileVideoCollections({ limit: 5 }), { synced: 1, errors: [] });
+    assert.deepEqual(ok.cleared, [[VIDEO, false]]);
+    // The class moved again while the provider was answering: the stale sync must not close it.
+    const raced = base();
+    raced.db.getCatalogById = async () => ({ videoId: VIDEO, courseId: COURSE, moduleId: OTHER_MODULE });
+    assert.deepEqual(await raced.service.reconcileVideoCollections({ limit: 5 }), { synced: 0, errors: [] });
+    assert.deepEqual(raced.cleared, [], 'still pending, so the next pass puts it in its current module');
+    // The check itself fails: not being able to confirm is never a confirmation.
+    const blind = base();
+    blind.db.getCatalogById = async () => { throw new Error('base de datos no disponible'); };
+    assert.deepEqual(await blind.service.reconcileVideoCollections({ limit: 5 }), { synced: 0, errors: [] });
+    assert.deepEqual(blind.cleared, []);
+});

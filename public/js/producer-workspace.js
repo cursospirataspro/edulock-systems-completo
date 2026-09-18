@@ -38,7 +38,8 @@
   let dialogInitial='';
   const formSnapshot=()=>{try{return JSON.stringify([...new FormData(el('workspace-form')).entries()].map(([k,v])=>[k,typeof v==='string'?v:'']));}catch(_){return '';}};
   const dialogDirty=()=>!el('workspace-dialog-submit').hidden&&!el('workspace-dialog-submit').disabled&&dialogInitial!==formSnapshot();
-  function closeWorkspaceDialog(){const dialog=el('workspace-dialog');if(!dialog.open)return;if(dialogDirty()&&!confirm('Tienes cambios sin guardar. ¿Cerrar sin guardar?'))return;dialog.close();}
+  // Devuelve true solo si la ventana quedó cerrada: las acciones que navegan fuera la respetan.
+  function closeWorkspaceDialog(){const dialog=el('workspace-dialog');if(!dialog.open)return true;if(dialogDirty()&&!confirm('Tienes cambios sin guardar. ¿Cerrar sin guardar?'))return false;dialog.close();return true;}
   function showDialog(title,body,onSave,saveLabel='Guardar cambios') {
     const dialog=el('workspace-dialog'),form=el('workspace-form');
     if(dialog.open)dialog.close();
@@ -95,7 +96,7 @@
     message('app-msg',warnings.length?('Proyecto «'+course.name+'» creado. '+warnings.join(' ')):'Proyecto «'+course.name+'» creado. Ábrelo para organizar sus módulos y clases.',warnings.length?'warn':'ok');
   },'Crear proyecto');}
   function editProject(p){showDialog('Configuración del proyecto','<div class="form-grid">'+field('name','Nombre',p.name,'text',{required:true,maxLength:120})+field('author','Instructor',p.author||'','text',{maxLength:100})+field('purchaseUrl','Página de compra',p.settings?.purchaseUrl||'','url',{wide:true,hint:'Enlace público para que tus alumnos sepan dónde comprar.'})+field('description','Descripción breve',p.settings?.description||'','textarea',{wide:true})+field('embedOrigins','Sitios donde permites insertar portadas y listas',(p.settings?.embedOrigins||[]).join('\n'),'textarea',{wide:true,hint:'Un origen HTTPS por línea, sin ruta. Ejemplo: https://tuescuela.com. Hasta 10 sitios.'})+'</div><div class="section-spacer actions" id="project-extra-actions"></div><div class="section-spacer" id="project-delete-action"></div>',async d=>{await req('PATCH','/courses/'+encodeURIComponent(p.id),{name:d.name,author:d.author,settings:{purchaseUrl:d.purchaseUrl||null,description:d.description,embedOrigins:d.embedOrigins.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)}});await loadCourses(p.id);await refreshProjects();});
-    fillActions(el('project-extra-actions'),[button('Abrir contenido',()=>{el('workspace-dialog').close();return openProject(p.id);}),button('Ver licencias',async()=>{el('workspace-dialog').close();el('up-course').value=p.id;await selectCourse();await navigate('licencias');}),button('Ver estudiantes',async()=>{el('workspace-dialog').close();el('up-course').value=p.id;await selectCourse();await navigate('estudiantes');})]);
+    fillActions(el('project-extra-actions'),[button('Abrir contenido',()=>{if(!closeWorkspaceDialog())return;return openProject(p.id);}),button('Ver licencias',async()=>{if(!closeWorkspaceDialog())return;el('up-course').value=p.id;await selectCourse();await navigate('licencias');}),button('Ver estudiantes',async()=>{if(!closeWorkspaceDialog())return;el('up-course').value=p.id;await selectCourse();await navigate('estudiantes');})]);
     el('project-delete-action').append(button('Eliminar proyecto',()=>confirmAction('Eliminar proyecto','Sólo se puede eliminar un proyecto vacío, sin clases, módulos ni licencias. Esta acción no se puede deshacer.',async()=>{await req('DELETE','/courses/'+encodeURIComponent(p.id));await loadCourses();await refreshProjects();await overview();},'Eliminar proyecto'),{danger:true}));}
 
   /* ── Contenido: un árbol de módulos, submódulos y clases ───────────────────── */
@@ -162,7 +163,7 @@
     let orderWarning=null;
     if(Number.isInteger(position)){const fresh=state.projects.find(x=>x.id===courseId);const target=(fresh?.videos||[]).filter(x=>(x.moduleId||null)===(moduleId||null)&&x.videoId!==v.videoId).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(x=>x.videoId);target.splice(Math.min(position,target.length),0,v.videoId);
       try{await req('POST','/reorder',{kind:'videos',courseId,moduleId:moduleId||null,ids:target});await refreshProjects();}
-      catch(error){orderWarning='La clase quedó al final del módulo porque no se pudo guardar su posición ('+error.message+'). Arrástrala de nuevo para colocarla.';}}
+      catch(error){orderWarning='No se pudo guardar su posición dentro del módulo ('+error.message+'); conserva el orden que ya tenía el servidor. Arrástrala de nuevo para colocarla.';}}
     const notes=[warning,orderWarning].filter(Boolean);
     message('app-msg',notes.length?('Clase movida. '+notes.join(' ')):'Clase movida; sus recursos, enlaces y permisos se conservan.',notes.length?'warn':'ok');}
   function moveClassDialog(v){const p=current();showDialog('Mover clase','<p class="muted">Solo dentro de esta formación. La clase conserva su enlace, recursos y licencias.</p><div class="form-grid">'+field('moduleId','Módulo o submódulo de destino',v.moduleId||'','select',{choices:moduleChoices(p,{root:'Sin módulo'}),wide:true})+'</div>',async d=>{if((d.moduleId||null)===(v.moduleId||null))return;await moveClass(v,d.moduleId||null);},'Mover');}
@@ -171,12 +172,12 @@
       const patch={title:d.title,presentation:{coverUrl:d.coverUrl||null,theme:d.theme,description:d.description}};if((d.moduleId||null)!==(v.moduleId||null))patch.moduleId=d.moduleId||null;
       const result=await req('PATCH','/videos/'+encodeURIComponent(v.videoId),patch);await refreshProjects();
       message('app-msg',result?.video?.providerWarning?('Clase guardada. '+result.video.providerWarning):'Clase guardada.',result?.video?.providerWarning?'warn':'ok');});
-    fillActions(el('video-extra-actions'),[button('Recursos (enlaces)',()=>{el('workspace-dialog').close();openResourceEditor('video',v.videoId,v.title);}),button('Enlace de la clase',b=>{el('workspace-dialog').close();return showClassLink(v,b);},{disabled:v.status!=='ready'})]);
+    fillActions(el('video-extra-actions'),[button('Recursos (enlaces)',()=>{if(!closeWorkspaceDialog())return;openResourceEditor('video',v.videoId,v.title);}),button('Enlace de la clase',b=>{if(!closeWorkspaceDialog())return;return showClassLink(v,b);},{disabled:v.status!=='ready'})]);
     el('video-delete-action').append(button('Quitar del catálogo',()=>confirmAction('Quitar clase del catálogo','La clase dejará de aparecer en el catálogo. El archivo de origen se conserva en tu servicio de video; esta acción no libera ese almacenamiento.',async()=>{await req('DELETE','/videos/'+encodeURIComponent(v.videoId));await refreshProjects();},'Quitar clase'),{danger:true}));}
   /* ── Nueva clase: el video se sube desde el equipo con el mismo controlador de siempre ── */
   let _lastUploadedVideoId=null;
   window.openClassDialog=function(moduleId='',{retryJob=null}={}){const p=current();if(!p)throw new Error('Selecciona una formación.');const dialog=el('class-dialog');
-    fillModuleSelect(el('up-module'),p.modules||[],{selected:moduleId||''});el('up-title').value=retryJob?retryJob.title:'';el('up-description').value='';el('up-file').value='';
+    fillModuleSelect(el('up-module'),p.modules||[],{selected:moduleId||''});el('up-title').value=retryJob?retryJob.title:'';el('up-description').value=retryJob&&retryJob.description?retryJob.description:'';el('up-file').value='';
     el('class-dialog-title').textContent=retryJob?'Reintentar envío':'Nueva clase';const target=(p.modules||[]).find(m=>m.id===(moduleId||''));el('class-dialog-context').textContent=p.name+(target?' › '+target.name:' › Sin módulo');
     el('up-progress').classList.add('hidden');el('up-msg').textContent='';el('up-msg').className='muted';el('class-dialog-after').hidden=true;el('class-dialog-after').replaceChildren();_lastUploadedVideoId=null;
     if(typeof renderModuleCollectionStatus==='function')renderModuleCollectionStatus();
@@ -314,7 +315,7 @@
     const hash='#'+state.page+(state.page==='videos'&&activeId()?'/'+activeId():'');
     if(location.hash!==hash){if(push)history.pushState(null,'',hash);else history.replaceState(null,'',hash);}
     if(state.ready)await loadSection();}
-  selectCourse=async function(){if(state.licenseGenerationProject&&activeId()!==state.licenseGenerationProject)el('up-course').value=state.licenseGenerationProject;await original.selectCourse();state.version++;state.videoPage=1;el('lic-course').value=activeId();try{sessionStorage.setItem('edulock-active-project:'+(_me?.id||''),activeId());}catch(_){}el('workspace-context-hint').textContent=activeId()?'El contenido, las licencias y los estudiantes se filtran por este proyecto.':'Viendo todos tus proyectos. Selecciona uno para subir clases.';el('license-lot-filter').value='';renderProjects();renderContent();if(state.page==='videos')history.replaceState(null,'','#videos'+(activeId()?'/'+activeId():''));if(state.ready)await loadSection();};
+  selectCourse=async function(){if(state.licenseGenerationProject&&activeId()!==state.licenseGenerationProject)el('up-course').value=state.licenseGenerationProject;await original.selectCourse();state.version++;state.videoPage=1;el('lic-course').value=activeId();try{sessionStorage.setItem('edulock-active-project:'+(_me?.id||''),activeId());}catch(_){}el('workspace-context-hint').textContent=activeId()?'El contenido, las licencias y los estudiantes se filtran por este proyecto.':'Viendo todos tus proyectos. Selecciona uno para subir clases.';el('license-lot-filter').value='';if(typeof refreshUploadPanel==='function')refreshUploadPanel();renderProjects();renderContent();if(state.page==='videos')history.replaceState(null,'','#videos'+(activeId()?'/'+activeId():''));if(state.ready)await loadSection();};
   loadCourses=async function(preferredId){await original.loadCourses(preferredId);await refreshProjects();};
   loadVideos=async function(){await refreshProjects();};
   async function syncLicenseScope() {

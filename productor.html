@@ -46,7 +46,7 @@
   details{margin-top:12px} summary{cursor:pointer;color:var(--c-text);padding:6px 0}
   @media(max-width:600px){.wrap{padding:12px}.card{padding:14px}.brand{flex-wrap:wrap}.job{align-items:flex-start;flex-direction:column}table{min-width:520px}}
 </style>
-<link rel="stylesheet" href="/css/producer-workspace.css?v=20260917-fixes">
+<link rel="stylesheet" href="/css/producer-workspace.css?v=20260918-fixes2">
 </head>
 <body>
 
@@ -521,6 +521,9 @@ function showUploadProgress(view) {
     $('up-bar').classList.toggle('indeterminate', view.percent === null);
 }
 let _showAllUploads = false;
+// Al cambiar de formación la lista se reconstruye de inmediato: nunca quedan a la vista
+// las filas del curso anterior aunque no haya ningún otro evento de actualización.
+function refreshUploadPanel() { _showAllUploads = false; if (_stream) renderUploadJobs(_stream.getJobs()); }
 function renderUploadJobs(jobs) {
     $('up-jobs').replaceChildren();
     const pending = jobs.filter(j => !j.ready);
@@ -668,7 +671,7 @@ $('up-module').addEventListener('change', renderModuleCollectionStatus);
 // Workspace starts after its navigation and controllers are ready.
 
 </script>
-<script src="/js/producer-tree.js?v=20260917-fixes"></script>
-<script src="/js/producer-workspace.js?v=20260917-fixes"></script>
+<script src="/js/producer-tree.js?v=20260918-fixes2"></script>
+<script src="/js/producer-workspace.js?v=20260918-fixes2"></script>
 </body>
 </html>

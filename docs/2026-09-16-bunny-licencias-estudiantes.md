@@ -301,3 +301,19 @@ Se revisaron los 10 puntos de la revisión externa contra el código; todos eran
 | 10 | Subidas pendientes mezcladas entre formaciones | El panel muestra las de la formación activa, indica la formación de cada fila y permite ver las demás | Código; el efecto se había observado en la prueba anterior |
 
 Suite local 379/389 (los mismos 10 preexistentes). Datos QA borrados; las bibliotecas creadas en Bunny se conservan.
+
+### 15.9 Segunda revisión externa: huecos que quedaban abiertos (2026-09-18)
+
+Los 7 puntos de la segunda revisión eran ciertos. Correcciones, todas desplegadas y verificadas:
+
+| # | Hueco | Corrección | Verificación |
+|---|-------|------------|--------------|
+| 1 | La ruta de reemplazar archivo permitía convertir un recurso de enlace en un PDF alojado en el VPS (la de subir ya estaba cerrada) | `replaceFile` exige que el recurso ya tenga archivo (`RESOURCE_REPLACE_LINK_FORBIDDEN`, 409). Los PDF históricos siguen pudiendo reemplazar su archivo | Producción: enlace → reemplazo 409, subida nueva 410. Test unitario reescrito |
+| 2 | La reconciliación automática podía cerrar una sincronización antigua sin comprobar el módulo actual; y un fallo al comprobar se trataba como confirmación | `confirmStillInModule` es ahora un helper compartido: la reconciliación solo limpia el indicador si la clase sigue en el módulo sincronizado, y un error al comprobar deja la clase pendiente | 3 tests nuevos (caso correcto, movimiento más nuevo, comprobación fallida) + test Postgres del caso "no se pudo comprobar": 99/99 en la base QA del VPS |
+| 3 | "Reintentar envío" abría la ventana con la descripción vacía, y el botón normal de subida enviaba esa vacía | La ventana de reintento se rellena con la descripción guardada en el intento | Fixture: la ventana "Reintentar envío" muestra el título y la descripción originales |
+| 4 | Si fallaba la escritura de la relación solicitud→curso, un reintento podía crear otro curso | El identificador del curso se **reserva antes de crearlo**: si la reserva falla no se crea nada; si falla la creación, el reintento reutiliza el mismo identificador | Producción: caso normal (mismo curso, `replayed`) y caso de reserva huérfana (el reintento crea el curso con el id reservado, nunca uno nuevo) |
+| 5 | "Recursos" y "Enlace" dentro de "Editar clase" cerraban la ventana sin avisar de cambios sin guardar | `closeWorkspaceDialog()` devuelve si realmente cerró; esas acciones (y las de Configuración del proyecto) solo continúan si cerró | Fixture: con texto sin guardar pregunta, la ventana sigue abierta, el texto se conserva y el editor no se abre; al aceptar, continúa |
+| 6 | La lista de subidas pendientes no se reconstruía al cambiar de formación | `refreshUploadPanel()` se ejecuta al cambiar de curso | Fixture: se ejecuta una vez por cambio de formación |
+| 7 | El aviso afirmaba que la clase quedaba "al final del módulo" sin haberlo comprobado | Ahora dice que no se pudo guardar la posición y que conserva el orden que ya tenía el servidor | Fixture: arrastre con fallo de orden simulado muestra el texto nuevo |
+
+Suite local 380/390 (los mismos 10 preexistentes: 7 suites Postgres sin base local y 3 del motor PDF). En el VPS, contra la base QA: 99/99. Datos QA borrados; nada se borró en el proveedor de video.
