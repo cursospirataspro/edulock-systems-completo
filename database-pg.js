@@ -1580,9 +1580,58 @@ module.exports.updateCourse = async (id, { name, author }) => {
 
 module.exports.deleteCourse = async (id) => {
     return transaction(async client => {
+        // Igual que al borrar un modulo: primero se resuelve que hay que borrar en
+        // el servicio de video, con las filas todavia vivas, y se anota en esta
+        // misma transaccion. Solo lo que consta que creo esta plataforma.
+        const curso = (await client.query(`SELECT c.id, c.producer_id, c.bunny_library_id, c.bunny_library_key,
+                r.remote_id AS owned_library
+            FROM courses c LEFT JOIN stream_resources r ON r.resource_key = 'course:' || c.id
+            WHERE c.id = $1`, [id])).rows[0];
+        if (!curso) return { deleted: false, queuedDeletions: [], resourcesClosed: 0 };
+
+        const modulos = (await client.query(`SELECT m.id, m.bunny_collection_id, r.remote_id AS owned_collection
+            FROM modules m LEFT JOIN stream_resources r ON r.resource_key = 'module:' || m.id
+            WHERE m.course_id = $1`, [id])).rows;
+        const queuedDeletions = [];
+        const encolar = async entrada => { await module.exports.enqueueProviderDeletion(client, entrada); queuedDeletions.push(entrada.id); };
+
+        if (curso.bunny_library_id && curso.bunny_library_key) {
+            for (const m of modulos) {
+                if (!m.bunny_collection_id || !m.owned_collection) continue;
+                if (String(m.owned_collection) !== String(m.bunny_collection_id)) continue;
+                await encolar({ id: crypto.randomUUID(), kind: 'module', producerId: curso.producer_id || null,
+                    courseId: id, moduleId: m.id, videoId: null,
+                    libraryId: curso.bunny_library_id, libraryKey: curso.bunny_library_key,
+                    remoteId: m.bunny_collection_id });
+            }
+            if (curso.owned_library && String(curso.owned_library) === String(curso.bunny_library_id)) {
+                await encolar({ id: crypto.randomUUID(), kind: 'course', producerId: curso.producer_id || null,
+                    courseId: id, moduleId: null, videoId: null,
+                    libraryId: curso.bunny_library_id, libraryKey: curso.bunny_library_key,
+                    remoteId: curso.bunny_library_id });
+            }
+        }
+
+        // Las clases quedan sin curso ni modulo (diferencia legitima del panel de admin).
         await client.query('UPDATE catalog SET course_id=NULL, module_id=NULL WHERE course_id=$1', [id]);
+        // Nada puede quedar apuntando a un curso o modulo inexistente.
+        const idsModulos = modulos.map(m => m.id);
+        const cerrados = (await client.query(`UPDATE protected_resources SET deleted_at=NOW()
+            WHERE deleted_at IS NULL AND (course_id=$1 OR (target_kind='module' AND target_id = ANY($2::text[])))
+            RETURNING id`, [id, idsModulos])).rowCount;
+        await client.query(`DELETE FROM producer_content_settings WHERE entity_id = ANY($1::text[]) OR (entity_kind='course' AND entity_id=$2)`,
+            [idsModulos, id]).catch(() => {});
+        await client.query(`DELETE FROM stream_resources WHERE resource_key = ANY($1::text[])`,
+            [[...idsModulos.map(x => 'module:' + x), 'course:' + id]]);
         await client.query('DELETE FROM modules WHERE course_id=$1', [id]);
         await client.query('DELETE FROM courses WHERE id=$1', [id]);
+        // NOTA: las licencias, los lotes y los accesos de los alumnos NO se tocan.
+        // El panel del productor ni siquiera deja borrar un curso que los tenga
+        // («Las licencias y accesos existentes se conservan»), mientras que el de
+        // admin si lo permite y esas filas quedan apuntando a un curso que ya no
+        // existe. Es una contradiccion entre las dos rutas que decide el
+        // propietario: no se resuelve aqui borrando datos de alumnos.
+        return { deleted: true, queuedDeletions, resourcesClosed: cerrados };
     });
 };
 

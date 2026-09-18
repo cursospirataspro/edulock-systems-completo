@@ -282,8 +282,8 @@ test('F08: las dos pantallas de Android usan la misma política de reproducción
     }
 });
 
-// ── N03 ──────────────────────────────────────────────────────────────────────
-test('N03: el filtro de origen compara el host exacto, no una subcadena', () => {
+// ── N02 ──────────────────────────────────────────────────────────────────────
+test('N02: el filtro de origen compara el host exacto, no una subcadena', () => {
     const cuerpo = routeBody("app.get('/api/video/:videoId/play'");
     const inicio = cuerpo.indexOf('const _selfHost');
     const fin = cuerpo.indexOf('if (!isSameOrigin');
@@ -401,4 +401,18 @@ test('R08: se distinguen amenaza comprobada, binario sin firma y comprobación n
         'no haber podido comprobar no puede contarse como hallazgo');
     assert.ok(!/if \(err\) \{ resolve\(false\); return; \}/.test(bloque),
         'un fallo del sondeo no puede devolver lo mismo que "limpio"');
+});
+
+test('F03: borrar un curso desde admin no deja documentos ni registros colgando', () => {
+    const fuente = fs.readFileSync(path.join(__dirname, '..', 'database-pg.js'), 'utf8');
+    const inicio = fuente.indexOf('module.exports.deleteCourse =');
+    const bloque = fuente.slice(inicio, fuente.indexOf('module.exports.moveVideoToCourse'));
+    assert.ok(bloque.includes('UPDATE protected_resources SET deleted_at=NOW()'));
+    assert.ok(bloque.includes('DELETE FROM stream_resources WHERE resource_key = ANY'));
+    assert.ok(bloque.includes('enqueueProviderDeletion'));
+    assert.ok(bloque.indexOf('enqueueProviderDeletion') < bloque.indexOf('DELETE FROM courses WHERE id=$1'),
+        'el descriptor remoto se captura antes de borrar');
+    assert.ok(!/DELETE FROM licenses/.test(bloque),
+        'las licencias y los accesos de los alumnos no se tocan: es una decisión del propietario');
+    assert.ok(bloque.includes('decide el'), 'la contradicción entre paneles queda documentada en el código');
 });

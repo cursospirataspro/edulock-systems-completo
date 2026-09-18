@@ -2155,9 +2155,19 @@ app.delete('/api/courses/all', requireAdmin, async (req, res) => {
 
 /** DELETE /api/courses/:id — Elimina un curso (videos quedan sin asignar) */
 app.delete('/api/courses/:id', requireAdmin, async (req, res) => {
-    await db.deleteCourse(req.params.id);
-    syncCatalogSeed();
-    res.json({ ok: true });
+    const resultado = await db.deleteCourse(req.params.id);
+    if (!resultado || !resultado.deleted) return res.status(404).json({ error: 'Curso no encontrado' });
+    await syncCatalogSeed();
+    let providerFilesDeleted = false;
+    if (resultado.queuedDeletions.length) {
+        try {
+            await streamService.runProviderDeletions({ limit: 20 });
+            const estados = await Promise.all(resultado.queuedDeletions.map(x => db.getProviderDeletion(x)));
+            providerFilesDeleted = estados.every(e => e && (e.state === 'done' || e.state === 'gone'));
+        } catch { providerFilesDeleted = false; }
+    }
+    res.json({ ok: true, resourcesClosed: resultado.resourcesClosed,
+        providerFilesDeleted, providerPending: resultado.queuedDeletions.length && !providerFilesDeleted });
 });
 
 /** GET /api/courses/unassigned/videos — Videos sin curso (MUST be before :id route) */
