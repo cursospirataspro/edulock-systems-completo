@@ -13,7 +13,7 @@ publicó ningún binario: todo el trabajo vive en una rama de correcciones.
 |---|---|
 | Rama de trabajo | `fix/auditoria-f01-f09-r01-r08` |
 | Commit inicial | `b112d6c` |
-| Commit final | `3887ca0` |
+| Commit final | `6f1c880` |
 | Archivos cambiados | 21 (+1991 / −218) |
 | Node local | v24.11.1 · Node del servidor: v20.20.2 |
 | Base de datos de pruebas | PostgreSQL 17 en el VPS, base **desechable** `edulock_qa_auditoria` |
@@ -39,8 +39,8 @@ no toqué claves maestras.
 |---|---|---|---|---|
 | **F01** | Corregido y verificado | El catálogo de Android no pasaba el token de reproducción, así que el manifiesto se pedía con el JWT de la cuenta. El servidor exige un token atado al video y a la sesión: lo rechaza con `SESSION_REQUIRED`. **La reproducción desde «Mis Cursos» en Android no funcionaba.** | Política de reproducción compartida (`PlaybackPolicy`); el manifiesto, sus variantes, claves y segmentos usan siempre el token de reproducción. Sin ese token no se intenta la petición. | 3 pruebas del contrato del servidor + 10 pruebas Kotlin + 2 de integración cliente |
 | **F02** | Corregido y verificado | El borrado en el servicio de video se decidía **después** de borrar en la base, leyendo la fila que acababa de desaparecer. Las colecciones y las bibliotecas **nunca llegaban a borrarse**. | El descriptor remoto se resuelve con las filas vivas y se encola en la **misma transacción** (tabla `provider_deletions`); la ejecución va después, con reintentos acotados, recuperación tras reinicio e idempotencia. | 7 pruebas de integración contra PostgreSQL real |
-| **F03** | Corregido y verificado | Borrar un módulo desde el panel de admin dejaba documentos apuntando a módulos inexistentes, ajustes huérfanos y colecciones sin borrar, mientras el panel del productor sí limpiaba todo. | Las dos rutas comparten las reglas de integridad, todo dentro de una transacción. La diferencia legítima (el admin arrastra submódulos y deja las clases sin módulo) se conserva. La ruta responde 404 si el módulo no existe. | 2 pruebas + suite de integración |
-| **F04** | Corregido | `IS_DEV` dependía solo de `--dev`: **el binario distribuido aceptaba esa bandera** y con ella se saltaba el control de sesión remota, el escaneo de seguridad periódico y la actualización obligatoria, y abría las herramientas de desarrollo. | `IS_DEV = !app.isPackaged && process.argv.includes('--dev')`. En un binario empaquetado es siempre falso. | 1 prueba · **pendiente**: comprobación sobre el binario empaquetado final |
+| **F03** | Corregido y verificado | Borrar un **módulo** o un **curso** desde el panel de admin dejaba documentos apuntando a elementos inexistentes, ajustes huérfanos y colecciones y bibliotecas sin borrar, mientras el panel del productor sí limpiaba todo. También afectaba a la operación masiva de borrado de todos los cursos. | Las dos rutas comparten las reglas de integridad, todo dentro de una transacción, y el borrado remoto se encola igual que en el panel del productor. La diferencia legítima (el admin arrastra submódulos y deja las clases sin curso ni módulo) se conserva. Las rutas responden 404 si el elemento no existe. | 3 pruebas + suite de integración |
+| **F04** | Corregido | `IS_DEV` dependía solo de `--dev`: **el binario distribuido aceptaba esa bandera** y con ella se saltaba el control de sesión remota, el escaneo de seguridad periódico y la actualización obligatoria, y abría las herramientas de desarrollo. | `IS_DEV = !app.isPackaged && process.argv.includes('--dev')`. En un binario empaquetado es siempre falso. | 1 prueba + **verificado en el binario empaquetado** (ver §5) |
 | **F05** | Corregido y verificado | Sin `ADMIN_PASS`, el servidor usaba `changeme`: creaba el administrador con esa contraseña y, en una instalación existente, **reescribía la contraseña real del propietario con una conocida**. | Sin `ADMIN_PASS` no se crea administrador (el arranque se detiene) y el existente queda intacto. El login ya no acepta contraseña por omisión y compara en tiempo constante. Los tokens llevan la huella de la credencial: al cambiarla, las sesiones abiertas dejan de valer. | 5 pruebas + reproducción del fallo en el código anterior |
 | **F06** | Corregido y verificado | La columna `documents` puede venir cifrada (`enc1:`) y se le aplicaba `JSON.parse` directo: fallaba en silencio y el módulo aparecía **sin materiales**. | Conversor que entiende el cifrado y distingue «no hay materiales» de «no se pudieron leer». Aplicado en el catálogo del alumno y en el repositorio de recursos. | 5 pruebas + **una prueba que ya existía en el repo y fallaba desde antes vuelve a pasar** |
 | **F07** | Corregido y verificado | `/api/catalog/add-bunny` y `/api/video/upload` respondían éxito antes de que la fila estuviera guardada. | Se espera la escritura; si falla, se responde error. Ninguna llamada a `addToCatalog` queda sin esperar. | 3 pruebas |
@@ -115,6 +115,31 @@ repitió tres veces seguidas para descartar intermitencias.
 437 pruebas · 434 pasan · 3 fallan. Las 3 son las del motor de documentos
 (N01): en este equipo no existe `pdf-runtime`. Con el motor real, en el
 servidor, pasan.
+
+### Verificación sobre el binario empaquetado (F04 y R04)
+
+No basta con el código fuente: la corrección se comprobó dentro del paquete real.
+
+- Se compiló el portable (). La firma **VMP de
+  Castlabs** se verificó durante la compilación: *«Signature is valid: streaming,
+  1398 days left»*.
+- Leyendo  **dentro del  empaquetado**: , usa , tiene la comparación por host exacto, tiene los estados de firma, y **no queda ninguna escritura de la sesión en texto plano**.
+- Comportamiento: se ejecutó el binario **con  y sin él**. En los dos casos
+  aparece la misma y única ventana «Iniciar sesión» y **no se abre ninguna ventana
+  de herramientas de desarrollo**.
+
+### Artefactos generados
+
+| Archivo | Tamaño | SHA-256 |
+|---|---|---|
+|  | 92 458 687 B |  |
+
+Firmas: la **VMP (Castlabs EVS)** está aplicada y verificada; la **Authenticode**
+no, porque el certificado sigue pendiente de compra. Son firmas distintas y no se
+sustituyen. El instalador () que hay en  es de una compilación
+anterior y **no** incluye estas correcciones: habría que regenerarlo.
+
+Estos artefactos **no se han publicado ni desplegado**.
 
 ### Antes y después de cada parche
 
