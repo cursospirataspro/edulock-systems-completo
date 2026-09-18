@@ -141,6 +141,13 @@ async function init() {
     window.vcbPlayer.onPlay(handleCdpPlay);
     window.vcbPlayer.onStopPlayback?.(() => { STATE.isLoggedIn = false; stopPlayback(); });
 
+    // "Mis Cursos" pide reproducir una clase. El panel solo existe si el servidor lo habilitó
+    // para el productor de la sesión; aquí se vuelve a pedir autorización al servidor.
+    document.addEventListener('edulock:play-video', event => {
+        const id = event && event.detail && event.detail.videoId;
+        playFromCatalog(id).catch(error => console.error('[VCB] Mis Cursos:', error && error.message));
+    });
+
     // ── Seguridad: bloquear/reanudar reproducción por amenaza externa ─────────
     window.vcbPlayer.onSecurityBlocked((data) => {
         stopPlayback();
@@ -413,6 +420,59 @@ async function resolveAndPlay(generation = STATE.playGeneration) {
     if (!manifestUrl) throw new Error('El servidor no devolvió la URL del manifiesto.');
 
     await startHls(manifestUrl, mediaToken);
+}
+
+// ── "Mis Cursos" (capa opcional): reproducir una clase elegida en el catálogo ──
+// Usa el mismo motor de siempre: el servidor vuelve a autorizar en /api/resolve-direct
+// (licencia, curso de la sesión, dispositivo, productor) y aquí solo se reparte el
+// resultado a startEdu/startVdoCipher/startVdoCipherDirect/startHls, como en los enlaces.
+// STATE.auth (JWT de la cuenta) NUNCA se toca: el token de reproducción va a STATE.mediaToken.
+async function playFromCatalog(videoId) {
+    if (!STATE.isLoggedIn) return;
+    if (!STATE.apiBase) { showOverlay('⚙️', 'Servidor no configurado', 'Configura la URL del servidor en la pantalla de inicio.'); return; }
+    if (typeof videoId !== 'string' || !videoId) return;
+    stopPlayback();                       // cierra la sesión anterior e incrementa playGeneration
+    hideOverlay();
+    const generation = STATE.playGeneration;
+    showSplash(false);
+    showPlayerArea(true);
+    showSpinner(true);
+    try {
+        const res = await apiFetch('/api/resolve-direct', 'POST', { videoId, deviceId: STATE.deviceId || '' });
+        if (generation !== STATE.playGeneration) return;
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { code: body.code });
+        }
+        const data = await res.json();
+        if (generation !== STATE.playGeneration) return;
+        STATE.watermarkText = data.watermarkText || '';
+        STATE.studentCode   = data.studentCode || '';
+        STATE.videoId       = data.videoId || videoId;
+        STATE.sessionId     = data.sessionId || '';
+        STATE.mediaToken    = data.mediaToken || data.sessionToken || '';
+        try { STATE.tokenExpAt = (JSON.parse(atob(STATE.mediaToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp || 0) * 1000; }
+        catch { STATE.tokenExpAt = 0; }
+        if (data.watermarkConfig) _wmConfig = data.watermarkConfig[_WM_OS_KEY] || data.watermarkConfig;
+        STATE.wmCourseId = data.courseId || STATE.wmCourseId || '__default__';
+        startWatermark();
+        startHeartbeat();
+        document.dispatchEvent(new CustomEvent('edulock:video-changed', { detail: { videoId: STATE.videoId } }));
+        if (data.sourceType === 'edu') {
+            await startEdu(data.eduContentId || data.contentId);
+        } else if (data.sourceType === 'vdocipher') {
+            await startVdoCipher(data.otp, data.playbackInfo);
+        } else if (data.sourceType === 'vdocipher_direct') {
+            await startVdoCipherDirect(data.directUrl);
+        } else {
+            if (!data.manifestUrl) throw new Error('El servidor no devolvió la URL del manifiesto.');
+            await startHls(data.manifestUrl, STATE.mediaToken);
+        }
+    } catch (err) {
+        if (generation !== STATE.playGeneration) return;
+        if (err.code === 'LICENSE_REQUIRED') { window.vcbPlayer.requestLicense(); return; }
+        showOverlay('🔒', 'No se pudo abrir la clase', err.message || 'Vuelve a intentarlo.');
+    }
 }
 
 // ── SecureLoader — decodifica el wrapper JSON {"d":"base64..."} del manifest ──

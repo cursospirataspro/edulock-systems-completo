@@ -1589,9 +1589,11 @@
                         <thead><tr style="text-align:left;color:var(--c-muted)">
                             <th style="padding:6px">Correo</th><th style="padding:6px">Nombre</th>
                             <th style="padding:6px">Licencias</th><th style="padding:6px">Disp.</th>
-                            <th style="padding:6px">Alumnos</th><th style="padding:6px">Estado</th><th style="padding:6px">Acciones</th>
+                            <th style="padding:6px">Alumnos</th><th style="padding:6px">Estado</th>
+                            <th style="padding:6px" title="Muestra «Mis Cursos» dentro del reproductor. No afecta a los enlaces de clase, que siguen funcionando igual.">Mis Cursos</th>
+                            <th style="padding:6px">Acciones</th>
                         </tr></thead>
-                        <tbody id="producers-body"><tr><td colspan="7" style="padding:10px;color:var(--c-muted)">Cargando…</td></tr></tbody>
+                        <tbody id="producers-body"><tr><td colspan="8" style="padding:10px;color:var(--c-muted)">Cargando…</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -5639,7 +5641,7 @@ async function loadProducers() {
     const tb = $('producers-body'); if (!tb) return;
     try {
         const d = await api('GET', '/api/owner/producers');
-        if (!d.producers.length) { tb.innerHTML = '<tr><td colspan="7" style="padding:10px;color:var(--c-muted)">Sin clientes todavía.</td></tr>'; return; }
+        if (!d.producers.length) { tb.innerHTML = '<tr><td colspan="8" style="padding:10px;color:var(--c-muted)">Sin clientes todavía.</td></tr>'; return; }
         tb.innerHTML = d.producers.map(p => `<tr style="border-top:1px solid var(--c-border)">
             <td style="padding:6px">${esc(p.email)}</td>
             <td style="padding:6px">${esc(p.name||'—')}</td>
@@ -5648,12 +5650,30 @@ async function loadProducers() {
             <td style="padding:6px">${p.studentsCount}</td>
             <td style="padding:6px">${p.active ? '<span style="color:var(--c-success)">Activo</span>' : '<span style="color:var(--c-error)">Suspendido</span>'}</td>
             <td style="padding:6px;white-space:nowrap">
+                <button class="btn btn-ghost" style="min-width:64px;${p.embeddedCatalogEnabled ? 'color:var(--c-success);border-color:var(--c-success)' : ''}"
+                    title="${p.embeddedCatalogEnabled ? 'El reproductor muestra «Mis Cursos» a sus alumnos.' : 'Sus alumnos abren las clases solo con los enlaces, como hasta ahora.'}"
+                    onclick="toggleEmbeddedCatalog('${esc(p.id)}',${p.embeddedCatalogEnabled ? 'false' : 'true'})">${p.embeddedCatalogEnabled ? 'ON' : 'OFF'}</button>
+            </td>
+            <td style="padding:6px;white-space:nowrap">
                 <button class="btn btn-ghost" onclick="editProducerQuota('${esc(p.id)}',${Number(p.maxLicenses)||0},${Number(p.maxDevices)||1})">Editar cuota</button>
                 <button class="btn btn-ghost" onclick="toggleProducer('${esc(p.id)}',${p.active?'false':'true'})">${p.active?'Suspender':'Activar'}</button>
                 <button class="btn btn-ghost" onclick="resetProducerPass('${esc(p.id)}')">Clave</button>
                 <button class="btn btn-red" onclick="deleteProducer('${esc(p.id)}','${esc(p.email)}')">Eliminar</button>
             </td></tr>`).join('');
-    } catch (e) { tb.innerHTML = `<tr><td colspan="7" style="padding:10px;color:var(--c-error)">${esc(e.message)}</td></tr>`; }
+    } catch (e) { tb.innerHTML = `<tr><td colspan="8" style="padding:10px;color:var(--c-error)">${esc(e.message)}</td></tr>`; }
+}
+// «Mis Cursos» dentro del reproductor. Es independiente de Activo/Suspendido y solo lo cambia
+// el administrador: con OFF el alumno sigue abriendo sus clases por los enlaces de siempre.
+async function toggleEmbeddedCatalog(id, enabled) {
+    producerAdminMessage('');
+    const on = enabled === true || enabled === 'true';
+    try {
+        await api('PUT', '/api/owner/producers/' + id, { embeddedCatalogEnabled: on });
+        await loadProducers();
+        producerAdminMessage(on
+            ? 'Mis Cursos activado: sus alumnos verán el catálogo dentro del reproductor. Los enlaces siguen funcionando.'
+            : 'Mis Cursos desactivado: sus alumnos vuelven a abrir las clases solo con los enlaces.');
+    } catch (e) { producerAdminMessage('Error: ' + e.message, true); }
 }
 async function editProducerQuota(id, curLic, curDev) {
     const lic = prompt('Cantidad de licencias que puede generar este cliente (0 = sin límite):', curLic);

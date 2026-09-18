@@ -194,10 +194,49 @@
         .resource-row strong,.resource-row small { display:block;overflow-wrap:anywhere }
         .resource-row small { margin-top:5px;color:#9eafc2 }
         .resource-row button { flex-shrink:0 }
+        /* ── "Mis Cursos": capa opcional; usa los mismos colores del reproductor ── */
+        #btn-courses { position:fixed;right:16px;top:14px;z-index:210;padding:9px 15px;border:1px solid #426079;border-radius:7px;background:#142839;color:#fff;cursor:pointer;font:inherit;font-size:.85rem;display:none }
+        #btn-courses[hidden] { display:none !important }
+        #btn-courses.available { display:block }
+        #btn-courses:hover { background:#19384d }
+        #courses-drawer { position:fixed;top:0;right:0;bottom:0;width:min(400px,92vw);z-index:230;background:#101d2b;border-left:1px solid #34506b;box-shadow:-14px 0 34px rgba(0,0,0,.45);display:flex;flex-direction:column }
+        #courses-drawer[hidden] { display:none }
+        #courses-drawer header { display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid #2e4154 }
+        #courses-drawer header h2 { flex:1;font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:#8ad8ed;margin:0 }
+        #courses-drawer header button { padding:6px 11px;border:1px solid #426079;border-radius:6px;background:#19384d;color:#fff;cursor:pointer;font:inherit;font-size:.8rem }
+        #courses-tree { flex:1;overflow:auto;padding:12px 14px 22px }
+        #courses-status { padding:0 18px 12px;color:#c8d8e4;line-height:1.5;font-size:.86rem }
+        #courses-backdrop { position:fixed;inset:0;z-index:229;background:rgba(0,0,0,.35) }
+        #courses-backdrop[hidden] { display:none }
+        .ct-node { margin:2px 0 }
+        .ct-toggle { display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:7px 8px;border:0;border-radius:6px;background:transparent;color:#dce9f4;cursor:pointer;font:inherit;font-size:.88rem }
+        .ct-toggle:hover { background:#17293a }
+        .ct-toggle .ct-caret { color:#6f8ba4;width:12px;flex-shrink:0 }
+        .ct-course > .ct-toggle { color:#8ad8ed;font-weight:700 }
+        .ct-children { margin-left:14px;border-left:1px solid #26394c;padding-left:8px }
+        .ct-item { display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:7px 8px;border:0;border-radius:6px;background:transparent;color:#dce9f4;cursor:pointer;font:inherit;font-size:.86rem }
+        .ct-item:hover { background:#17293a }
+        .ct-item .ct-mark { color:#6f8ba4;width:14px;flex-shrink:0 }
+        .ct-item.ct-current { background:#17324a;color:#fff }
+        .ct-item.ct-current .ct-mark { color:#8ad8ed }
+        .ct-item.ct-doc { color:#b9cbdc }
+        .ct-item:disabled { opacity:.6;cursor:default }
+        .ct-empty { color:#9eafc2;font-size:.84rem;padding:6px 8px }
     </style>
 </head>
 <body>
 <button id="btn-resources" type="button">Mis materiales</button>
+<button id="btn-courses" type="button" hidden>&#9776; Mis Cursos</button>
+<div id="courses-backdrop" hidden></div>
+<aside id="courses-drawer" aria-label="Mis cursos" hidden>
+    <header>
+        <h2>Mis Cursos</h2>
+        <button id="courses-refresh" type="button">Actualizar</button>
+        <button id="courses-close" type="button" aria-label="Cerrar">&#10005;</button>
+    </header>
+    <p id="courses-status" role="status" aria-live="polite"></p>
+    <div id="courses-tree"></div>
+</aside>
 <section id="resources-panel" aria-label="Materiales de mis cursos" hidden>
     <header><h2>Mis materiales</h2><button id="resources-refresh" type="button">Actualizar</button><button id="resources-close" type="button">Cerrar</button></header>
     <p id="resources-status" role="status" aria-live="polite"></p><div id="resources-list"></div>
@@ -275,5 +314,6 @@
 <script src="../node_modules/hls.js/dist/hls.min.js"></script>
 <script src="player.js"></script>
 <script src="resource-catalog.js"></script>
+<script src="courses-drawer.js"></script>
 </body>
 </html>

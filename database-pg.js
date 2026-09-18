@@ -640,6 +640,10 @@ async function initDb() {
 
     // Producer auth_version for session invalidation on password/suspension changes
     await q(`ALTER TABLE producers ADD COLUMN IF NOT EXISTS auth_version INTEGER NOT NULL DEFAULT 0`).catch(() => {});
+    // "Mis Cursos" dentro del reproductor: capa opcional por productor. FALSE conserva la
+    // experiencia actual (solo enlaces). No tiene relación con `active`, que sigue decidiendo
+    // si el productor está habilitado.
+    await q(`ALTER TABLE producers ADD COLUMN IF NOT EXISTS embedded_catalog_enabled BOOLEAN NOT NULL DEFAULT FALSE`).catch(() => {});
 
     // Producer-student junction table (shared students across producers)
     await q(`
@@ -2638,7 +2642,7 @@ module.exports.updateProducer = async (id, fields) => {
     for (const [camel, column] of [['maxLicenses', 'max_licenses'], ['maxDevices', 'max_devices'], ['maxStudents', 'max_students']]) {
         if (camel in quotas) fields[column] = quotas[camel];
     }
-    const allowed = ['name', 'active', 'max_licenses', 'max_devices', 'max_students', 'notes', 'password_hash'];
+    const allowed = ['name', 'active', 'max_licenses', 'max_devices', 'max_students', 'notes', 'password_hash', 'embedded_catalog_enabled'];
     const sets = [], vals = []; let i = 1;
     for (const k of allowed) if (k in fields && fields[k] !== undefined) { sets.push(`${k}=$${i++}`); vals.push(fields[k]); }
     if (!sets.length) return;

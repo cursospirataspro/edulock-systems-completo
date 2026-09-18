@@ -43,6 +43,7 @@ const { generateFingerprint, buildWatermarkText } = require('./watermark-manager
 const { getPresignedUrl, listFiles, LOCAL_MODE } = require('./storage');
 const { processVideo }                       = require('./hls-processor');
 const db = require('./database-pg');
+const { createEmbeddedCatalog } = require('./lib/embedded-catalog');
 const { createAccessPolicy, hasVideoAccess } = require('./lib/access-policy');
 const { createPlayerHandshake } = require('./lib/player-handshake');
 const { createAccountAuth, normalizedEmail } = require('./lib/account-auth');
@@ -1709,11 +1710,14 @@ app.delete('/api/video/:videoId', requireAdmin, async (req, res) => {
  * Devuelve los cursos, módulos y videos accesibles para el alumno logueado.
  * Estructura jerárquica: curso → módulos (con anidación) → videos + documentos.
  */
+// "Mis Cursos" del reproductor: el interruptor del productor de la sesión (lib/embedded-catalog.js).
+const embeddedCatalog = createEmbeddedCatalog({ db });
+
 app.get('/api/my-catalog', requireAuth, async (req, res) => {
     try {
         // One-license-per-session: student must activate a license first
         if (!req.user.admin && req.user.hasLicense === false) {
-            return res.json({ courses: [], requiresLicense: true });
+            return res.json({ courses: [], requiresLicense: true, embeddedCatalogEnabled: false });
         }
         const allowed   = req.user.admin ? ['*'] : (Array.isArray(req.user.allowedVideos) ? req.user.allowedVideos : ['*']);
         const allVideos = (await db.loadCatalog()).filter(v => v.status === 'ready');
@@ -1764,7 +1768,10 @@ app.get('/api/my-catalog', requireAuth, async (req, res) => {
         const unassigned = videos.filter(v => !v.courseId).map(v => ({ videoId: v.videoId, title: v.title, documents: v.documents || [], sortOrder: v.sortOrder }));
         if (unassigned.length) result.push({ id: '__none__', name: 'Sin curso', modules: [], videos: unassigned });
 
-        res.json({ courses: result });
+        // "Mis Cursos" del reproductor: el servidor deriva el productor de la sesión de contenido
+        // (nunca del cliente) y consulta su interruptor. Cualquier problema deja el modo tradicional.
+        // Los clientes antiguos que solo leen `courses` no se ven afectados.
+        res.json({ courses: result, embeddedCatalogEnabled: await embeddedCatalog.enabledFor(req.user) });
     } catch (err) {
         console.error('[my-catalog]', err);
         res.status(500).json({ error: 'Error al cargar catálogo' });
@@ -5169,6 +5176,7 @@ app.get('/api/owner/producers', requireAdmin, async (_req, res) => {
         const rows = await db.listProducers();
         res.json({ producers: rows.map(p => ({
             id: p.id, email: p.email, name: p.name, active: p.active === 1 || p.active === true,
+            embeddedCatalogEnabled: p.embedded_catalog_enabled === true,
             maxLicenses: p.max_licenses, maxDevices: p.max_devices, maxStudents: p.max_students,
             licensesUsed: parseInt(p.licenses_used, 10) || 0, studentsCount: parseInt(p.students_count, 10) || 0,
             createdAt: p.created_at, lastLogin: p.last_login, notes: p.notes,
@@ -5178,7 +5186,7 @@ app.get('/api/owner/producers', requireAdmin, async (_req, res) => {
 
 /** PUT /api/owner/producers/:id — cuotas / activar-suspender / renombrar / resetear clave. */
 app.put('/api/owner/producers/:id', requireAdmin, async (req, res) => {
-    const { name, active, maxLicenses, maxDevices, maxStudents, notes, resetPassword } = req.body || {};
+    const { name, active, maxLicenses, maxDevices, maxStudents, notes, resetPassword, embeddedCatalogEnabled } = req.body || {};
     let quotas;
     try { quotas = db.normalizeProducerQuotas({ maxLicenses, maxDevices, maxStudents }); }
     catch (error) { return res.status(400).json({ error: error.message, code: error.code }); }
@@ -5189,6 +5197,9 @@ app.put('/api/owner/producers/:id', requireAdmin, async (req, res) => {
     if (quotas.maxDevices !== undefined)  fields.max_devices = quotas.maxDevices;
     if (quotas.maxStudents !== undefined) fields.max_students = quotas.maxStudents;
     if (notes !== undefined)       fields.notes = String(notes).slice(0, 500);
+    // Interruptor de "Mis Cursos" en el reproductor. Solo el administrador lo cambia y es
+    // independiente de `active`: omitirlo deja el valor como está (compatibilidad total).
+    if (embeddedCatalogEnabled !== undefined) fields.embedded_catalog_enabled = embeddedCatalogEnabled === true;
     let newPassword = null;
     if (resetPassword) {
         newPassword = crypto.randomBytes(9).toString('base64').replace(/[^A-Za-z0-9]/g, '').slice(0, 12) + '9';

@@ -317,3 +317,58 @@ Los 7 puntos de la segunda revisión eran ciertos. Correcciones, todas desplegad
 | 7 | El aviso afirmaba que la clase quedaba "al final del módulo" sin haberlo comprobado | Ahora dice que no se pudo guardar la posición y que conserva el orden que ya tenía el servidor | Fixture: arrastre con fallo de orden simulado muestra el texto nuevo |
 
 Suite local 380/390 (los mismos 10 preexistentes: 7 suites Postgres sin base local y 3 del motor PDF). En el VPS, contra la base QA: 99/99. Datos QA borrados; nada se borró en el proveedor de video.
+
+## 16. "Mis Cursos": catálogo dentro del reproductor, opcional por productor (2026-09-18)
+
+Capa **añadida**, no sustituye nada. Los enlaces de clase, `/cover/`, `edulock://`, los enlaces permanentes y los short tokens siguen funcionando exactamente igual, también con el interruptor encendido.
+
+### 16.1 Flujo actual analizado antes de tocar código
+
+`login → /api/license/activate (licencia + dispositivo) → sesión de contenido (una licencia, un curso, un productor, un dispositivo) → token del alumno con licenseId/courseId/sid → enlace de clase → /api/playback/resolve-perm → mediaToken → startHls/startEdu/startVdoCipher`. La autorización vive en `lib/access-policy.js` (`authorizeVideo`) y la reproducción en `lib/player-handshake.js` (`resolve`). "Mis Cursos" se engancha en ese mismo punto: la ruta `POST /api/resolve-direct` ya existía y ya pasaba por `authorizeVideo` (middleware) y otra vez por `playerHandshake.resolve`.
+
+### 16.2 Archivos modificados y añadidos
+
+| Archivo | Cambio |
+|---------|--------|
+| `database-pg.js` | `ALTER TABLE producers ADD COLUMN IF NOT EXISTS embedded_catalog_enabled BOOLEAN NOT NULL DEFAULT FALSE` y el campo añadido a la lista blanca de `updateProducer` |
+| `lib/embedded-catalog.js` (**nuevo**) | Decide si la sesión debe ver el panel: deriva el productor de la sesión de contenido, nunca del cliente |
+| `server.js` | `GET /api/my-catalog` añade `embeddedCatalogEnabled`; `GET /api/owner/producers` lo devuelve; `PUT /api/owner/producers/:id` lo acepta (opcional) |
+| `admin.html` | Columna "Mis Cursos" con interruptor ON/OFF por cliente en Productores |
+| `player-app/renderer/courses-drawer.js` (**nuevo**) | Panel lateral: árbol, materiales, estados, cierre y limpieza |
+| `player-app/renderer/index.html` | Botón "☰ Mis Cursos", panel y estilos con la identidad actual |
+| `player-app/renderer/player.js` | `playFromCatalog(videoId)` y el escuchador del evento del panel |
+| `player-app/tests/bundle-inventory.js` | El archivo nuevo debe estar empaquetado |
+| `test/embedded-catalog.test.js`, `test/embedded-catalog-postgres.test.js` (**nuevos**) | Casos 1 a 10 |
+
+Cambio puramente aditivo: el `diff` no borra ninguna función; las únicas líneas sustituidas son las que crecieron (colspan, lista blanca, respuestas JSON con un campo más).
+
+### 16.3 Comportamiento OFF (valor por omisión de todos los productores)
+
+El botón no existe, el panel no puede abrirse aunque se fuerce el clic, "Mis materiales" sigue visible y funcionando, y el resto del reproductor (login, licencia, enlaces, DRM, `.edu`, VdoCipher, watermark, heartbeats, límites de dispositivos, cierre de sesión, actualización) no cambia. Verificado en el reproductor real: 5/5.
+
+### 16.4 Comportamiento ON
+
+Aparece "☰ Mis Cursos" arriba a la derecha. Abre un panel lateral con el curso autorizado por la licencia de la sesión, sus módulos y submódulos plegables, sus clases y sus materiales. Pulsar una clase llama a `POST /api/resolve-direct`, el servidor **vuelve a autorizar** (licencia, curso de la sesión, dispositivo, productor) y la reproducción usa el motor de siempre. `STATE.auth` (la sesión de la cuenta) nunca se toca: el token de reproducción va a `STATE.mediaToken`. "Mis materiales" se oculta para no duplicar, y vuelve en cuanto el interruptor se apaga; su código no se tocó.
+
+### 16.5 Seguridad
+
+Una licencia sigue abriendo un solo curso: el panel enseña lo que la sesión autoriza, nada más. El catálogo no autoriza: una lista cargada antes no da permiso, y cada clase y cada documento se vuelven a comprobar. Un productor suspendido nunca muestra el panel. El árbol se pinta con `createElement`/`textContent`, sin `innerHTML` ni `onclick` en línea. No se añadió ninguna función nueva al puente del reproductor ni al proceso principal: el panel usa el `getResourceCatalog` que ya existía y la API HTTP autenticada.
+
+### 16.6 Pruebas
+
+| Prueba | Resultado |
+|--------|-----------|
+| `test/embedded-catalog.test.js` (casos 1-9: interruptor, productor suspendido, sesión terminada, curso ajeno, productor ajeno, licencia revocada, dispositivo ajeno, sin licencia) | 7/7 |
+| `test/embedded-catalog-postgres.test.js` (migración aditiva y caso 10: OFF→ON→OFF sin tocar `active`) | 3/3 en la base QA del VPS |
+| Suite completa del servidor | 387/398 (los 10 preexistentes de siempre + la suite Postgres nueva, que se niega a correr sin base QA, igual que las otras 7) |
+| Suite del reproductor (`npm test` en `player-app`) | 290/306; los 16 fallos son de `auth-ui.test.js` y **son previos**: se comprobaron con el árbol limpio, sin mis cambios, con el mismo resultado |
+| Reproductor real, modo ON (servidor de producción, alumno y licencia QA) | 14/14 |
+| Reproductor real, modo OFF | 5/5 |
+| Cadena de reproducción desde el panel (registro del servidor) | `POST /api/resolve-direct` 200 → manifiesto 200 → clave de descifrado 200 → segmentos 200 → progreso 200 |
+| Aislamiento en producción | clase de otro productor 403; dispositivo ajeno 403; el DTO no expone ninguna URL ni clave del proveedor |
+
+### 16.7 Limitaciones y pendientes
+
+- Para que un alumno vea "Mis Cursos" hace falta **publicar una versión nueva del reproductor de PC**: el cambio está en el renderer. El reproductor 1.1.2 ya instalado sigue funcionando igual que siempre y **ignora** el campo nuevo del catálogo. No se recompiló ni se publicó nada: es una decisión de release del propietario.
+- Android no se tocó. Usa Gson, que descarta los campos JSON desconocidos, así que la APK actual no se ve afectada. La interfaz de "Mis Cursos" en Android queda fuera de este trabajo.
+- Los datos QA se borraron; los dos productores reales siguen en OFF, es decir, con la experiencia de siempre.
