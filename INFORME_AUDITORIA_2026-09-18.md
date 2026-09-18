@@ -13,7 +13,7 @@ publicó ningún binario: todo el trabajo vive en una rama de correcciones.
 |---|---|
 | Rama de trabajo | `fix/auditoria-f01-f09-r01-r08` |
 | Commit inicial | `b112d6c` |
-| Commit final | `c9ab48f` |
+| Commit final | `68f8d8c` |
 | Archivos cambiados | 21 (+1991 / −218) |
 | Node local | v24.11.1 · Node del servidor: v20.20.2 |
 | Base de datos de pruebas | PostgreSQL 17 en el VPS, base **desechable** `edulock_qa_auditoria` |
@@ -126,8 +126,10 @@ No basta con el código fuente: la corrección se comprobó dentro del paquete r
 - Leyendo `main.js` **dentro del `app.asar` empaquetado**: contiene
   `const IS_DEV = !app.isPackaged && process.argv.includes('--dev')`, usa
   `safeStorage`, incluye la comparación por host exacto y los tres estados de la
-  comprobación de firmas, y **no queda ninguna escritura de la sesión en texto
-  plano**.
+  comprobación de firmas. **Corrección de una afirmación anterior de este
+  informe:** en aquella versión sí quedaba una escritura en texto plano (el
+  respaldo cuando el sistema no ofrece almacén cifrado). Ver la revisión del
+  apartado 8.
 - Comportamiento: se ejecutó el binario **con `--dev` y sin él**. En los dos casos
   aparece la misma y única ventana «Iniciar sesión» y **no se abre ninguna ventana
   de herramientas de desarrollo**.
@@ -182,7 +184,87 @@ objetos nuevos en la base que el código anterior ignora.
 
 ---
 
-## 7. Qué queda pendiente y qué necesita una acción tuya
+## 8. Segunda revisión: seis defectos de la primera corrección
+
+Una revisión posterior del código encontró seis puntos en los que mi corrección
+inicial se quedó corta o introdujo un problema nuevo. **Los seis eran correctos.**
+Los comprobé uno a uno contra el código y los corregí.
+
+### 8.1 Grave, introducido por mí: conservar las clases y borrar su biblioteca
+
+Al extender el borrado remoto al panel de admin, dejé una combinación destructiva:
+borrar un curso **conserva las clases** en el catálogo (sin curso) y, al mismo
+tiempo, **programaba borrar la biblioteca** en la que viven esos videos. Es decir,
+Edulock se quedaba con la ficha de la clase y el contenido real desaparecía.
+
+Corregido: el borrado remoto solo se programa cuando **no queda ninguna clase**
+apoyada en esa biblioteca o colección. Si quedan, no se toca el proveedor y la
+respuesta lo dice (`providerKept`, `providerNote`). La misma regla se aplica al
+borrar un módulo.
+
+Esto no llegó a ejecutarse contra tu cuenta de Bunny: la rama nunca se desplegó y
+tu cuenta está deshabilitada.
+
+### 8.2 F03 seguía incompleto: los movimientos del administrador
+
+Mover una clase desde el panel de admin eran dos escrituras sueltas (`curso`, luego
+`módulo`). Si la segunda fallaba, la primera ya estaba aplicada, y los documentos
+se quedaban apuntando al curso anterior. Además, borrar una clase (una o varias)
+desde admin no pasaba por la cola del proveedor.
+
+Corregido: `moveVideo()` hace el cambio completo en **una sola transacción**, valida
+el módulo contra el curso de destino y arrastra los documentos; y el borrado de
+clases desde admin usa la misma cola y la misma comprobación de procedencia que el
+panel del productor. El borrado masivo además informa de los fallos individuales,
+que antes se perdían en silencio.
+
+### 8.3 R01 seguía incompleto: la firma de URL
+
+`signCourseBunnyUrl()` seguía usando la biblioteca **actual** del curso para firmar
+cualquier clase. Una clase de una biblioteca anterior se firmaba con la clave
+equivocada. Corregido: se resuelve la biblioteca de esa clase y se usa su clave de
+firma, buscándola entre las bibliotecas archivadas del curso.
+
+### 8.4 R04 seguía parcial: el respaldo en texto plano
+
+Mi `writeSessionFile()` caía a texto plano en dos casos: cuando el sistema no
+ofrece almacén cifrado **y también cuando el cifrado fallaba**. El segundo caso no
+es una limitación de plataforma. Corregido: si el cifrado está disponible y falla,
+la sesión **no se guarda** (se borra el archivo y se devuelve `false`); el respaldo
+en claro queda solo para sistemas sin almacén, con un aviso explícito en el
+registro. La comprobación del emisor de IPC pasa a usar `trustedSender()`, que ya
+existía en el proyecto y exige ventana, marco principal y dirección exacta.
+
+### 8.5 F09 seguía parcial: el contrato real de errores
+
+Mi reintento solo se activaba si la llamada **lanzaba** una excepción. El puente
+nunca lanza: devuelve `{ ok:false, code }`. Una caída de conexión dejaba el botón
+apagado sin reintentar, y mi prueba pasaba porque simulaba el fallo lanzando.
+Corregido: se reintenta ante cualquier respuesta que no sea una **respuesta
+definitiva de autorización**; y si la sesión cambia con una consulta en vuelo, la
+nueva queda encolada en vez de perderse.
+
+**Esto es lo más instructivo de toda la revisión:** una prueba que simula mal el
+fallo pasa mientras el defecto sigue vivo. Las pruebas nuevas usan el formato real.
+
+### 8.6 Verificación de esta revisión
+
+| Prueba | Contra mi primera corrección | Ahora |
+|---|---|---|
+| 7 pruebas de integración nuevas (PostgreSQL real) | — | 7/7 |
+| 3 pruebas de F09 con el contrato real | 3 fallan | 3/3 |
+| 3 pruebas de R04 de comportamiento | 3 fallan | 3/3 |
+| Conjunto completo del servidor | 557 | **571/571**, tres ejecuciones seguidas |
+| Reproductor de PC | 306/306 | 306/306 |
+
+**Lo que esta revisión cambia en las conclusiones anteriores:** F03, R01, R04 y F09
+**no estaban cerrados** cuando los di por corregidos. Ahora lo están con pruebas
+que fallan contra la versión anterior. El binario portable que se compiló y verificó
+corresponde a la versión **anterior** a esta revisión: hay que recompilarlo.
+
+---
+
+## 9. Qué queda pendiente y qué necesita una acción tuya
 
 | Pendiente | Por qué | Quién |
 |---|---|---|
