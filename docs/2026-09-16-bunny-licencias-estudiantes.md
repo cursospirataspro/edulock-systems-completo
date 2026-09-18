@@ -372,3 +372,11 @@ Una licencia sigue abriendo un solo curso: el panel enseña lo que la sesión au
 - Para que un alumno vea "Mis Cursos" hace falta **publicar una versión nueva del reproductor de PC**: el cambio está en el renderer. El reproductor 1.1.2 ya instalado sigue funcionando igual que siempre y **ignora** el campo nuevo del catálogo. No se recompiló ni se publicó nada: es una decisión de release del propietario.
 - Android no se tocó. Usa Gson, que descarta los campos JSON desconocidos, así que la APK actual no se ve afectada. La interfaz de "Mis Cursos" en Android queda fuera de este trabajo.
 - Los datos QA se borraron; los dos productores reales siguen en OFF, es decir, con la experiencia de siempre.
+
+## 17. Publicación del reproductor 1.1.3 (2026-09-18)
+
+- **Servidor:** los 108 archivos del servidor (raíz, `lib/`, `public/`) son idénticos entre el repositorio y el VPS; servicio en línea y respaldos previos en `/root/backups/pre-miscursos-2026-09-18/`.
+- **Reproductor de PC 1.1.3** compilado con `npm run build:win`: instalador NSIS y portable. Verificado antes de empaquetar: 8 fuses de Electron aplicados, hash del ASAR embebido correcto, 496 entradas, y `renderer/courses-drawer.js` incluido en el paquete. Firma VMP de Castlabs aplicada y verificada (vigencia 1399 días). Authenticode sigue sin firma: falta el certificado que debe comprar el propietario.
+- **Publicado en el servidor:** `EdulockSystems-Player-Setup-1.1.3.exe` y `EdulockSystems-Player-Portable-1.1.3.exe` en `/downloads/`, descargables por HTTPS. `latestVersion` pasa a 1.1.3 y `minVersion` se mantiene en 1.0.0, así que **nadie queda bloqueado**: el alumno ve el aviso de actualización, no una puerta cerrada.
+- **Comprobado en esta PC:** instalación silenciosa correcta, ejecutable instalado 1.1.3.
+- **Android:** sin cambios de código desde 1.1.4 (el último commit de Android es la atestación por hardware, que ya viaja en esa versión). La APK publicada sigue siendo 1.1.4 y funciona con el servidor nuevo: usa Gson, que descarta los campos JSON que no conoce, así que el campo añadido al catálogo no le afecta.
