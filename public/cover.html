@@ -8,14 +8,14 @@
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg:      #0d0d0d;
-    --card:    #171717;
-    --border:  #333333;
-    --accent:  #c72b24;
+    --bg:      #ffffff;
+    --card:    #ffffff;
+    --border:  #e4dfdd;
+    --accent:  #d81f2a;
     --accent2: #a1121b;
-    --text:    #f5f5f5;
-    --muted:   #9ca3af;
-    --red:     #ef4444;
+    --text:    #141010;
+    --muted:   #6d635d;
+    --red:     #c41f28;
   }
   body {
     background: var(--bg);
@@ -41,7 +41,7 @@
     width: 36px; height: 36px;
     border-radius: 8px;
     overflow: hidden;
-    box-shadow: 0 0 14px rgba(199,43,36,.45);
+    box-shadow: 0 2px 10px rgba(20,16,16,.12);
   }
   .brand-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .brand-name { font-size: 15px; font-weight: 600; letter-spacing: .5px; color: var(--muted); }
@@ -54,7 +54,7 @@
     overflow: hidden;
     max-width: 580px;
     width: 100%;
-    box-shadow: 0 24px 64px rgba(0,0,0,.6);
+    box-shadow: 0 18px 48px rgba(20,16,16,.10);
   }
 
   /* Thumbnail */
@@ -62,7 +62,7 @@
     position: relative;
     width: 100%;
     aspect-ratio: 16/9;
-    background: #080810;
+    background: #f7f5f4;
     cursor: pointer;
     overflow: hidden;
   }
@@ -70,7 +70,7 @@
   .thumb-wrap.has-thumb::after {
     content: '';
     position: absolute; inset: 0;
-    background: linear-gradient(to bottom, rgba(0,0,0,.15) 0%, rgba(0,0,0,.55) 100%);
+    background: linear-gradient(to bottom, rgba(20,16,16,.15) 0%, rgba(20,16,16,.55) 100%);
     pointer-events: none;
     z-index: 1;
   }
@@ -85,10 +85,10 @@
   /* Thumbnail placeholder */
   .thumb-placeholder {
     width: 100%; height: 100%;
-    background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #0f0f1a 100%);
+    background: linear-gradient(135deg, #f7f5f4 0%, #efecea 50%, #f7f5f4 100%);
     display: flex; align-items: center; justify-content: center;
   }
-  .thumb-placeholder svg { opacity: .15; }
+  .thumb-placeholder svg { opacity: .4; }
 
   /* Play button */
   .play-btn {
@@ -107,12 +107,12 @@
     background: var(--accent);
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 0 40px rgba(216,31,42,.4);
+    box-shadow: 0 6px 20px rgba(216,31,42,.35);
     transition: background .2s, box-shadow .2s;
   }
   .play-btn:hover .play-circle {
     background: var(--accent2);
-    box-shadow: 0 0 60px rgba(216,31,42,.6);
+    box-shadow: 0 8px 26px rgba(216,31,42,.45);
   }
   .play-circle svg { margin-left: 5px; }
 
@@ -132,7 +132,7 @@
     position: absolute;
     bottom: 12px; right: 12px;
     z-index: 3;
-    background: rgba(0,0,0,.75);
+    background: rgba(20,16,16,.75);
     color: #fff;
     font-size: 13px;
     font-weight: 600;
@@ -155,9 +155,9 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: rgba(216,31,42,.1);
-    border: 1px solid rgba(216,31,42,.25);
-    color: var(--accent);
+    background: #fdeaea;
+    border: 1px solid #f3c5c7;
+    color: #c41f28;
     font-size: 12px;
     font-weight: 600;
     padding: 4px 10px;
@@ -182,7 +182,7 @@
     flex: 1;
     min-width: 160px;
     background: var(--accent);
-    color: #000;
+    color: #fff;
     font-weight: 700;
     font-size: 14px;
     border: none;
@@ -222,20 +222,20 @@
   }
   .status-msg.show { display: block; }
   .status-msg.error { color: var(--red); }
-  .status-msg.success { color: #22c55e; }
+  .status-msg.success { color: #157347; }
 
   /* Footer */
   .footer {
     margin-top: 24px;
     font-size: 12px;
     color: var(--muted);
-    opacity: .5;
+    opacity: .75;
     text-align: center;
   }
 
   /* Skeleton shimmer */
   .skeleton {
-    background: linear-gradient(90deg, var(--border) 25%, #1e1e30 50%, var(--border) 75%);
+    background: linear-gradient(90deg, #efecea 25%, #f7f5f4 50%, #efecea 75%);
     background-size: 200% 100%;
     animation: shimmer 1.4s infinite;
     border-radius: 6px;
@@ -255,8 +255,8 @@
   <div class="thumb-wrap" id="thumbWrap" onclick="document.getElementById('btnPlay').click()">
     <div class="thumb-placeholder" id="thumbPlaceholder">
       <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
-        <rect width="80" height="80" rx="16" fill="#1e1e2e"/>
-        <path d="M30 22l28 18-28 18V22z" fill="#c72b24"/>
+        <rect width="80" height="80" rx="16" fill="#e4dfdd"/>
+        <path d="M30 22l28 18-28 18V22z" fill="#d81f2a"/>
       </svg>
     </div>
     <img id="thumbImg" class="thumb-img" src="" alt="" style="display:none" onload="this.style.display='block';document.getElementById('thumbPlaceholder').style.display='none'" onerror="this.style.display='none'"/>
@@ -334,8 +334,8 @@
       document.getElementById('videoTitle').textContent = d.title;
       if (d.theme === 'light') {
         var style = document.documentElement.style;
-        style.setProperty('--bg', '#f4f4f5'); style.setProperty('--card', '#ffffff');
-        style.setProperty('--border', '#d4d4d8'); style.setProperty('--text', '#18181b'); style.setProperty('--muted', '#52525b');
+        style.setProperty('--bg', '#f7f5f4'); style.setProperty('--card', '#ffffff');
+        style.setProperty('--border', '#e4dfdd'); style.setProperty('--text', '#141010'); style.setProperty('--muted', '#6d635d');
       }
       if (d.description) {
         var desc = document.createElement('p');

@@ -8,14 +8,14 @@
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg:      #0d0d0d;
-    --card:    #171717;
-    --border:  #333333;
-    --accent:  #c72b24;
+    --bg:      #ffffff;
+    --card:    #ffffff;
+    --border:  #e4dfdd;
+    --accent:  #d81f2a;
     --accent2: #a1121b;
-    --text:    #f5f5f5;
-    --muted:   #9ca3af;
-    --green:   #22c55e;
+    --text:    #141010;
+    --muted:   #6d635d;
+    --green:   #157347;
   }
   body {
     background: var(--bg);
@@ -37,7 +37,7 @@
     width: 48px; height: 48px;
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 0 18px rgba(199,43,36,.5);
+    box-shadow: 0 2px 10px rgba(20,16,16,.12);
   }
   .brand-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .brand-text h1 { font-size: 20px; font-weight: 800; letter-spacing: .5px; }
@@ -82,18 +82,18 @@
     color: var(--text);
   }
   .platform-card:hover { border-color: var(--accent); }
-  .platform-card.primary { border-color: var(--accent); background: rgba(199,43,36,.10); }
+  .platform-card.primary { border-color: var(--accent); background: #fdeaea; }
   .platform-icon { font-size: 36px; }
   .platform-name { font-size: 15px; font-weight: 700; }
   .platform-sub  { font-size: 12px; color: var(--muted); }
   .platform-badge {
-    background: var(--accent); color: #000;
+    background: var(--accent); color: #fff;
     font-size: 10px; font-weight: 800;
     padding: 2px 8px; border-radius: 20px;
     letter-spacing: .5px;
     text-transform: uppercase;
   }
-  .platform-badge.soon { background: var(--border); color: var(--muted); }
+  .platform-badge.soon { background: #efecea; color: #3a3330; }
   .platform-card.soon { opacity: .65; cursor: default; }
   .platform-card.soon:hover { border-color: var(--border); }
 
@@ -123,7 +123,7 @@
   .step-num {
     min-width: 32px; height: 32px;
     background: var(--accent);
-    color: #000;
+    color: #fff;
     font-weight: 800;
     font-size: 14px;
     border-radius: 50%;
@@ -136,8 +136,8 @@
   .already-installed {
     max-width: 560px;
     width: 100%;
-    background: rgba(34, 197, 94, .08);
-    border: 1px solid rgba(34, 197, 94, .25);
+    background: #e8f3ec;
+    border: 1px solid #bcd9c7;
     border-radius: 14px;
     padding: 20px 24px;
     display: none;
@@ -153,7 +153,7 @@
   .already-installed p { font-size: 13px; color: var(--muted); }
   .btn-open {
     background: var(--green);
-    color: #000;
+    color: #fff;
     font-weight: 700;
     font-size: 14px;
     border: none;
@@ -169,7 +169,7 @@
   /* Download main button */
   .btn-download-main {
     background: var(--accent);
-    color: #000;
+    color: #fff;
     font-weight: 800;
     font-size: 15px;
     border: none;
@@ -217,7 +217,7 @@
   }
   .btn-instructions:hover {
     border-color: var(--accent);
-    background: rgba(199,43,36,.12);
+    background: #fdeaea;
     color: var(--text);
   }
 
@@ -225,7 +225,7 @@
   .instr-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(8, 4, 16, .78);
+    background: rgba(20,16,16,.45);
     backdrop-filter: blur(3px);
     display: none;
     align-items: center;
@@ -244,7 +244,7 @@
     background: var(--card);
     border: 1px solid var(--accent);
     border-radius: 16px;
-    box-shadow: 0 0 40px rgba(199,43,36,.35);
+    box-shadow: 0 18px 48px rgba(20,16,16,.10);
     overflow: hidden;
   }
   .instr-modal.show { display: flex; }
@@ -303,7 +303,7 @@
   .instr-modal-body li { margin: 0 0 6px; }
   .instr-modal-body strong { color: var(--text); font-weight: 700; }
   .instr-modal-body .instr-note {
-    background: rgba(199,43,36,.10);
+    background: #fdeaea;
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 12px 14px;

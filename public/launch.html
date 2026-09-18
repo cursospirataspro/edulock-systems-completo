@@ -8,8 +8,8 @@
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: 'Segoe UI', Roboto, sans-serif;
-    background: #0a0a0a;
-    color: #e0e0e0;
+    background: #ffffff;
+    color: #141010;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
@@ -18,51 +18,51 @@
     padding: 24px;
   }
   .card {
-    background: #161616;
-    border: 1px solid #2a2a2a;
+    background: #ffffff;
+    border: 1px solid #e4dfdd;
     border-radius: 16px;
     padding: 48px 40px;
     max-width: 440px;
     width: 100%;
     text-align: center;
-    box-shadow: 0 8px 40px rgba(0,0,0,.6);
+    box-shadow: 0 18px 48px rgba(20,16,16,.10);
   }
   .icon {
     width: 72px;
     height: 72px;
     margin: 0 auto 24px;
-    background: linear-gradient(135deg, #e53935 0%, #b71c1c 100%);
+    background: linear-gradient(135deg, #d81f2a 0%, #a1121b 100%);
     border-radius: 18px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 36px;
-    box-shadow: 0 4px 20px rgba(229,57,53,.35);
+    box-shadow: 0 6px 20px rgba(216,31,42,.30);
   }
-  h1 { font-size: 1.35rem; font-weight: 600; margin-bottom: 10px; color: #fff; }
-  .sub { font-size: .9rem; color: #888; margin-bottom: 32px; line-height: 1.5; }
+  h1 { font-size: 1.35rem; font-weight: 600; margin-bottom: 10px; color: #141010; }
+  .sub { font-size: .9rem; color: #6d635d; margin-bottom: 32px; line-height: 1.5; }
 
   /* Estado: abriendo */
   #state-opening { display: flex; flex-direction: column; align-items: center; gap: 18px; }
   .spinner {
     width: 44px; height: 44px;
-    border: 3px solid #2a2a2a;
-    border-top-color: #e53935;
+    border: 3px solid #e4dfdd;
+    border-top-color: #d81f2a;
     border-radius: 50%;
     animation: spin .8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .opening-msg { font-size: .95rem; color: #aaa; }
+  .opening-msg { font-size: .95rem; color: #6d635d; }
 
   /* Estado: instalar */
   #state-install { display: none; flex-direction: column; align-items: center; gap: 16px; }
   .warn-icon { font-size: 40px; }
-  .warn-msg { font-size: .9rem; color: #aaa; line-height: 1.6; }
+  .warn-msg { font-size: .9rem; color: #6d635d; line-height: 1.6; }
   .btn-install {
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    background: #e53935;
+    background: #d81f2a;
     color: #fff;
     font-size: .95rem;
     font-weight: 600;
@@ -74,25 +74,25 @@
     transition: background .18s, transform .12s;
     margin-top: 4px;
   }
-  .btn-install:hover { background: #c62828; transform: translateY(-1px); }
+  .btn-install:hover { background: #a1121b; transform: translateY(-1px); }
   .btn-retry {
     background: transparent;
-    color: #777;
+    color: #6d635d;
     font-size: .82rem;
-    border: 1px solid #333;
+    border: 1px solid #e4dfdd;
     padding: 8px 18px;
     border-radius: 8px;
     cursor: pointer;
     transition: color .15s, border-color .15s;
   }
-  .btn-retry:hover { color: #ccc; border-color: #555; }
+  .btn-retry:hover { color: #141010; border-color: #d6cfcb; }
 
   /* Estado: error token */
   #state-error { display: none; flex-direction: column; align-items: center; gap: 12px; }
   .err-icon { font-size: 40px; }
-  .err-msg { font-size: .9rem; color: #f66; }
+  .err-msg { font-size: .9rem; color: #c41f28; }
 
-  footer { margin-top: 32px; font-size: .76rem; color: #444; }
+  footer { margin-top: 32px; font-size: .76rem; color: #6d635d; }
 </style>
 </head>
 <body>
