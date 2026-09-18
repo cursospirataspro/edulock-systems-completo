@@ -11,7 +11,7 @@ const script = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].m
 // synthetic Firebase/IPC boundaries. It does not claim a real browser or PC test.
 async function fixture(options = {}) {
   const nodes = [], byId = new Map(), stack = [], timers = new Map(), events = new Map();
-  const calls = { signIn: 0, popup: 0, created: 0, registrations: 0, sessions: [], lookups: [], success: 0, reloaded: 0 };
+  const calls = { signIn: 0, popup: 0, created: 0, registrations: 0, sessions: [], lookups: [], success: 0, reloaded: 0, serverLogins: 0 };
   let now = 0, nextTimer = 0, activeElement = null;
   for (const token of html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/g, '').matchAll(/<\/?([a-z][\w-]*)\b([^>]*)>/gi)) {
     const tag = token[1].toLowerCase();
@@ -67,7 +67,9 @@ async function fixture(options = {}) {
     clearTimeout(id) { timers.delete(id); },
     vcbPlayer: { getDeviceInfo: async () => { if (options.deviceError) throw new Error('Device unavailable'); return options.deviceInfo || { deviceId: 'synthetic-pc', deviceModel: 'PC sintético' }; },
       checkAccountStatus: async payload => { calls.lookups.push(payload); if (options.lookupError) throw new Error('Lookup unavailable'); return options.lookupResponse === undefined ? { status: 'registered', code: 'ACCOUNT_EXISTS' } : options.lookupResponse; },
-      firebaseLogin: async () => options.response === undefined ? { status: 'approved', role: 'admin', token: 'synthetic-session' } : options.response,
+      firebaseLogin: async () => { calls.serverLogins++; return options.serverLoginResponse
+        ? options.serverLoginResponse(calls.serverLogins)
+        : (options.response === undefined ? { status: 'approved', role: 'admin', token: 'synthetic-session' } : options.response); },
       registerRequest: async () => { calls.registrations++; return options.registrationResponse?.(calls.registrations) || { status: 'pending' }; },
       saveSession: async value => { if (options.sessionError) throw new Error('Disk unavailable'); if ('sessionResult' in options) return options.sessionResult; calls.sessions.push(value); return true; },
       clearSession: async () => {}, activationClear: async () => {}, authSuccess: () => calls.success++,
@@ -131,20 +133,31 @@ for (const code of ['auth/invalid-credential', 'auth/invalid-login-credentials',
   });
 }
 
+// Una respuesta del servidor que NO afirma con autoridad que la cuenta no existe
+// jamas puede convertirse en una cuenta nueva. La pestana de registro solo se abre
+// a mano y con los campos editables por la persona.
 for (const response of [null, { status: 'pending' }, { status: 'rejected' }, { status: 'suspended' }, { status: 'wrong_device' }, { status: 'device_taken' }, { status: 'account_mismatch', error: 'Identidad inconsistente' }, { status: 'error', error: 'Base de datos no disponible' }]) {
-  test(`backend ${response?.status || 'empty response'} cannot become a new account in login or Google registration`, async () => {
-    const h = await fixture({ response }); await h.login(); await h.advance(4000);
-    assert.equal(h.node('form-register').classList.contains('active'), false);
+  test(`backend ${response?.status || 'empty response'} cannot become a new account`, async () => {
+    const h = await fixture({ response }); await h.login(); await h.advance(8000);
+    assert.equal(h.node('form-register').classList.contains('active'), false,
+      'no puede abrirse el registro por su cuenta');
     assert.equal(h.node('btn-complete-register').hidden, true);
-    await h.tab('register'); await h.node('btn-google-register').click();
+    // Abrir la pestana a mano deja los datos editables: nada queda prefijado.
+    await h.tab('register');
     assert.equal(h.node('reg-email').readOnly, false);
-    assert.equal(h.calls.created, 0); assert.equal(h.calls.registrations, 0);
+    assert.equal(h.calls.created, 0, 'no se crea ninguna cuenta');
+    assert.equal(h.calls.registrations, 0, 'no se envia ninguna solicitud de registro');
   });
 }
 
 test('absence requires all three authoritative fields and counts down 3, 2, 1 before changing forms', async () => {
   const h = await fixture({ response: { status: 'not_registered', code: 'ACCOUNT_NOT_REGISTERED', registrationAllowed: true } });
-  await h.login(); assert.match(h.node('login-status').textContent, /3 segundos/);
+  // El flujo vigente reintenta primero el alta automatica; la cuenta atras del
+  // registro manual solo aparece si ese reintento tampoco encuentra la cuenta.
+  await h.login();
+  assert.match(h.node('login-status').textContent, /Registrando cuenta/);
+  await h.advance(1500);
+  assert.match(h.node('login-status').textContent, /3 segundos/);
   assert.equal(h.node('btn-cancel-register').hidden, false);
   await h.advance(1000); assert.match(h.node('login-status').textContent, /2 segundos/);
   await h.advance(1000); assert.match(h.node('login-status').textContent, /1 segundo/);
@@ -157,7 +170,7 @@ test('absence requires all three authoritative fields and counts down 3, 2, 1 be
 for (const action of ['cancel', 'edit-email', 'edit-password', 'change-tab', 'unload']) {
   test(`${action} cancels the countdown without a delayed redirect`, async () => {
     const h = await fixture({ response: { status: 'not_registered', code: 'ACCOUNT_NOT_REGISTERED', registrationAllowed: true } });
-    await h.login(); await h.advance(1000);
+    await h.login(); await h.advance(1500); await h.advance(1000);
     if (action === 'cancel') await h.node('btn-cancel-register').click();
     if (action === 'edit-email') await h.node('login-email').emit('input');
     if (action === 'edit-password') await h.node('login-pass').emit('input');
@@ -187,8 +200,12 @@ test('an existing Firebase account offers manual completion and retains its veri
   assert.equal(h.node('reg-email').readOnly, true);
   assert.equal(h.node('reg-email').value, h.user.email);
   assert.equal(h.node('reg-pass').closest('div').style.display, 'none');
+  const altasPrevias = h.calls.serverLogins;
   await h.node('btn-register').click();
-  assert.equal(h.calls.created, 0); assert.equal(h.calls.registrations, 1);
+  // Completar el alta NO puede crear una segunda cuenta de Firebase: se reutiliza
+  // la identidad ya verificada y solo se vuelve a intentar el alta en el servidor.
+  assert.equal(h.calls.created, 0, 'no se crea otra cuenta de Firebase');
+  assert.equal(h.calls.serverLogins, altasPrevias + 1, 'se reintenta el alta en el servidor');
   assert.equal(h.node('reg-email').readOnly, true, 'busy state must not unlock the authenticated email');
   await h.tab('login'); await h.tab('register');
   assert.equal(h.node('reg-email').readOnly, false);
@@ -196,11 +213,19 @@ test('an existing Firebase account offers manual completion and retains its veri
 });
 
 test('a failed SQL registration can retry without recreating its Firebase account', async () => {
-  const h = await fixture({ registrationResponse: n => n === 1 ? { status: 'error', error: 'Servidor temporalmente no disponible' } : { status: 'pending' } });
+  // El primer alta en el servidor falla; el segundo intento debe reutilizar la
+  // cuenta de Firebase ya creada en vez de crear otra.
+  const h = await fixture({ serverLoginResponse: n => n === 1
+    ? { status: 'error', error: 'Servidor temporalmente no disponible' }
+    : { status: 'approved', role: 'student', token: 'synthetic-session' } });
   await h.tab('register'); h.node('reg-name').value = 'Alumno sintético'; h.node('reg-email').value = h.user.email;
   h.node('reg-pass').value = h.node('reg-pass2').value = 'synthetic-password';
-  await h.node('btn-register').click(); assert.equal(h.calls.created, 1); assert.equal(h.calls.registrations, 1);
-  await h.node('btn-register').click(); assert.equal(h.calls.created, 1); assert.equal(h.calls.registrations, 2);
+  await h.node('btn-register').click();
+  assert.equal(h.calls.created, 1, 'la cuenta de Firebase se crea una vez');
+  assert.equal(h.calls.serverLogins, 1);
+  await h.node('btn-register').click();
+  assert.equal(h.calls.created, 1, 'el reintento no puede crear una segunda cuenta de Firebase');
+  assert.equal(h.calls.serverLogins, 2, 'el alta en el servidor sí se reintenta');
 });
 
 test('missing token or failed persistence cannot claim successful login', async () => {
