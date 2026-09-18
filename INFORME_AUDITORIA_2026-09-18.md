@@ -129,7 +129,7 @@ No basta con el código fuente: la corrección se comprobó dentro del paquete r
   comprobación de firmas. **Corrección de una afirmación anterior de este
   informe:** en aquella versión sí quedaba una escritura en texto plano (el
   respaldo cuando el sistema no ofrece almacén cifrado). Ver la revisión del
-  apartado 8.
+  apartado 7.
 - Comportamiento: se ejecutó el binario **con `--dev` y sin él**. En los dos casos
   aparece la misma y única ventana «Iniciar sesión» y **no se abre ninguna ventana
   de herramientas de desarrollo**.
@@ -184,13 +184,13 @@ objetos nuevos en la base que el código anterior ignora.
 
 ---
 
-## 8. Segunda revisión: seis defectos de la primera corrección
+## 7. Segunda revisión: seis defectos de la primera corrección
 
 Una revisión posterior del código encontró seis puntos en los que mi corrección
 inicial se quedó corta o introdujo un problema nuevo. **Los seis eran correctos.**
 Los comprobé uno a uno contra el código y los corregí.
 
-### 8.1 Grave, introducido por mí: conservar las clases y borrar su biblioteca
+### 7.1 Grave, introducido por mí: conservar las clases y borrar su biblioteca
 
 Al extender el borrado remoto al panel de admin, dejé una combinación destructiva:
 borrar un curso **conserva las clases** en el catálogo (sin curso) y, al mismo
@@ -205,7 +205,7 @@ borrar un módulo.
 Esto no llegó a ejecutarse contra tu cuenta de Bunny: la rama nunca se desplegó y
 tu cuenta está deshabilitada.
 
-### 8.2 F03 seguía incompleto: los movimientos del administrador
+### 7.2 F03 seguía incompleto: los movimientos del administrador
 
 Mover una clase desde el panel de admin eran dos escrituras sueltas (`curso`, luego
 `módulo`). Si la segunda fallaba, la primera ya estaba aplicada, y los documentos
@@ -218,14 +218,14 @@ clases desde admin usa la misma cola y la misma comprobación de procedencia que
 panel del productor. El borrado masivo además informa de los fallos individuales,
 que antes se perdían en silencio.
 
-### 8.3 R01 seguía incompleto: la firma de URL
+### 7.3 R01 seguía incompleto: la firma de URL
 
 `signCourseBunnyUrl()` seguía usando la biblioteca **actual** del curso para firmar
 cualquier clase. Una clase de una biblioteca anterior se firmaba con la clave
 equivocada. Corregido: se resuelve la biblioteca de esa clase y se usa su clave de
 firma, buscándola entre las bibliotecas archivadas del curso.
 
-### 8.4 R04 seguía parcial: el respaldo en texto plano
+### 7.4 R04 seguía parcial: el respaldo en texto plano
 
 Mi `writeSessionFile()` caía a texto plano en dos casos: cuando el sistema no
 ofrece almacén cifrado **y también cuando el cifrado fallaba**. El segundo caso no
@@ -235,7 +235,7 @@ en claro queda solo para sistemas sin almacén, con un aviso explícito en el
 registro. La comprobación del emisor de IPC pasa a usar `trustedSender()`, que ya
 existía en el proyecto y exige ventana, marco principal y dirección exacta.
 
-### 8.5 F09 seguía parcial: el contrato real de errores
+### 7.5 F09 seguía parcial: el contrato real de errores
 
 Mi reintento solo se activaba si la llamada **lanzaba** una excepción. El puente
 nunca lanza: devuelve `{ ok:false, code }`. Una caída de conexión dejaba el botón
@@ -247,7 +247,7 @@ nueva queda encolada en vez de perderse.
 **Esto es lo más instructivo de toda la revisión:** una prueba que simula mal el
 fallo pasa mientras el defecto sigue vivo. Las pruebas nuevas usan el formato real.
 
-### 8.6 Verificación de esta revisión
+### 7.6 Verificación de esta revisión
 
 | Prueba | Contra mi primera corrección | Ahora |
 |---|---|---|
