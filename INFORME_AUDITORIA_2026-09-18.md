@@ -13,7 +13,7 @@ publicó ningún binario: todo el trabajo vive en una rama de correcciones.
 |---|---|
 | Rama de trabajo | `fix/auditoria-f01-f09-r01-r08` |
 | Commit inicial | `b112d6c` |
-| Commit final | `6f1c880` |
+| Commit final | `c9ab48f` |
 | Archivos cambiados | 21 (+1991 / −218) |
 | Node local | v24.11.1 · Node del servidor: v20.20.2 |
 | Base de datos de pruebas | PostgreSQL 17 en el VPS, base **desechable** `edulock_qa_auditoria` |
@@ -90,7 +90,7 @@ Cada bloque se midió en su propio entorno; **no se suman entre sí**.
 | | Pruebas | Pasan | Fallan |
 |---|---|---|---|
 | Antes (`b112d6c`) | 504 | 503 | 1 |
-| Después (`3887ca0`) | 556 | **556** | **0** |
+| Después | 557 | **557** | **0** |
 
 El fallo anterior —«legacy document arrays remain byte-for-byte unchanged beside
 new resources»— era **el mismo defecto F06** y ahora pasa. El resultado se
@@ -120,11 +120,15 @@ servidor, pasan.
 
 No basta con el código fuente: la corrección se comprobó dentro del paquete real.
 
-- Se compiló el portable (). La firma **VMP de
+- Se compiló el portable con `npm run build:win-portable`. La firma **VMP de
   Castlabs** se verificó durante la compilación: *«Signature is valid: streaming,
   1398 days left»*.
-- Leyendo  **dentro del  empaquetado**: , usa , tiene la comparación por host exacto, tiene los estados de firma, y **no queda ninguna escritura de la sesión en texto plano**.
-- Comportamiento: se ejecutó el binario **con  y sin él**. En los dos casos
+- Leyendo `main.js` **dentro del `app.asar` empaquetado**: contiene
+  `const IS_DEV = !app.isPackaged && process.argv.includes('--dev')`, usa
+  `safeStorage`, incluye la comparación por host exacto y los tres estados de la
+  comprobación de firmas, y **no queda ninguna escritura de la sesión en texto
+  plano**.
+- Comportamiento: se ejecutó el binario **con `--dev` y sin él**. En los dos casos
   aparece la misma y única ventana «Iniciar sesión» y **no se abre ninguna ventana
   de herramientas de desarrollo**.
 
@@ -132,12 +136,12 @@ No basta con el código fuente: la corrección se comprobó dentro del paquete r
 
 | Archivo | Tamaño | SHA-256 |
 |---|---|---|
-|  | 92 458 687 B |  |
+| `EdulockSystems-Player-Portable-1.1.3.exe` | 92 458 687 B | `E733C117EF239893035B1BE73452DC72CBBA12B5ED79DB74F3DE2A4788600DAF` |
 
 Firmas: la **VMP (Castlabs EVS)** está aplicada y verificada; la **Authenticode**
 no, porque el certificado sigue pendiente de compra. Son firmas distintas y no se
-sustituyen. El instalador () que hay en  es de una compilación
-anterior y **no** incluye estas correcciones: habría que regenerarlo.
+sustituyen entre sí. El instalador (`Setup`) que hay en `dist/` es de una
+compilación anterior y **no** incluye estas correcciones: habría que regenerarlo.
 
 Estos artefactos **no se han publicado ni desplegado**.
 
@@ -182,7 +186,7 @@ objetos nuevos en la base que el código anterior ignora.
 
 | Pendiente | Por qué | Quién |
 |---|---|---|
-| Comprobar F04 sobre el **binario empaquetado** final | La corrección se verifica de verdad ejecutando el instalador/portable con `--dev` | Compilación en curso; falta ejecutarla |
+| Regenerar el **instalador** (`Setup`) con estas correcciones | El portable ya está compilado y verificado; el instalador de `dist/` es anterior | Propietario, cuando decida publicar |
 | Compilar y firmar el **APK** y probarlo en el teléfono | Hace falta el dispositivo conectado y la clave de firma | Propietario |
 | Probar el borrado en cascada **contra Bunny real** | La cuenta de Bunny quedó deshabilitada al acabar la prueba gratuita | Propietario: reactivar o crear cuenta |
 | Decidir qué hacer con `pdf-runtime` (N01) | Cambia cómo se instala el proyecto | Propietario |
