@@ -2830,9 +2830,12 @@ function createStreamUploadController(options) {
             } else {
                 job = { operationId: crypto.randomUUID(), title, courseId, moduleId,
                     fileName: file.name, fileSize: file.size, fileLastModified: file.lastModified,
+                    description: typeof input.description === 'string' ? input.description.slice(0, 2000) : '',
                     phase: 'client-upload', ready: false, createdAt: Date.now() };
                 jobs.push(job);
             }
+            // The description written in the form survives «Continuar seguimiento» and «Reintentar envío».
+            if (typeof input.description === 'string' && input.description.trim()) job.description = input.description.slice(0, 2000);
             changed(job, { failed: false, retryable: false, error: null, action: null, phase: 'client-upload' }, {
                 phase: 'client-upload', label: 'Enviando el archivo de tu equipo al servidor.', percent: 0
             });

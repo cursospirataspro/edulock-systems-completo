@@ -5689,8 +5689,28 @@ function streamError(res,e) {
 }
 async function createStreamCourse(body={},actor) {
     if(typeof body.name!=='string'||!body.name.trim()) throw Object.assign(new Error('Nombre del curso requerido'),{statusCode:400});
+    // Idempotencia: el panel envía un requestId por ventana; si el curso ya se creó y el cliente
+    // reintenta (por ejemplo tras fallar la recarga de la lista), se devuelve el mismo curso.
+    const requestId=typeof body.requestId==='string'&&/^[A-Za-z0-9._-]{8,80}$/.test(body.requestId)?body.requestId:null;
+    const requestKey=requestId?`course-request:${actor.producerId?('producer:'+actor.producerId):'admin'}:${requestId}`:null;
+    if(!requestKey) return createStreamCourseOnce(body,actor,null);
+    return db.withStreamLock(requestKey,async()=>{
+        const prior=await db.getStreamResource(requestKey);
+        if(prior?.remote_id){
+            const existing=await db.getCourseById(prior.remote_id);
+            if(existing){
+                existing.replayed=true;
+                try{const lib=await db.getCourseBunny(existing.id);if(lib?.libraryId){existing.bunnyLibraryId=lib.libraryId;existing.bunnyPullZone=lib.pullZone;}}catch{}
+                return existing;
+            }
+        }
+        return createStreamCourseOnce(body,actor,requestKey);
+    });
+}
+async function createStreamCourseOnce(body,actor,requestKey) {
     const description=typeof body.description==='string'?body.description.trim().slice(0,2000):'';
     const course=await db.createCourse({id:body.id||uuidv4(),name:body.name.trim().slice(0,120),author:String(body.author||'').trim().slice(0,100),producerId:actor.producerId||null});
+    if(requestKey){ try{ await db.setStreamResource(requestKey,{remoteName:course.name,state:'ready',remoteId:course.id}); } catch(e){ console.warn('[stream/course-request]',e.message); } }
     // Descripción breve: mismo dato que edita Configuración (settings.description). Un fallo aquí no crea otro curso.
     if(description&&actor.producerId){
         try { await producerContentService.updateCourse(actor.producerId,course.id,{settings:{description}}); course.description=description; }

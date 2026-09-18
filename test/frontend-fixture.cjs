@@ -14,6 +14,7 @@ const videos = [{ videoId: 'video-a', title: 'Clase 1 · Bienvenida', courseId: 
     { videoId: 'video-c', title: 'Clase 3 · Ejercicio inicial', courseId: 'course-1', moduleId: 'module-2', sortOrder: 10, status: 'processing', sourceType: 'bunny', publicCode: null, attachments: 0, presentation: { coverUrl: null, theme: 'dark', description: '' } },
     { videoId: 'video-d', title: 'Clase suelta (sin módulo)', courseId: 'course-1', moduleId: null, sortOrder: 10, status: 'ready', sourceType: 'bunny', publicCode: null, attachments: 0, presentation: { coverUrl: null, theme: 'dark', description: '' } }];
 const operations = new Map();
+const courseRequests = new Map();
 const courseSettings = new Map([['course-1', { purchaseUrl: null, description: 'Curso de demostración del fixture local.', embedOrigins: [] }]]);
 const resources = new Map([['video:video-a', [{ id: 'res-1', name: 'Guía en PDF (enlace externo)', type: 'document', protection: 'public', sourceKind: 'link', url: 'https://example.invalid/guia.pdf', version: 1 }, { id: 'res-2', name: 'Apuntes protegidos (PDF alojado)', type: 'document', protection: 'protected', sourceKind: 'file', url: '/resources/res-2/download', version: 1, byteSize: 120000, pageCount: 4 }]]]);
 let counter = 100; // los ids nuevos no deben chocar con los datos iniciales (module-1, video-a…)
@@ -57,7 +58,9 @@ const server = http.createServer(async (req,res) => {
             if (req.method === 'GET') return json(res,200,{ courses });
             const input = JSON.parse(await readBody(req));
             if (!input.name || !String(input.name).trim()) return json(res, 400, { error: 'Nombre del curso requerido' });
+            if (input.requestId && courseRequests.has(input.requestId)) { const prior = courseRequests.get(input.requestId); return json(res, 201, { course: { ...prior, replayed: true }, warning: prior.bunnyWarning }); }
             const course = { id:'course-' + (++counter), name:input.name.trim(), author:(input.author || '').trim(), bunnyWarning:'Servicio de prueba; no se creó una biblioteca real' };
+            if (input.requestId) courseRequests.set(input.requestId, course);
             courseSettings.set(course.id, { purchaseUrl: null, description: String(input.description || '').trim(), embedOrigins: [] });
             courses.push(course); return json(res,201,{ course, warning: course.bunnyWarning });
         }
@@ -131,10 +134,11 @@ const server = http.createServer(async (req,res) => {
             if (videoRoute) { const v = videos.find(x => x.videoId === videoRoute[1]); if (!v) return json(res, 404, { error: 'Contenido no encontrado.', code: 'CONTENT_NOT_FOUND' });
                 if (req.method === 'DELETE') { videos.splice(videos.indexOf(v), 1); return json(res, 200, { ok: true, providerFilesDeleted: false }); }
                 const input = JSON.parse(await readBody(req)); let providerWarning = null;
+                if (Object.prototype.hasOwnProperty.call(input, 'moduleId') && v.title.includes('FALLA-MOVER')) return json(res, 502, { error: 'Fallo simulado al mover la clase.', code: 'FIXTURE_MOVE_FAILED' });
                 if (Object.prototype.hasOwnProperty.call(input, 'moduleId')) { if (input.moduleId && !modules.some(m => m.id === input.moduleId && m.courseId === v.courseId)) return json(res, 409, { error: 'El módulo debe pertenecer al curso seleccionado.', code: 'CONTENT_MODULE_COURSE_MISMATCH' }); if ((input.moduleId || null) !== (v.moduleId || null)) { v.moduleId = input.moduleId || null; v.sortOrder = 999; if (url.searchParams.get('bunnyFail') || v.title.includes('FALLA-BUNNY')) { v.collectionSyncPending = true; providerWarning = 'La clase se movió en Edulock. La colección de Bunny no se pudo actualizar ahora y se reintentará automáticamente.'; } else v.collectionSyncPending = false; } }
                 if (input.title) v.title = input.title; if (input.presentation) v.presentation = { ...v.presentation, ...input.presentation };
                 return json(res, 200, { video: { ...v, providerWarning } }); }
-            if (ws === '/reorder' && req.method === 'POST') { const input = JSON.parse(await readBody(req)); const isModules = input.kind === 'modules'; const key = isModules ? 'parentId' : 'moduleId'; const scoped = Object.prototype.hasOwnProperty.call(input, key);
+            if (ws === '/reorder' && req.method === 'POST') { const input = JSON.parse(await readBody(req)); if ((input.ids || []).some(id => videos.find(x => x.videoId === id)?.title.includes('FALLA-ORDEN'))) return json(res, 500, { error: 'Fallo simulado al guardar el orden.' }); const isModules = input.kind === 'modules'; const key = isModules ? 'parentId' : 'moduleId'; const scoped = Object.prototype.hasOwnProperty.call(input, key);
                 const list = (isModules ? modules : videos).filter(item => item.courseId === input.courseId && (!scoped || (item[key] || null) === (input[key] || null))); const ids = new Set(list.map(item => isModules ? item.id : item.videoId));
                 if (ids.size !== input.ids.length || input.ids.some(id => !ids.has(id))) return json(res, 409, { error: 'El contenido cambió. Actualiza la lista y vuelve a ordenar.', code: 'CONTENT_ORDER_CHANGED' });
                 input.ids.forEach((id, index) => { const item = list.find(item => (isModules ? item.id : item.videoId) === id); item.sortOrder = (index + 1) * 10; }); return json(res, 200, { ok: true, kind: input.kind, count: input.ids.length }); }

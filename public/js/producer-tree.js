@@ -69,7 +69,7 @@
    */
   function createTreeView({ container, document: doc, actions, esc }) {
     const html = value => esc(value == null ? '' : String(value));
-    let openState = new Set(), dragging = null, lastTree = null;
+    let openState = new Set(), dragging = null, lastTree = null, userState = false;
     const el = (tag, cls, text) => { const n = doc.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
     const btn = (text, cls, fn, title) => { const b = el('button', 'btn ' + cls, text); b.type = 'button'; b.title = title || text; b.setAttribute('aria-label', title || text); b.addEventListener('click', event => { event.stopPropagation(); fn(b); }); return b; };
 
@@ -114,7 +114,7 @@
     }
     function toggle(id, force) {
       const open = force === undefined ? !openState.has(id) : force;
-      if (open) openState.add(id); else openState.delete(id);
+      userState = true; if (open) openState.add(id); else openState.delete(id);
       const li = container.querySelector('li.tree-node[data-module-id="' + CSS.escape(id) + '"]');
       if (li) { const body = li.querySelector(':scope > .tree-body'), t = li.querySelector(':scope > .tree-row .tree-toggle'); body.hidden = !open; t.setAttribute('aria-expanded', String(open)); t.setAttribute('aria-label', open ? 'Contraer' : 'Expandir'); }
       if (actions.toggle) actions.toggle(id, open);
@@ -147,7 +147,7 @@
       container.classList.add('is-dragging');
       item.classList.add('is-dragged');
       const move = e => { positionGhost(e); updateTarget(e); };
-      const up = e => { doc.removeEventListener('pointermove', move); doc.removeEventListener('pointerup', up); doc.removeEventListener('pointercancel', cancel); finishDrag(e); };
+      const up = e => { doc.removeEventListener('pointermove', move); doc.removeEventListener('pointerup', up); doc.removeEventListener('pointercancel', cancel); finishDrag(e).catch(() => cleanupDrag()); };
       const cancel = () => { doc.removeEventListener('pointermove', move); doc.removeEventListener('pointerup', up); doc.removeEventListener('pointercancel', cancel); cleanupDrag(); };
       doc.addEventListener('pointermove', move); doc.addEventListener('pointerup', up); doc.addEventListener('pointercancel', cancel);
       positionGhost(event);
@@ -230,7 +230,8 @@
     function render(tree, { openAll = false } = {}) {
       lastTree = tree;
       if (dragging) return; // nunca se pisa un arrastre en curso con una actualización periódica
-      if (openAll || !openState.size) tree.roots.forEach(n => openState.add(n.module.id));
+      // Solo la primera carga abre todo: "ningún módulo abierto" elegido por el usuario se respeta al actualizar.
+      if (openAll || (!openState.size && !userState)) tree.roots.forEach(n => openState.add(n.module.id));
       container.replaceChildren();
       const list = el('ul', 'tree-list tree-root'); list.dataset.listKind = 'module'; list.dataset.parentId = '';
       for (const node of tree.roots) list.append(moduleRow(node, 0));
@@ -243,7 +244,7 @@
         box.append(orphanList); container.append(box);
       }
     }
-    return { render, toggle, isDragging: () => !!dragging, openState: () => new Set(openState), setOpen: ids => { openState = new Set(ids); } };
+    return { render, toggle, isDragging: () => !!dragging, openState: () => new Set(openState), setOpen: ids => { openState = new Set(ids); userState = true; } };
   }
   return { buildTree, descendantIds, canReparent, countClasses, moveWithin, statusLabel, createTreeView };
 });

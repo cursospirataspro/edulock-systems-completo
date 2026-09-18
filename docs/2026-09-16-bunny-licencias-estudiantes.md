@@ -282,3 +282,22 @@ Pedido del propietario: ningún mensaje del panel del productor debe decir "Bunn
 **Verificación en producción (productor y cursos QA, borrados al final; bibliotecas 756060 y 756065 se conservan):** curso con biblioteca ajena (755206) y colección obsoleta → al subir, `library-foreign` en el log, biblioteca 756060 creada, módulos con colección real en la nueva biblioteca. Proyecto nuevo completo por la interfaz: `library-key-pending` (1 espera) y luego módulo, submódulo, subida hasta "Clase lista", enlace, recurso, distintivo y movimiento de clase: 12/13 (el único "fallo" es que el panel "Subidas pendientes" seguía mostrando la subida fallida anterior de otro curso, comportamiento esperado).
 
 **Lo que sigue igual:** los videos ya subidos en la cuenta antigua no se reproducen hasta reactivar esa cuenta o volver a subirlos; al subir de nuevo en el curso, la clase nueva va a la biblioteca nueva sin ningún paso manual.
+
+### 15.8 Correcciones de la revisión externa del panel (2026-09-17, noche)
+
+Se revisaron los 10 puntos de la revisión externa contra el código; todos eran ciertos (uno, "PDF protegido solo por enlace", no es realizable: la protección exige el archivo en el servidor). Correcciones, todas desplegadas:
+
+| # | Hallazgo | Corrección | Verificación |
+|---|----------|------------|--------------|
+| 1 | Mover una clase mostraba éxito aunque fallara guardar la posición; el arrastre no capturaba errores | `moveClass` informa "La clase quedó al final del módulo porque no se pudo guardar su posición…" (aviso, no éxito); la acción de arrastre captura el error y lo muestra; `finishDrag` ya no deja promesas sin capturar | Fixture: "Mover a…" con fallo simulado → error en la ventana y la clase no se mueve; arrastre con fallo de orden simulado → aviso honesto y clase en el módulo nuevo |
+| 2 | Reintentar "Nuevo proyecto" podía duplicar curso y biblioteca | La ventana genera un `requestId` y recuerda el curso ya creado; el servidor (`createStreamCourse`) guarda `course-request:<actor>:<requestId>` en `stream_resources` bajo bloqueo y devuelve el mismo curso (`replayed: true`) | Producción: dos POST con el mismo `requestId` → mismo id de curso, segundo con `replayed=true` |
+| 3 | Cambiar de formación durante un movimiento mezclaba el contexto | El curso se fija al inicio de `moveClass` y se usa en todas las peticiones | Cubierto por el punto 1 |
+| 4 | Dos movimientos seguidos podían dejar Edulock y el proveedor descoordinados | Tras sincronizar, `updateVideo` comprueba que el módulo actual siga siendo el sincronizado; si no, deja la clase pendiente (`collection_sync_pending=true`) y la reconciliación la coloca en su módulo actual | Test Postgres nuevo (carrera simulada) en el VPS: 37/37 |
+| 5 | La descripción se perdía al continuar una subida pendiente | La descripción viaja en el registro de la subida (controlador compartido con admin) y se aplica al continuar o reintentar | Tests del controlador en verde |
+| 6 | Rama antigua de activación sin sesión | Eliminada: una licencia activa y asignada nunca abre sesión sin el inicio de sesión del alumno | Producción: activación sin sesión → 401 `AUTH_REQUIRED`, 0 activaciones; test unitario nuevo |
+| 7 | Subida de PDF nuevos seguía activa en el servidor | `POST /api/resources/upload` responde 410 `RESOURCE_UPLOAD_DISABLED`; el reemplazo de PDF históricos se conserva | Producción: 410 con el mensaje |
+| 8 | Contraer todos los módulos y actualizar los reabría | El árbol distingue "estado elegido por el usuario" de "primera carga" | Fixture: 0 módulos abiertos antes y después de actualizar |
+| 9 | Ventanas sin aviso de cambios sin guardar | Confirmación al cerrar la ventana genérica con cambios (botones y Escape) y la ventana de clase con datos escritos | Fixture: pregunta al cerrar, la ventana sigue abierta si se cancela |
+| 10 | Subidas pendientes mezcladas entre formaciones | El panel muestra las de la formación activa, indica la formación de cada fila y permite ver las demás | Código; el efecto se había observado en la prueba anterior |
+
+Suite local 379/389 (los mismos 10 preexistentes). Datos QA borrados; las bibliotecas creadas en Bunny se conservan.

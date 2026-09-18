@@ -46,7 +46,7 @@
   details{margin-top:12px} summary{cursor:pointer;color:var(--c-text);padding:6px 0}
   @media(max-width:600px){.wrap{padding:12px}.card{padding:14px}.brand{flex-wrap:wrap}.job{align-items:flex-start;flex-direction:column}table{min-width:520px}}
 </style>
-<link rel="stylesheet" href="/css/producer-workspace.css?v=20260917-neutral">
+<link rel="stylesheet" href="/css/producer-workspace.css?v=20260917-fixes">
 </head>
 <body>
 
@@ -320,9 +320,12 @@ function createStreamUploadController(options) {
             } else {
                 job = { operationId: crypto.randomUUID(), title, courseId, moduleId,
                     fileName: file.name, fileSize: file.size, fileLastModified: file.lastModified,
+                    description: typeof input.description === 'string' ? input.description.slice(0, 2000) : '',
                     phase: 'client-upload', ready: false, createdAt: Date.now() };
                 jobs.push(job);
             }
+            // The description written in the form survives «Continuar seguimiento» and «Reintentar envío».
+            if (typeof input.description === 'string' && input.description.trim()) job.description = input.description.slice(0, 2000);
             changed(job, { failed: false, retryable: false, error: null, action: null, phase: 'client-upload' }, {
                 phase: 'client-upload', label: 'Enviando el archivo de tu equipo al servidor.', percent: 0
             });
@@ -490,10 +493,10 @@ async function selectCourse() {
     } catch (error) { if (requestId === _courseRequest) message('app-msg', error.message, 'err'); }
 }
 // Crear curso desde la ventana «Nuevo proyecto»: nombre + instructor (autor) + descripción breve en una sola petición.
-async function createCourse({ name, author = '', description = '' }) {
+async function createCourse({ name, author = '', description = '', requestId = '' }) {
     name = String(name || '').trim();
     if (!name) throw new Error('Escribe el nombre del curso.');
-    const data = await api('POST', '/api/producer/courses', { name, author: String(author || '').trim(), description: String(description || '').trim() });
+    const data = await api('POST', '/api/producer/courses', { name, author: String(author || '').trim(), description: String(description || '').trim(), ...(requestId ? { requestId } : {}) });
     const course = data.course || data;
     await loadCourses(course.id);
     const warnings = [];
@@ -517,17 +520,32 @@ function showUploadProgress(view) {
     $('up-bar').style.width = view.percent === null ? '100%' : view.percent + '%';
     $('up-bar').classList.toggle('indeterminate', view.percent === null);
 }
+let _showAllUploads = false;
 function renderUploadJobs(jobs) {
     $('up-jobs').replaceChildren();
     const pending = jobs.filter(j => !j.ready);
     const panel = $('upload-panel'); if (panel) panel.hidden = !pending.length;
     if (!pending.length) return;
+    const activeCourse = $('up-course').value || '';
+    const courseName = id => (_courses.find(c => c.id === id) || {}).name || 'Otra formación';
+    const mine = activeCourse ? pending.filter(j => j.courseId === activeCourse) : pending;
+    const others = pending.length - mine.length;
+    const shown = (_showAllUploads || !activeCourse) ? pending : mine;
     const heading = document.createElement('p'); heading.className = 'muted';
-    heading.textContent = 'Subidas guardadas. «Continuar seguimiento» consulta la operación sin reenviar el archivo; «Reintentar envío» solo aparece cuando el servidor necesita el archivo otra vez.'; $('up-jobs').append(heading);
-    for (const job of pending) {
+    heading.textContent = (shown.length ? 'Subidas guardadas. «Continuar seguimiento» consulta la operación sin reenviar el archivo; «Reintentar envío» solo aparece cuando el servidor necesita el archivo otra vez. ' : 'No hay subidas pendientes en esta formación. ')
+        + (others && activeCourse ? (_showAllUploads ? 'Se muestran también las de otras formaciones.' : 'Hay ' + others + ' en otras formaciones.') : '');
+    $('up-jobs').append(heading);
+    if (others && activeCourse) {
+        const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'btn ghost small';
+        toggle.textContent = _showAllUploads ? 'Ver solo esta formación' : 'Ver las de otras formaciones';
+        toggle.onclick = () => { _showAllUploads = !_showAllUploads; renderUploadJobs(_stream ? _stream.getJobs() : jobs); };
+        heading.append(' ', toggle);
+    }
+    for (const job of shown) {
         const row = document.createElement('div'); row.className = 'job';
         const text = document.createElement('div');
         const title = document.createElement('strong'); title.textContent = job.title; text.append(title);
+        const where = document.createElement('div'); where.className = 'muted'; where.textContent = 'Formación: ' + courseName(job.courseId); text.append(where);
         const detail = document.createElement('div'); detail.className = job.failed ? 'err' : 'muted';
         detail.textContent = job.failed ? hideProvider(job.error || 'Requiere revisión.') : 'Pendiente de confirmación.'; text.append(detail);
         const actions = document.createElement('div'); actions.className = 'actions';
@@ -548,7 +566,8 @@ async function retryUpload(job) {
     if (!file) { message('up-msg', 'Selecciona el mismo archivo («' + job.fileName + '») para reintentar el envío.', 'err'); $('up-file').focus(); return; }
     if (file.name !== job.fileName || file.size !== job.fileSize) { message('up-msg', 'El archivo seleccionado no coincide con «' + job.fileName + '» (' + job.fileSize + ' bytes). Selecciona el mismo archivo.', 'err'); return; }
     $('up-module').value = job.moduleId || ''; $('up-title').value = job.title;
-    return runUpload(() => _stream.upload({ file, courseId: job.courseId, moduleId: job.moduleId || '', title: job.title }));
+    const description = $('up-description').value.trim() || job.description || '';
+    return runUpload(() => _stream.upload({ file, courseId: job.courseId, moduleId: job.moduleId || '', title: job.title, description }), { description });
 }
 function streamErrorText(error) {
     const parts = [error.message];
@@ -605,10 +624,11 @@ async function runUpload(action, { description = '' } = {}) {
 async function uploadVideo() {
     const file = $('up-file').files[0], courseId = $('up-course').value;
     if (!file || !courseId) { message('up-msg', 'Selecciona un archivo de video de tu equipo.', 'err'); return; }
-    const input = { file, courseId, moduleId:$('up-module').value, title:$('up-title').value.trim() || file.name };
-    return runUpload(() => _stream.upload(input), { description: $('up-description').value.trim() });
+    const description = $('up-description').value.trim();
+    const input = { file, courseId, moduleId:$('up-module').value, title:$('up-title').value.trim() || file.name, description };
+    return runUpload(() => _stream.upload(input), { description });
 }
-async function resumeUpload(operationId) { return runUpload(() => _stream.resume(operationId)); }
+async function resumeUpload(operationId) { const job = _stream ? _stream.getJobs().find(j => j.operationId === operationId) : null; return runUpload(() => _stream.resume(operationId), { description: job?.description || '' }); }
 // El gestor de Contenido (producer-workspace.js) reemplaza esta función al arrancar; aquí solo evita errores antes de eso.
 async function loadVideos() {}
 // Enlace de Edulock de una clase (publicCode/sublink). Devuelve la URL; volver a pedirlo recupera el mismo enlace.
@@ -648,7 +668,7 @@ $('up-module').addEventListener('change', renderModuleCollectionStatus);
 // Workspace starts after its navigation and controllers are ready.
 
 </script>
-<script src="/js/producer-tree.js?v=20260917-neutral"></script>
-<script src="/js/producer-workspace.js?v=20260917-neutral"></script>
+<script src="/js/producer-tree.js?v=20260917-fixes"></script>
+<script src="/js/producer-workspace.js?v=20260917-fixes"></script>
 </body>
 </html>

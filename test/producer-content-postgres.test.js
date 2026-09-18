@@ -223,3 +223,23 @@ test('creation rechecks the course after a concurrent deletion releases the prod
     }
 });
 function own(obj, key) { return Object.prototype.hasOwnProperty.call(obj, key); }
+test('when a class is moved again while the provider is still syncing the first move, the stale sync leaves the class pending instead of clearing it', async () => {
+    const f = await fixture();
+    const bunnyVideo = id('catalog'); await db.addToCatalog({ videoId: bunnyVideo, title: 'Bunny race', courseId: f.courseId, producerId: f.producerId, status: 'ready', sourceType: 'bunny', bunnyUrl: 'https://vz-test.b-cdn.net/x/playlist.m3u8' });
+    let releaseFirst; const firstStarted = new Promise(resolve => { releaseFirst = resolve; });
+    let gate = null; const synced = [];
+    const withSync = createProducerContent({ db, generatePublicCode: id => id.replaceAll('-', ''), syncCollection: async input => { synced.push(input.moduleId); if (gate) { const wait = gate; gate = null; releaseFirst(); await wait; } } });
+    let unblock; gate = new Promise(resolve => { unblock = resolve; });
+    const slowMove = withSync.updateVideo(f.producerId, bunnyVideo, { moduleId: f.moduleId });   // first move: provider answer delayed
+    await firstStarted;
+    const fastMove = await withSync.updateVideo(f.producerId, bunnyVideo, { moduleId: f.childId }); // second move finishes first
+    assert.equal(fastMove.moduleId, f.childId); assert.equal(fastMove.collectionSyncPending, false);
+    unblock(); const stale = await slowMove;
+    assert.equal(stale.collectionSyncPending, true, 'the stale sync must not close the synchronisation');
+    assert.match(stale.providerWarning, /volvió a moverse/);
+    assert.equal((await db.getCatalogById(bunnyVideo)).moduleId, f.childId, 'the newest move wins in Edulock');
+    await db.setCourseBunnyLibrary(f.courseId, { libraryId: '999', libraryKey: 'k', pullZone: 'vz-test.b-cdn.net', tokenKey: null });
+    const pending = (await db.getPendingCollectionSyncs(50)).find(p => p.videoId === bunnyVideo);
+    assert.equal(pending?.moduleId, f.childId, 'the reconciliation will place the class in its current module');
+    assert.deepEqual(synced, [f.moduleId, f.childId]);
+});

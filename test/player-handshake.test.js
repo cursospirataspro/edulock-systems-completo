@@ -96,3 +96,11 @@ test('VdoCipher requires exact HTTPS embed hostname and sessions are cleaned on 
     await assert.rejects(f.service.resolve(f.req, 'video-a', 'device-a'), /write failed/);
     assert.equal(f.state.events.at(-1)[0], 'end');
 });
+
+test('an active, already assigned license never opens a session without the student login', async () => {
+    const f = fixture();
+    f.state.license = { ...f.state.license, status: 'active', student_id: 'student-a' };
+    f.req.body = { licenseKey: 'AAAA-BBBB-CCCC-DDDD', deviceId: 'device-a' };
+    await assert.rejects(f.service.activate(f.req), { code: 'AUTH_REQUIRED' });
+    assert.equal(f.state.events.length, 0, 'no activation, no session, no audit event without a session');
+});

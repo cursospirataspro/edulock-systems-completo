@@ -35,10 +35,14 @@
     return '<label class="form-field'+(options.wide?' wide':'')+'">'+h(label)+control+(options.hint?'<span class="muted">'+h(options.hint)+'</span>':'')+'</label>';
   }
   const info = (label,value) => '<div class="detail-item"><small>'+h(label)+'</small><div>'+(value==null||value===''?'<span class="muted">—</span>':value)+'</div></div>';
+  let dialogInitial='';
+  const formSnapshot=()=>{try{return JSON.stringify([...new FormData(el('workspace-form')).entries()].map(([k,v])=>[k,typeof v==='string'?v:'']));}catch(_){return '';}};
+  const dialogDirty=()=>!el('workspace-dialog-submit').hidden&&!el('workspace-dialog-submit').disabled&&dialogInitial!==formSnapshot();
+  function closeWorkspaceDialog(){const dialog=el('workspace-dialog');if(!dialog.open)return;if(dialogDirty()&&!confirm('Tienes cambios sin guardar. ¿Cerrar sin guardar?'))return;dialog.close();}
   function showDialog(title,body,onSave,saveLabel='Guardar cambios') {
     const dialog=el('workspace-dialog'),form=el('workspace-form');
     if(dialog.open)dialog.close();
-    el('workspace-dialog-title').textContent=title;el('workspace-dialog-body').innerHTML=body;el('workspace-dialog-msg').textContent='';
+    el('workspace-dialog-title').textContent=title;el('workspace-dialog-body').innerHTML=body;el('workspace-dialog-msg').textContent='';dialogInitial=formSnapshot();
     el('workspace-dialog-submit').disabled=false;el('workspace-dialog-close').disabled=false;el('workspace-dialog-cancel').disabled=false;el('workspace-dialog-msg').className='';el('workspace-dialog-submit').textContent=saveLabel;el('workspace-dialog-submit').hidden=!onSave;
     el('workspace-dialog-cancel').textContent=onSave?'Cancelar':'Cerrar';
     form.onsubmit=async event=>{event.preventDefault();if(!onSave)return;const submit=el('workspace-dialog-submit');if(submit.disabled)return;submit.disabled=true;el('workspace-dialog-close').disabled=true;el('workspace-dialog-cancel').disabled=true;el('workspace-dialog-msg').textContent='Guardando…';
@@ -82,9 +86,11 @@
   }
   // «Abrir proyecto» siempre navega al gestor de Contenido de esa formación, también si ya es la activa.
   async function openProject(id){if(!state.projects.some(p=>p.id===id))throw new Error('La formación ya no está disponible. Actualiza la lista.');el('up-course').value=id;await selectCourse();await navigate('videos/'+id,{push:true});}
-  function newProjectDialog(){showDialog('Nuevo proyecto','<div class="form-grid">'+field('name','Nombre del curso','','text',{required:true,maxLength:120,wide:true})+field('author','Instructor','','text',{maxLength:100,wide:true,hint:'Aparece en la tarjeta y en las portadas.'})+field('description','Descripción breve (opcional)','','textarea',{wide:true,hint:'Se guarda con el proyecto y puede editarse desde Configuración.'})+'</div>',async d=>{
+  function newProjectDialog(){let created=null,warnings=[];const requestId=(typeof crypto!=='undefined'&&crypto.randomUUID)?crypto.randomUUID():'req-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);showDialog('Nuevo proyecto','<div class="form-grid">'+field('name','Nombre del curso','','text',{required:true,maxLength:120,wide:true})+field('author','Instructor','','text',{maxLength:100,wide:true,hint:'Aparece en la tarjeta y en las portadas.'})+field('description','Descripción breve (opcional)','','textarea',{wide:true,hint:'Se guarda con el proyecto y puede editarse desde Configuración.'})+'</div>',async d=>{
     if(!String(d.name||'').trim())throw new Error('Escribe el nombre del curso.');
-    const {course,warnings}=await createCourse({name:d.name,author:d.author,description:d.description});
+    // Si el curso ya se creó y falló solo la recarga, el reintento no vuelve a crearlo (y el servidor reconoce el mismo requestId).
+    if(!created){const r=await createCourse({name:d.name,author:d.author,description:d.description,requestId});created=r.course;warnings=r.warnings||[];}
+    const course=created;
     await refreshProjects();await overview();
     message('app-msg',warnings.length?('Proyecto «'+course.name+'» creado. '+warnings.join(' ')):'Proyecto «'+course.name+'» creado. Ábrelo para organizar sus módulos y clases.',warnings.length?'warn':'ok');
   },'Crear proyecto');}
@@ -99,7 +105,7 @@
     newClass:m=>openClassDialog(m.id),newSubmodule:m=>moduleDialog({parent:m}),moduleMenu,classMenu,classLink:(v,b)=>showClassLink(v,b),
     toggle:()=>{try{sessionStorage.setItem(openKey(),JSON.stringify([...treeView.openState()]));}catch(_){}},
     reorder:async({kind,container,ids,revert})=>{try{await req('POST','/reorder',{kind,courseId:activeId(),[kind==='videos'?'moduleId':'parentId']:container,ids});message('app-msg','Orden guardado.','ok');await refreshProjects();}catch(error){revert();message('app-msg','No se guardó el orden: '+error.message,'err');if(error.status===409)await refreshProjects();}},
-    moveClass:(v,moduleId,position)=>moveClass(v,moduleId,position)}});return treeView;}
+    moveClass:async(v,moduleId,position)=>{try{await moveClass(v,moduleId,position);}catch(error){message('app-msg','No se movió la clase: '+error.message,'err');await refreshProjects().catch(()=>{});}}}});return treeView;}
   function renderContent(){
     const p=current();renderBreadcrumb(p);const area=el('content-tree');if(!area)return;const newModule=el('new-module-btn');if(newModule)newModule.disabled=!p;
     const panel=el('upload-panel');if(panel)panel.hidden=!el('up-jobs')?.children.length;
@@ -148,13 +154,17 @@
     showDialog('Mover módulo','<p class="muted">Un módulo no puede quedar dentro de sí mismo ni de sus submódulos. Su contenido se traslada con él.</p><div class="form-grid">'+field('parentId','Colocar dentro de',m.parentId||'','select',{choices:moduleChoices(p,{exclude:invalid}),wide:true})+'</div>',async d=>{
       if(!T.canReparent(modules,m.id,d.parentId||null))throw new Error('Ese destino crearía un ciclo.');
       await req('PATCH','/modules/'+encodeURIComponent(m.id),{parentId:d.parentId||null});await loadCourses(p.id);await refreshProjects();message('app-msg','Módulo movido.','ok');},'Mover');}
-  async function moveClass(v,moduleId,position){const p=current();if(!p)return;
+  // El curso se fija al empezar: cambiar de formación durante la espera no mezcla contextos. Un fallo al guardar la posición se informa; nunca se muestra como éxito.
+  async function moveClass(v,moduleId,position){const courseId=activeId();if(!courseId||!state.projects.some(x=>x.id===courseId))return;
     const result=await req('PATCH','/videos/'+encodeURIComponent(v.videoId),{moduleId:moduleId||null});
     const warning=result?.video?.providerWarning||null;
     await refreshProjects();
-    if(Number.isInteger(position)){const target=(current()?.videos||[]).filter(x=>(x.moduleId||null)===(moduleId||null)&&x.videoId!==v.videoId).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(x=>x.videoId);target.splice(Math.min(position,target.length),0,v.videoId);
-      try{await req('POST','/reorder',{kind:'videos',courseId:activeId(),moduleId:moduleId||null,ids:target});await refreshProjects();}catch(_){/* la clase ya está en el módulo; el orden queda al final */}}
-    message('app-msg',warning?('Clase movida. '+warning):'Clase movida; sus recursos, enlaces y permisos se conservan.',warning?'warn':'ok');}
+    let orderWarning=null;
+    if(Number.isInteger(position)){const fresh=state.projects.find(x=>x.id===courseId);const target=(fresh?.videos||[]).filter(x=>(x.moduleId||null)===(moduleId||null)&&x.videoId!==v.videoId).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map(x=>x.videoId);target.splice(Math.min(position,target.length),0,v.videoId);
+      try{await req('POST','/reorder',{kind:'videos',courseId,moduleId:moduleId||null,ids:target});await refreshProjects();}
+      catch(error){orderWarning='La clase quedó al final del módulo porque no se pudo guardar su posición ('+error.message+'). Arrástrala de nuevo para colocarla.';}}
+    const notes=[warning,orderWarning].filter(Boolean);
+    message('app-msg',notes.length?('Clase movida. '+notes.join(' ')):'Clase movida; sus recursos, enlaces y permisos se conservan.',notes.length?'warn':'ok');}
   function moveClassDialog(v){const p=current();showDialog('Mover clase','<p class="muted">Solo dentro de esta formación. La clase conserva su enlace, recursos y licencias.</p><div class="form-grid">'+field('moduleId','Módulo o submódulo de destino',v.moduleId||'','select',{choices:moduleChoices(p,{root:'Sin módulo'}),wide:true})+'</div>',async d=>{if((d.moduleId||null)===(v.moduleId||null))return;await moveClass(v,d.moduleId||null);},'Mover');}
   function editVideo(v){const p=state.projects.find(p=>p.id===v.courseId)||current();
     showDialog('Editar clase','<div class="form-grid">'+field('title','Título',v.title,'text',{required:true,wide:true,maxLength:160})+field('moduleId','Módulo o submódulo',v.moduleId||'','select',{choices:moduleChoices(p,{root:'Sin módulo'}),wide:true})+field('description','Descripción breve',v.presentation?.description||'','textarea',{wide:true})+'</div><details class="section-spacer"><summary>Portada (avanzado)</summary><div class="form-grid" style="margin-top:10px">'+field('coverUrl','URL de la imagen de portada',v.presentation?.coverUrl||'','url',{wide:true})+field('theme','Tema de la portada',v.presentation?.theme||'dark','select',{choices:[{value:'dark',label:'Oscuro'},{value:'light',label:'Claro'}]})+'</div></details><div class="section-spacer actions" id="video-extra-actions"></div><div class="section-spacer" id="video-delete-action"></div>',async d=>{
@@ -176,6 +186,8 @@
     after.append(button('Subir otra clase',()=>{el('up-title').value='';el('up-file').value='';el('up-description').value='';after.hidden=true;el('up-progress').classList.add('hidden');el('up-msg').textContent='';},{small:false}));};
   function closeClassDialog(){const dialog=el('class-dialog');if(!dialog.open)return;
     if(_stream&&_stream.isBusy()&&_uploadPhase==='client-upload'&&!dialog.dataset.confirmClose){dialog.dataset.confirmClose='1';message('up-msg','El archivo todavía está saliendo de tu equipo. Si cierras ahora, el envío continúa en segundo plano y podrás seguirlo en «Subidas pendientes»; vuelve a pulsar Cerrar para confirmar.','warn');setTimeout(()=>{delete dialog.dataset.confirmClose;},6000);return;}
+    const typed=!(_stream&&_stream.isBusy())&&(el('up-title').value.trim()||el('up-description').value.trim()||(el('up-file').files&&el('up-file').files.length));
+    if(typed&&!confirm('Tienes datos sin enviar en esta ventana. ¿Cerrar sin subir la clase?'))return;
     delete dialog.dataset.confirmClose;dialog.close();}
   async function storage(){const d=await req('GET','/storage'+qs({courseId:activeId()}));state.storage=d.items||[];el('storage-summary').innerHTML=stat('Archivos registrados',number(d.total))+stat('Tamaño conocido',bytes(d.knownBytes),'Archivos originales registrados')+stat('Sin tamaño disponible',number(d.unknownSizeCount))+stat('Capacidad contratada',bytes(d.capacityBytes));el('storage-explanation').textContent='El tamaño mostrado corresponde a los archivos registrados con medición disponible. No representa el espacio total ni el tráfico facturado por tu proveedor.';renderStorage();}
   function renderStorage(){const query=el('storage-search').value.toLowerCase(),kind=el('storage-kind').value;const rows=state.storage.filter(i=>(!kind||i.kind===kind)&&(!activeId()||i.courseId===activeId())&&String(i.name||'').toLowerCase().includes(query));const area=el('workspace-storage');area.innerHTML=rows.length?table(['Archivo','Tipo','Acceso','Tamaño','Acciones'],rows.map((r,index)=>'<tr><td>'+h(r.name)+'</td><td>'+h(r.kind==='video'?'Video':'Recurso')+'</td><td>'+h(r.kind==='video'?'Licencia':r.protection==='protected'?'Protegido':'Libre')+'</td><td>'+bytes(r.byteSize)+'</td><td id="storage-action-'+index+'"></td></tr>').join('')):empty('No hay archivos para mostrar');rows.forEach((r,index)=>{el('storage-action-'+index).append(button('Administrar',async()=>{if(r.kind==='video'){const v=allVideos().find(v=>v.videoId===r.id);if(v)editVideo(v);else await navigate('videos');}else openResourceEditor(r.targetKind||'module',r.targetId||r.moduleId,r.name);}));});}
@@ -344,8 +356,8 @@
   el('license-tabs')?.querySelectorAll('.tab').forEach(tab=>tab.addEventListener('click',()=>{state.licenseTab=tab.dataset.status;el('license-status-filter').value='';renderLicenseTabs(state.licenseCounts);return licenses(1);}));
   el('lic-course').addEventListener('change',()=>syncLicenseScope().catch(error=>message('lic-msg',error.message,'err')));
   el('student-search-btn')?.addEventListener('click',()=>students(1));el('student-search')?.addEventListener('keydown',e=>{if(e.key==='Enter')students(1);});el('student-course-filter')?.addEventListener('change',()=>students(1));el('storage-search').addEventListener('input',renderStorage);el('storage-kind').addEventListener('change',renderStorage);
-  el('workspace-dialog-close').addEventListener('click',()=>el('workspace-dialog').close());el('workspace-dialog-cancel').addEventListener('click',()=>el('workspace-dialog').close());
-  el('workspace-dialog').addEventListener('cancel',event=>{if(el('workspace-dialog-submit').disabled)event.preventDefault();});
+  el('workspace-dialog-close').addEventListener('click',closeWorkspaceDialog);el('workspace-dialog-cancel').addEventListener('click',closeWorkspaceDialog);
+  el('workspace-dialog').addEventListener('cancel',event=>{if(el('workspace-dialog-submit').disabled||(dialogDirty()&&!confirm('Tienes cambios sin guardar. ¿Cerrar sin guardar?')))event.preventDefault();});
   window.addEventListener('hashchange',()=>navigate(location.hash.slice(1)));
   if(TOKEN)showApp();
 })();
