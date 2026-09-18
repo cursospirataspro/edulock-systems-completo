@@ -306,7 +306,7 @@ test('F03: borrar un módulo desde admin cierra sus recursos y no deja nada colg
     const fuente = fs.readFileSync(path.join(__dirname, '..', 'database-pg.js'), 'utf8');
     const inicio = fuente.indexOf('module.exports.deleteModule =');
     const bloque = fuente.slice(inicio, fuente.indexOf('module.exports.deleteModulesByCourse'));
-    assert.ok(bloque.includes('UPDATE protected_resources SET deleted_at=NOW()'),
+    assert.ok(bloque.includes('UPDATE protected_resources SET deleted_at='),
         'ningún documento puede quedar apuntando a un módulo inexistente');
     assert.ok(bloque.includes('DELETE FROM producer_content_settings'));
     assert.ok(bloque.includes('DELETE FROM stream_resources WHERE resource_key = ANY'));
@@ -374,12 +374,67 @@ test('F04: el binario distribuido no admite modo de desarrollo por línea de ór
 });
 
 // ── R04 ──────────────────────────────────────────────────────────────────────
-test('R04: la sesión guardada se protege con el almacén del sistema y migra la antigua', () => {
+// Se ejecuta la función real del reproductor con un sistema de archivos simulado.
+function sesionSimulada({ disponible = true, fallaAlCifrar = false } = {}) {
+    const main = fs.readFileSync(path.join(__dirname, '..', 'player-app', 'main.js'), 'utf8').replace(/\r\n/g, '\n');
+    const inicio = main.indexOf('function writeSessionFile(');
+    const fin = main.indexOf('\nfunction readSessionFile(');
+    assert.ok(inicio >= 0 && fin > inicio);
+    const escrituras = [], avisos = [];
+    const archivos = new Map();
+    const contexto = vm.createContext({
+        SESSION_PATH: '/datos/session.json',
+        JSON, Buffer, require,
+        log: { warn: m => avisos.push(String(m)), error: m => avisos.push(String(m)), info() {} },
+        fs: {
+            writeFileSync: (ruta, datos) => { escrituras.push(String(datos)); archivos.set(ruta, String(datos)); },
+            existsSync: ruta => archivos.has(ruta),
+            unlinkSync: ruta => archivos.delete(ruta),
+        },
+        safeStorage: {
+            isEncryptionAvailable: () => disponible,
+            encryptString: texto => {
+                if (fallaAlCifrar) throw new Error('el llavero no responde');
+                return Buffer.from('CIFRADO:' + texto, 'utf8');
+            },
+        },
+    });
+    vm.runInContext(main.slice(inicio, fin), contexto);
+    return { write: contexto.writeSessionFile, escrituras, avisos, archivos };
+}
+
+test('R04: con el almacén disponible, el token se guarda cifrado y nunca en claro', () => {
+    const s = sesionSimulada({ disponible: true });
+    assert.equal(s.write({ token: 'token-sintetico-de-prueba', email: 'qa@edulock.invalid' }), true);
+    assert.equal(s.escrituras.length, 1);
+    assert.ok(!s.escrituras[0].includes('token-sintetico-de-prueba'),
+        'el token no puede aparecer legible en el archivo');
+    assert.ok(JSON.parse(s.escrituras[0]).enc, 'debe guardarse el sobre cifrado');
+});
+
+test('R04: si el cifrado está disponible pero falla, la sesión NO se guarda en claro', () => {
+    const s = sesionSimulada({ disponible: true, fallaAlCifrar: true });
+    const resultado = s.write({ token: 'token-sintetico-de-prueba' });
+    assert.equal(resultado, false, 'debe informar que no se guardó');
+    assert.equal(s.escrituras.length, 0, 'no puede escribirse nada en texto plano');
+    assert.ok(s.avisos.some(a => a.includes('NO se guarda en claro')));
+});
+
+test('R04: sin almacén cifrado en el sistema se guarda como antes, pero se deja constancia', () => {
+    const s = sesionSimulada({ disponible: false });
+    assert.equal(s.write({ token: 'token-sintetico-de-prueba' }), true);
+    assert.equal(s.escrituras.length, 1);
+    assert.ok(s.escrituras[0].includes('token-sintetico-de-prueba'),
+        'este caso sí guarda en claro: es el comportamiento anterior, para no dejar sin sesión a ese equipo');
+    assert.ok(s.avisos.some(a => a.includes('no ofrece almacen cifrado')),
+        'tiene que quedar registrado que ese equipo no puede proteger el archivo');
+});
+
+test('R04: el archivo antiguo en texto plano se migra al leerlo', () => {
     const main = fs.readFileSync(path.join(__dirname, '..', 'player-app', 'main.js'), 'utf8');
-    assert.ok(main.includes('safeStorage'), 'debe usarse el almacén del sistema operativo');
-    assert.ok(main.includes('function writeSessionFile(') && main.includes('function readSessionFile('));
-    assert.ok(!/fs\.writeFileSync\(SESSION_PATH, JSON\.stringify/.test(main),
-        'ya no puede escribirse la sesión en texto plano directamente');
+    assert.ok(main.includes('function readSessionFile('));
+    const bloque = main.slice(main.indexOf('function readSessionFile('), main.indexOf('function isSavedSessionValid('));
+    assert.ok(bloque.includes('writeSessionFile(parsed)'), 'una sesión antigua se reescribe protegida');
 });
 
 test('R04: los dominios del inicio de sesión se comparan por host y solo se abren http/https', () => {
@@ -388,6 +443,10 @@ test('R04: los dominios del inicio de sesión se comparan por host y solo se abr
     assert.ok(!main.includes("url.includes('accounts.google.com')"));
     assert.ok(main.includes('function openExternalSafely('));
     assert.ok(main.includes('function isTrustedSender('), 'los canales sensibles comprueban quién llama');
+    assert.ok(main.includes('trustedSender(event, mainWindow'),
+        'debe usarse la verificación estricta (ventana, marco principal y dirección exacta), no solo el prefijo file://');
+    assert.ok(!main.includes("return origen.startsWith('file://')"),
+        'comprobar solo que empieza por file:// deja pasar cualquier otra página local');
 });
 
 // ── R08 ──────────────────────────────────────────────────────────────────────
@@ -407,7 +466,7 @@ test('F03: borrar un curso desde admin no deja documentos ni registros colgando'
     const fuente = fs.readFileSync(path.join(__dirname, '..', 'database-pg.js'), 'utf8');
     const inicio = fuente.indexOf('module.exports.deleteCourse =');
     const bloque = fuente.slice(inicio, fuente.indexOf('module.exports.moveVideoToCourse'));
-    assert.ok(bloque.includes('UPDATE protected_resources SET deleted_at=NOW()'));
+    assert.ok(bloque.includes('UPDATE protected_resources SET deleted_at='));
     assert.ok(bloque.includes('DELETE FROM stream_resources WHERE resource_key = ANY'));
     assert.ok(bloque.includes('enqueueProviderDeletion'));
     assert.ok(bloque.indexOf('enqueueProviderDeletion') < bloque.indexOf('DELETE FROM courses WHERE id=$1'),

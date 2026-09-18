@@ -136,3 +136,58 @@ test('F09: el archivo del reproductor emite el evento de sesión que escucha el 
         'player.js debe emitir el evento; si no, la escucha del panel sería código muerto');
     assert.ok(source.includes("addEventListener('edulock:session-changed'"));
 });
+
+// ── F09 (segunda revisión): el puente NO lanza, devuelve { ok:false, code } ──
+// La prueba anterior simulaba el fallo lanzando una excepción, que no es el
+// contrato real: por eso pasaba mientras el fallo seguía ahí.
+test('F09: un fallo de conexión devuelto como { ok:false } también se reintenta', async () => {
+    const caida = { ok: false, code: 'ECONNREFUSED', error: 'No se pudo conectar.' };
+    const m = montar({ respuestas: [caida, caida, ok(true)] });
+    m.correr(); await new Promise(r => setImmediate(r));
+    assert.equal(m.llamadas.length, 1);
+    assert.equal(m.elementos.get('btn-courses').hidden, true);
+
+    m.correr(); await new Promise(r => setImmediate(r));
+    assert.equal(m.llamadas.length, 2, 'la respuesta resuelta con ok:false debe provocar un reintento');
+
+    m.correr(); await new Promise(r => setImmediate(r));
+    assert.equal(m.elementos.get('btn-courses').hidden, false);
+});
+
+test('F09: el genérico RESOURCE_UNAVAILABLE del puente se reintenta', async () => {
+    const m = montar({ respuestas: [{ ok: false, code: 'RESOURCE_UNAVAILABLE' }, ok(true)] });
+    m.correr(); await new Promise(r => setImmediate(r));
+    m.correr(); await new Promise(r => setImmediate(r));
+    assert.equal(m.llamadas.length, 2);
+    assert.equal(m.elementos.get('btn-courses').hidden, false);
+});
+
+test('F09: una respuesta de autorización es definitiva y no se reintenta', async () => {
+    for (const code of ['SESSION_ENDED', 'LICENSE_REQUIRED', 'AUTH_REQUIRED']) {
+        const m = montar({ respuestas: [{ ok: false, code }, ok(true)] });
+        m.correr(); await new Promise(r => setImmediate(r));
+        m.correr(); await new Promise(r => setImmediate(r));
+        assert.equal(m.llamadas.length, 1, code + ' no puede provocar reintentos');
+        assert.equal(m.elementos.get('btn-courses').hidden, true);
+    }
+});
+
+test('F09: si la sesión cambia con una consulta en vuelo, la nueva sesión sí se consulta', async () => {
+    const m = montar({ respuestas: ['pendiente', ok(true)] });
+    m.correr();                                  // arranca la primera consulta
+    await new Promise(r => setImmediate(r));
+    assert.equal(m.llamadas.length, 1);
+
+    // Cambia la sesión mientras la primera sigue en vuelo.
+    m.document.dispatch('edulock:session-changed', { loggedIn: true });
+    m.correr(); await new Promise(r => setImmediate(r));
+
+    // Llega la respuesta antigua: se descarta, pero debe dejar programada la nueva.
+    m.resolver(ok(false));
+    await new Promise(r => setImmediate(r));
+    m.correr(); await new Promise(r => setImmediate(r));
+    m.correr(); await new Promise(r => setImmediate(r));
+
+    assert.equal(m.llamadas.length, 2, 'la sesión nueva no puede quedarse sin consultar');
+    assert.equal(m.elementos.get('btn-courses').hidden, false);
+});
