@@ -765,6 +765,29 @@ async function initDb() {
         remote_id TEXT,
         updated_at TEXT NOT NULL
     )`);
+    // Cola duradera de borrados en el servicio de video. La fila se escribe en la
+    // MISMA transacción que borra el contenido local, con el descriptor remoto ya
+    // resuelto: así el borrado externo no depende de filas que dejaron de existir
+    // y sobrevive a un reinicio del servidor.
+    await q(`CREATE TABLE IF NOT EXISTS provider_deletions (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        producer_id TEXT,
+        course_id TEXT,
+        module_id TEXT,
+        video_id TEXT,
+        library_id TEXT NOT NULL,
+        library_key TEXT,
+        remote_id TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        completed_at TIMESTAMPTZ
+    )`);
+    await q(`CREATE INDEX IF NOT EXISTS idx_provider_deletions_pendientes
+        ON provider_deletions(next_attempt_at) WHERE state='pending'`);
     await q(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS bunny_token_key TEXT`);
     await q(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS bunny_previous_libraries JSONB NOT NULL DEFAULT '[]'::jsonb`);
     await q(`CREATE TABLE IF NOT EXISTS stream_operations (
@@ -1753,6 +1776,52 @@ module.exports.setStreamResource = async (key, { remoteName, state, remoteId = n
 // Forgets a remote association that no longer exists (e.g. a collection deleted in
 // Bunny) so the next provisioning attempt reconciles or creates it again.
 module.exports.clearStreamResource = async key => { await q('DELETE FROM stream_resources WHERE resource_key=$1', [key]); };
+
+// ── Cola de borrados en el servicio de video (F02) ───────────────────────────
+// La clave de la biblioteca se guarda cifrada, igual que en la tabla de cursos.
+const MAX_DELETION_ATTEMPTS = 8;
+module.exports.MAX_DELETION_ATTEMPTS = MAX_DELETION_ATTEMPTS;
+
+/** Encola el borrado dentro de la transacción que ya está borrando el contenido. */
+module.exports.enqueueProviderDeletion = async (client, entry) => {
+    const run = client ? client.query.bind(client) : q;
+    await run(`INSERT INTO provider_deletions(id,kind,producer_id,course_id,module_id,video_id,library_id,library_key,remote_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`,
+        [entry.id, entry.kind, entry.producerId || null, entry.courseId || null, entry.moduleId || null,
+         entry.videoId || null, String(entry.libraryId), encField(entry.libraryKey || null), String(entry.remoteId)]);
+    return entry.id;
+};
+
+/** Toma pendientes cuyo turno llegó, marcándolos para que dos procesos no repitan el mismo. */
+module.exports.claimProviderDeletions = async (limit = 5) => {
+    const rows = (await q(`UPDATE provider_deletions SET attempts = attempts + 1, next_attempt_at = NOW() + (INTERVAL '1 minute' * POWER(2, LEAST(attempts, 6)))
+        WHERE id IN (SELECT id FROM provider_deletions WHERE state='pending' AND next_attempt_at <= NOW()
+                     ORDER BY created_at LIMIT $1 FOR UPDATE SKIP LOCKED)
+        RETURNING *`, [limit])).rows;
+    return rows.map(r => ({ ...r, library_key: decField(r.library_key) }));
+};
+
+/** Cierra un pendiente: 'done' (borrado), 'gone' (ya no estaba) o 'failed' (sin más reintentos). */
+module.exports.finishProviderDeletion = async (id, state, lastError = null) => {
+    await q(`UPDATE provider_deletions SET state=$2, last_error=$3, completed_at=NOW() WHERE id=$1`,
+        [id, state, lastError ? String(lastError).slice(0, 400) : null]);
+};
+
+/** Devuelve un pendiente al estado de espera o lo da por agotado tras demasiados intentos. */
+module.exports.retryOrGiveUpProviderDeletion = async (id, attempts, lastError) => {
+    if (Number(attempts) >= MAX_DELETION_ATTEMPTS) {
+        await module.exports.finishProviderDeletion(id, 'failed', lastError);
+        return 'failed';
+    }
+    await q('UPDATE provider_deletions SET last_error=$2 WHERE id=$1', [id, lastError ? String(lastError).slice(0, 400) : null]);
+    return 'pending';
+};
+
+module.exports.getProviderDeletion = async id =>
+    (await q('SELECT * FROM provider_deletions WHERE id=$1', [id])).rows[0] || null;
+
+module.exports.countPendingProviderDeletions = async () =>
+    Number((await q("SELECT COUNT(*) AS n FROM provider_deletions WHERE state='pending'")).rows[0].n);
 
 module.exports.getStreamOperation = async id =>
     (await q('SELECT * FROM stream_operations WHERE id=$1', [id])).rows[0] || null;

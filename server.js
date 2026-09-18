@@ -5878,6 +5878,9 @@ const streamReconcileTimer=setInterval(async()=>{
         if(Date.now()-collectionReconcileAt>10*60*1000){collectionReconcileAt=Date.now();await streamService.reconcileCollections({limit:20});}
         // Clases movidas de módulo cuya colección de Bunny no se pudo actualizar en el momento.
         await streamService.reconcileVideoCollections({limit:20});
+        // Borrados en el servicio de video que quedaron pendientes por un fallo de
+        // red o por un reinicio. La cola es duradera, así que se recuperan solos.
+        await streamService.runProviderDeletions({limit:5});
     } catch(e){console.warn('[stream/reconcile]',e.message);}finally{streamReconciling=false;}
 },15000);
 streamReconcileTimer.unref();
@@ -6393,7 +6396,11 @@ const producerContentService = mountProducerContent(app, { db, requireProducer, 
     // Al eliminar contenido en Edulock se elimina tambien en el proveedor de video:
     // curso -> biblioteca, modulo -> coleccion, clase -> video. Solo lo creado por la plataforma.
     deleteProviderAsset: ({ kind, producerId, courseId, moduleId, videoId }) =>
-        streamService.deleteProviderAsset({ kind, courseId, moduleId, videoId, actor: { producerId } }) });
+        streamService.deleteProviderAsset({ kind, courseId, moduleId, videoId, actor: { producerId } }),
+    // El descriptor del recurso remoto se resuelve ANTES de borrar en la base y se
+    // encola en la misma transaccion; la cola lo ejecuta despues, con reintentos.
+    describeProviderAsset: args => streamService.describeProviderAsset(args),
+    runProviderDeletions: args => streamService.runProviderDeletions(args) });
 mountProducerBusiness(app, { db, requireProducer, requireAdmin, hashPassword, verifyPassword, secret: JWT_SECRET, getPublicBase,
     mailConfigured: producerMail.configured,
     issueProducerToken: p => jwt.sign({ sub: p.id, producerId: p.id, email: p.email, role: 'producer', label: p.name || p.email, authVersion: Number(p.auth_version || 0) }, JWT_SECRET, { expiresIn: JWT_EXPIRES, issuer: 'reproductor-cursos' }) });
