@@ -44,11 +44,65 @@ function decField(stored) {
 module.exports._encField = encField;   // export para pruebas/uso puntual
 module.exports._decField = decField;
 
-const isLocalDb = /@(localhost|127\.0\.0\.1)(:|\/)/.test(process.env.DATABASE_URL || '');
+/**
+ * Lee la columna `documents`, que puede venir en texto plano (filas antiguas) o
+ * cifrada con 'enc1:'. Devuelve siempre un arreglo y, cuando algo va mal, un
+ * motivo: así quien llame puede distinguir "no hay materiales" de "hay
+ * materiales que no se pudieron leer", en vez de mostrar una lista vacía.
+ * Nunca devuelve el contenido cifrado ni lo escribe en ningún registro.
+ * Motivos: 'unreadable' (cifrado que no abre con la clave actual),
+ * 'corrupt' (no es JSON válido) y 'unexpected' (JSON válido que no es lista).
+ */
+function parseDocuments(stored) {
+    if (stored == null || stored === '') return { documents: [], reason: null };
+    const text = decField(stored);
+    if (typeof text === 'string' && text.startsWith('enc1:')) return { documents: [], reason: 'unreadable' };
+    let value;
+    try { value = JSON.parse(text || '[]'); } catch { return { documents: [], reason: 'corrupt' }; }
+    if (value == null) return { documents: [], reason: null };
+    if (!Array.isArray(value)) return { documents: [], reason: 'unexpected' };
+    return { documents: value, reason: null };
+}
+module.exports.parseDocuments = parseDocuments;
+
+const DB_HOST = (() => {
+    try { return new URL(process.env.DATABASE_URL || '').hostname || ''; } catch { return ''; }
+})();
+// Local = mismo equipo o socket de unix (el socket deja el host vacío o con '/').
+const isLocalDb = DB_HOST === '' || DB_HOST === 'localhost' || DB_HOST === '127.0.0.1'
+    || DB_HOST === '::1' || DB_HOST === '[::1]' || DB_HOST.startsWith('/') || DB_HOST.startsWith('%2F');
+
+/**
+ * TLS de PostgreSQL. Para un servidor remoto se verifica el certificado y la
+ * identidad del servidor con la autoridad indicada (PGSSLROOTCERT con la ruta
+ * del archivo, o DATABASE_CA_CERT con el PEM). Antes se conectaba con
+ * `rejectUnauthorized:false`, que cifra pero no comprueba con quién habla: un
+ * intermediario podía presentarse como la base de datos. No hay degradación
+ * silenciosa: sin autoridad configurada el arranque se detiene con un aviso,
+ * salvo que se pida explícitamente PGSSLMODE=no-verify, que queda registrado.
+ */
+function databaseTls() {
+    if (isLocalDb) return false;                      // conexión local: como antes
+    const fs = require('fs');
+    let ca = process.env.DATABASE_CA_CERT || null;
+    const caPath = process.env.PGSSLROOTCERT || null;
+    if (!ca && caPath) {
+        try { ca = fs.readFileSync(caPath, 'utf8'); }
+        catch (error) { throw new Error('[db-pg] No se pudo leer PGSSLROOTCERT: ' + error.message); }
+    }
+    if (ca) return { ca, rejectUnauthorized: true, servername: DB_HOST };
+    if ((process.env.PGSSLMODE || '').toLowerCase() === 'no-verify') {
+        console.warn('[db-pg] AVISO: PGSSLMODE=no-verify — la conexión va cifrada pero NO se comprueba la identidad del servidor de base de datos.');
+        return { rejectUnauthorized: false };
+    }
+    throw new Error('[db-pg] DATABASE_URL apunta a un servidor remoto (' + DB_HOST + ') sin autoridad certificadora. '
+        + 'Configura PGSSLROOTCERT (ruta del certificado de la CA) o DATABASE_CA_CERT (contenido PEM). '
+        + 'Para aceptar a propósito una conexión sin verificar, define PGSSLMODE=no-verify.');
+}
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: (process.env.NODE_ENV === 'production' && !isLocalDb) ? { rejectUnauthorized: false } : false,
+    ssl: databaseTls(),
     max: 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,

@@ -751,6 +751,13 @@ function requireAdmin(req, res, next) {
     if (!dbReady) return res.status(503).json({ error: 'Servidor iniciando, reintenta en unos segundos' });
     const payload = verifyToken(req);
     if (!isAccountToken(payload) || payload.admin !== true) return res.status(403).json({ error: 'Acceso denegado' });
+    // Al cambiar la contraseña de administrador, las sesiones abiertas dejan de
+    // valer: el token lleva la huella de la credencial con la que se emitió.
+    // Los tokens anteriores a este cambio no llevan huella y se aceptan hasta
+    // que caducan, para no expulsar al administrador durante la actualización.
+    if (payload.adminCred && payload.adminCred !== adminCredentialVersion()) {
+        return res.status(401).json({ error: 'Las credenciales de administrador cambiaron. Vuelve a entrar.', code: 'ADMIN_SESSION_REVOKED', revoked: true });
+    }
     req.user = payload;
     next();
 }
@@ -874,11 +881,41 @@ function verifyPassword(password, stored) {
     return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(attempt, 'hex'));
 }
 
+/**
+ * Contraseña de administrador tomada del entorno. Devuelve null cuando no está
+ * configurada: antes se usaba 'changeme' como valor por omisión, de modo que si
+ * ADMIN_PASS faltaba (o el .env no se cargaba) el servidor creaba —o peor,
+ * restablecía— la cuenta de administrador con una contraseña conocida. Ahora la
+ * ausencia de ADMIN_PASS nunca produce una credencial utilizable.
+ */
+function adminPassFromEnv() {
+    const value = process.env.ADMIN_PASS;
+    return (typeof value === 'string' && value.length > 0) ? value : null;
+}
+
+/** Huella de la credencial vigente; cambia al cambiar la contraseña, lo que
+ *  invalida los tokens de administrador emitidos antes (revocación de sesión). */
+function adminCredentialVersion() {
+    const pass = adminPassFromEnv();
+    const user = process.env.ADMIN_USER || 'admin';
+    let stored = '';
+    try {
+        const entry = JSON.parse(fs.readFileSync(USERS_PATH, 'utf-8')).find(u => u.admin);
+        stored = entry?.passwordHash || '';
+    } catch { stored = ''; }
+    return crypto.createHash('sha256').update('edulock-admin-cred|' + user + '|' + (pass || '') + '|' + stored).digest('hex').slice(0, 16);
+}
+
 function loadUsers() {
     const adminUser = process.env.ADMIN_USER || 'admin';
-    const adminPass = process.env.ADMIN_PASS || 'changeme';
+    const adminPass = adminPassFromEnv();
 
     if (!fs.existsSync(USERS_PATH)) {
+        if (!adminPass) {
+            throw new Error('[auth] No hay administrador y ADMIN_PASS no está configurada. '
+                + 'Define ADMIN_USER y ADMIN_PASS en el archivo .env antes de arrancar; '
+                + 'el servidor no crea administradores con contraseñas por omisión.');
+        }
         // Crear usuario admin inicial desde .env
         const dir = path.dirname(USERS_PATH);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -898,6 +935,12 @@ function loadUsers() {
 
     // Sincronizar credenciales admin desde .env
     const adminEntry = users.find(u => u.admin);
+    if (adminEntry && !adminPass) {
+        // Sin ADMIN_PASS no se toca al administrador existente: su contraseña
+        // se conserva intacta. Antes, en este caso, se reescribía con 'changeme'.
+        console.warn('[auth] ADMIN_PASS no está configurada: se conserva la contraseña actual del administrador y no se sincroniza nada desde el entorno.');
+        return users;
+    }
     if (adminEntry) {
         let changed = false;
         if (adminEntry.username !== adminUser) {
@@ -1199,12 +1242,17 @@ app.post('/api/auth/admin-login', authRateLimit, async (req, res) => {
     }
     const uname = username.trim().toLowerCase();
     const envUser = process.env.ADMIN_USER || 'admin';
-    const envPass = process.env.ADMIN_PASS || 'changeme';
+    const envPass = adminPassFromEnv();   // null si no está configurada: nunca hay contraseña por omisión
 
     // Comparación directa contra env vars (fuente de verdad primaria)
     let valid = false;
     let userId, userLabel;
-    if (uname === envUser.trim().toLowerCase() && password === envPass) {
+    // Comparación en tiempo constante para no filtrar la contraseña por el tiempo de respuesta.
+    const sameSecret = (a, b) => {
+        const x = Buffer.from(String(a), 'utf8'), y = Buffer.from(String(b), 'utf8');
+        return x.length === y.length && crypto.timingSafeEqual(x, y);
+    };
+    if (envPass && uname === envUser.trim().toLowerCase() && sameSecret(password, envPass)) {
         valid = true;
         userId = 'env-admin';
         userLabel = 'Administrador';
@@ -1218,7 +1266,7 @@ app.post('/api/auth/admin-login', authRateLimit, async (req, res) => {
 
     if (!valid) return res.status(401).json({ error: 'Credenciales incorrectas' });
     const token = jwt.sign(
-        { sub: userId, username: uname, admin: true, label: userLabel },
+        { sub: userId, username: uname, admin: true, label: userLabel, adminCred: adminCredentialVersion() },
         JWT_SECRET,
         { expiresIn: JWT_EXPIRES, issuer: 'reproductor-cursos' }
     );
@@ -1619,10 +1667,18 @@ app.post('/api/video/upload', requireAdmin, upload.single('video'), async (req, 
     const title   = (req.body && req.body.title) ? req.body.title.slice(0, 120) : req.file.originalname;
     const localPath = req.file.path;
 
-    // Añadir al catálogo inmediatamente (estado: procesando)
-    addToCatalog({ videoId, title, status: 'processing', uploadedAt: new Date().toISOString(), segmentCount: 0 });
+    // El trabajo queda en cola, pero solo se puede responder "procesando" cuando
+    // la fila ya está guardada: si se responde antes y la escritura falla, el
+    // panel muestra un video que no existe en ninguna parte.
+    try {
+        await addToCatalog({ videoId, title, status: 'processing', uploadedAt: new Date().toISOString(), segmentCount: 0 });
+    } catch (error) {
+        console.error('[upload] No se pudo registrar el video en el catálogo:', error.message);
+        fs.unlink(localPath, () => {});
+        return res.status(500).json({ error: 'No se pudo registrar el video. Vuelve a intentarlo.' });
+    }
 
-    // Responder de inmediato y procesar en segundo plano
+    // Ya registrado: se responde y el procesamiento sigue en segundo plano
     res.json({ videoId, status: 'processing', message: '¡Video recibido! El procesamiento HLS comenzó en segundo plano.' });
 
     const base = getPublicBase(req);
@@ -1727,7 +1783,13 @@ app.get('/api/my-catalog', requireAuth, async (req, res) => {
         // Obtener módulos de todos los cursos en un solo query
         const modRows = await db.pool.query('SELECT * FROM modules ORDER BY sort_order ASC, created_at ASC');
         const allMods = modRows.rows.map(r => {
-            let docs = []; try { docs = JSON.parse(r.documents || '[]'); } catch {}
+            // La columna puede venir cifrada ('enc1:'). Antes se hacía JSON.parse
+            // directo: con una fila cifrada fallaba y el módulo se mostraba sin
+            // materiales, sin avisar. Ahora se usa el conversor que conoce el
+            // cifrado y se registra el motivo cuando algo no se puede leer.
+            const parsed = db.parseDocuments(r.documents);
+            if (parsed.reason) console.error('[my-catalog] documentos ilegibles en el módulo', r.id, '·', parsed.reason);
+            const docs = parsed.documents;
             return { id: r.id, courseId: r.course_id, parentId: r.parent_id || null, name: r.name, sortOrder: r.sort_order, documents: docs };
         });
 
@@ -1947,17 +2009,23 @@ app.post('/api/catalog/add-bunny', requireAdmin, async (req, res) => {
     // Generar clave AES-128 exclusiva para este video de Bunny
     const { keyId } = generateKey(videoId);
 
-    addToCatalog({
-        videoId,
-        title:      title.trim().slice(0, 120),
-        status:     'ready',
-        sourceType: 'bunny',
-        bunnyUrl:   bunnyUrl.trim(),
-        keyId,
-        uploadedAt: new Date().toISOString(),
-    });
+    // 'ready' solo se puede anunciar cuando la fila está realmente guardada.
+    try {
+        await addToCatalog({
+            videoId,
+            title:      title.trim().slice(0, 120),
+            status:     'ready',
+            sourceType: 'bunny',
+            bunnyUrl:   bunnyUrl.trim(),
+            keyId,
+            uploadedAt: new Date().toISOString(),
+        });
+    } catch (error) {
+        console.error('[add-bunny] No se pudo guardar en el catálogo:', error.message);
+        return res.status(500).json({ error: 'No se pudo guardar el video en el catálogo. Vuelve a intentarlo.' });
+    }
 
-    syncCatalogSeed();
+    await syncCatalogSeed();
     res.status(201).json({ videoId, title, status: 'ready', sourceType: 'bunny' });
 });
 
