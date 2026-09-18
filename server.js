@@ -2666,7 +2666,12 @@ app.post('/api/auth/firebase-login', authRateLimit, async (req, res) => {
         try {
             const challenge = typeof keyAttestation.challenge === 'string' ? keyAttestation.challenge : '';
             const issued = consumeAttestationChallenge(challenge);
-            const verdict = verifyKeyAttestation({ chain: keyAttestation.chain, expectedChallenge: issued ? challenge : '' });
+            // Tambien se comprueba que la cadena venga de NUESTRA aplicacion: sin
+            // esto, una atestacion legitima emitida por otra app del mismo telefono
+            // se registraba como propia (R07). Sigue siendo telemetria: no bloquea.
+            const paqueteEsperado = process.env.PLAY_INTEGRITY_PACKAGE || 'edulock.systemsoficial.com';
+            const verdict = verifyKeyAttestation({ chain: keyAttestation.chain,
+                expectedChallenge: issued ? challenge : '', expectedPackage: paqueteEsperado });
             if (!issued && verdict.reason === 'challenge_mismatch') verdict.reason = 'challenge_unknown_or_expired';
             attestationSummary = { ...verdict, checkedAt: new Date().toISOString(), kind: 'android_key_attestation', challenge, chain: Array.isArray(keyAttestation.chain) ? keyAttestation.chain.slice(0, 6).map(c => String(c).slice(0, 4000)) : [] };
             console.log(`[firebase-login] [INTEGRITY] keyAttestation ok=${verdict.ok} root=${verdict.rootTrusted} level=${verdict.securityLevel} boot=${verdict.verifiedBootState} locked=${verdict.deviceLocked} reason=${verdict.reason || '-'} device=${deviceId || 'n/a'}`);

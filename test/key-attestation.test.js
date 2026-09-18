@@ -49,3 +49,41 @@ test('a real device chain (fixture) verifies against Google roots', { skip: !fs.
   assert.notEqual(r.securityLevel, 'software'); assert.equal(r.ok, true, r.reason);
   assert.equal(verifyKeyAttestation({ chain: f.chain, expectedChallenge: 'otro-reto' }).reason, 'challenge_mismatch');
 });
+
+// ── R07: el veredicto dice de verdad qué se comprobó y qué no ────────────────
+test('R07: se comprueba la vigencia de los certificados y se informa', () => {
+  const f2 = path.join(__dirname, 'fixtures', 'key-attestation-moto-e32.json');
+  if (!fs.existsSync(f2)) return;
+  const f = JSON.parse(fs.readFileSync(f2, 'utf8'));
+  const r = verifyKeyAttestation({ chain: f.chain, expectedChallenge: f.challenge });
+  assert.equal(r.validityOk, true, 'la vigencia debe comprobarse, no suponerse');
+});
+
+test('R07: se lee la identidad de la aplicación y una ajena no se da por propia', () => {
+  const f2 = path.join(__dirname, 'fixtures', 'key-attestation-moto-e32.json');
+  if (!fs.existsSync(f2)) return;
+  const f = JSON.parse(fs.readFileSync(f2, 'utf8'));
+  const propio = verifyKeyAttestation({ chain: f.chain, expectedChallenge: f.challenge, expectedPackage: 'edulock.systemsoficial.com' });
+  assert.equal(propio.ok, true);
+  assert.deepEqual(propio.applicationPackages, ['edulock.systemsoficial.com']);
+  assert.equal(propio.applicationSignatureDigests.length, 1);
+  const ajeno = verifyKeyAttestation({ chain: f.chain, expectedChallenge: f.challenge, expectedPackage: 'com.otra.aplicacion' });
+  assert.equal(ajeno.ok, false);
+  assert.equal(ajeno.reason, 'application_id_mismatch');
+});
+
+test('R07: el veredicto deja claro que la revocación no se consulta', () => {
+  const f2 = path.join(__dirname, 'fixtures', 'key-attestation-moto-e32.json');
+  if (!fs.existsSync(f2)) return;
+  const f = JSON.parse(fs.readFileSync(f2, 'utf8'));
+  const r = verifyKeyAttestation({ chain: f.chain, expectedChallenge: f.challenge });
+  assert.equal(r.revocationChecked, false, 'no puede leerse como "no revocado" si nadie lo comprobó');
+  assert.equal(r.revocationSource, null);
+});
+
+test('R07: la atestación sigue siendo registro, nunca un requisito de acceso', () => {
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const bloque = server.slice(server.indexOf('Atestación por hardware'), server.indexOf('Play Integrity (Android)'));
+  assert.ok(/nunca bloquea el inicio de sesión/.test(bloque));
+  assert.ok(!/return res\.status\(40[13]\)/.test(bloque), 'el bloque de atestación no puede denegar el acceso');
+});

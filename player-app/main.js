@@ -248,10 +248,20 @@ function checkRemoteTools() {
     });
 }
 
-// Detecta herramientas de grabación/análisis renombradas verificando sus firmas
-// digitales. Ej: obs64.exe renombrado a chrome.exe → firma inválida o sin firma.
-// Solo se verifica contra apps "legítimas conocidas" — si alguien ejecuta
-// chrome.exe y no está firmado por Google, es sospechoso.
+// Detecta herramientas de grabación/análisis renombradas comparando la firma
+// digital del ejecutable con el editor que le corresponde a ese nombre.
+//
+// Tres resultados distintos, que antes se confundían en uno solo (R08):
+//   'threat'      → el binario ESTÁ firmado y el editor no es el que debería.
+//                   Es la única señal que se considera comprobada.
+//   'unsigned'    → el binario no tiene firma. Se registra, pero no se trata como
+//                   amenaza: hay compilaciones legítimas sin firmar y bloquear
+//                   por esto expulsaría a gente que no ha hecho nada.
+//   'unavailable' → la comprobación no se pudo hacer (sin PowerShell, tiempo
+//                   agotado, permisos). No es lo mismo que "limpio".
+//
+// Esta señal nunca sustituye a la autorización del servidor: el acceso al
+// contenido lo decide el servidor con la licencia y la sesión, no este sondeo.
 const SIGNED_BY = {
     'chrome.exe':    'Google LLC',
     'msedge.exe':    'Microsoft Corporation',
@@ -263,34 +273,65 @@ const SIGNED_BY = {
     'cmd.exe':       'Microsoft Windows',
 };
 
-function checkProcessSignatures() {
+/**
+ * Devuelve { state, name, publisher } donde state es 'clean', 'threat',
+ * 'unsigned' o 'unavailable'. Nunca lanza.
+ */
+function inspectProcessSignatures() {
     return new Promise((resolve) => {
-        if (!IS_WIN) { resolve(false); return; }
+        if (!IS_WIN) { resolve({ state: 'unavailable', reason: 'no-windows' }); return; }
         const entries = Object.entries(SIGNED_BY).map(([name, pub]) =>
             `@{N='${name}';P='${pub.replace(/'/g, "''")}'}`).join(',');
         const ps = [
             `$ErrorActionPreference='SilentlyContinue';`,
             `$map=@(${entries});`,
             `$procs=Get-CimInstance Win32_Process | Where-Object { $map.N -icontains $_.Name } | Select-Object Name,ExecutablePath;`,
+            `$sinFirma=@();`,
             `foreach($proc in $procs){`,
             `  if(-not $proc.ExecutablePath){continue};`,
-            `  $sig=(Get-AuthenticodeSignature $proc.ExecutablePath -EA SilentlyContinue).SignerCertificate.Subject;`,
-            `  if(-not $sig){continue};`,
-            `  $expected=($map|Where-Object{$_.N -ieq $proc.Name}|Select-Object -First 1).P;`,
-            `  if($expected -and $sig -notlike "*$expected*"){$proc.Name;exit}`,
-            `}; 'clean'`,
+            `  $s=Get-AuthenticodeSignature $proc.ExecutablePath -EA SilentlyContinue;`,
+            `  $esperado=($map|Where-Object{$_.N -ieq $proc.Name}|Select-Object -First 1).P;`,
+            `  if(-not $s -or $s.Status -eq 'NotSigned' -or -not $s.SignerCertificate){ $sinFirma += $proc.Name; continue };`,
+            `  if($s.Status -ne 'Valid'){ $sinFirma += ($proc.Name + '#' + $s.Status); continue };`,
+            // Se comparan los campos CN y O del certificado, no toda la cadena del
+            // asunto: asi un texto que aparezca en cualquier otro campo no cuenta.
+            `  $sujeto=[string]$s.SignerCertificate.Subject;`,
+            `  $campos=@();`,
+            `  foreach($parte in ($sujeto -split ',')){ $t=$parte.Trim(); if($t -match '^(CN|O)='){ $campos += $t.Substring(3) } };`,
+            `  $coincide=$false;`,
+            `  foreach($c in $campos){ if($c -like "*$esperado*"){ $coincide=$true } };`,
+            `  if($esperado -and -not $coincide){ 'threat:' + $proc.Name; exit }`,
+            `};`,
+            `if($sinFirma.Count -gt 0){ 'unsigned:' + ($sinFirma -join '|'); exit };`,
+            `'clean'`,
         ].join('');
         exec(powershellCommand(ps), { timeout: 10000 }, (err, stdout) => {
-            if (err) { resolve(false); return; }
-            const found = (stdout || '').trim();
-            if (found && found.toLowerCase() !== 'clean') {
-                log.warn('[SECURITY] Proceso sospechoso (firma no coincide):', found);
-                resolve(found);
-            } else {
-                resolve(false);
+            const salida = (stdout || '').trim();
+            if (err && !salida) { resolve({ state: 'unavailable', reason: err.killed ? 'timeout' : 'error' }); return; }
+            if (!salida) { resolve({ state: 'unavailable', reason: 'sin-salida' }); return; }
+            if (salida.startsWith('threat:')) {
+                const name = salida.slice(7);
+                log.warn('[SECURITY] Proceso firmado por un editor que no le corresponde:', name);
+                resolve({ state: 'threat', name });
+                return;
             }
+            if (salida.startsWith('unsigned:')) {
+                // Se registra, pero no se bloquea: no es prueba de nada por si solo.
+                log.info('[SECURITY] Ejecutables sin firma válida (solo registro):', salida.slice(9));
+                resolve({ state: 'unsigned', name: salida.slice(9) });
+                return;
+            }
+            resolve({ state: salida.toLowerCase() === 'clean' ? 'clean' : 'unavailable' });
         });
     });
+}
+
+/** Compatibilidad con el consumidor actual: solo una amenaza comprobada bloquea. */
+async function checkProcessSignatures() {
+    const resultado = await inspectProcessSignatures();
+    if (resultado.state === 'threat') return resultado.name;
+    if (resultado.state === 'unavailable') return 'probe-unavailable:process-signatures';
+    return false;
 }
 
 // ── Detección comportamental: proceso ajeno conectado a nuestro servidor ──────
@@ -384,7 +425,10 @@ async function checkRemoteSession() {
     if (tool) return tool;
     // Segunda capa: verificar que procesos con nombres "legítimos" tengan firma válida
     const spoofed = await checkProcessSignatures();
-    if (spoofed) return spoofed;
+    if (spoofed && spoofed.startsWith('probe-unavailable:')) {
+        // No haber podido comprobar no es lo mismo que haber encontrado algo (R08).
+        console.warn('[security] Sondeo de firmas no disponible (no bloquea):', spoofed);
+    } else if (spoofed) return spoofed;
     // Tercera capa: detectar entornos de virtualización (VM/hipervisor)
     const vm = await checkVirtualMachine();
     // IMPORTANTE (anti falso-positivo): el bit CPUID de hipervisor NO es evidencia

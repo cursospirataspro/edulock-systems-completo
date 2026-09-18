@@ -219,3 +219,65 @@ test('R06: renombrar un módulo desde el panel de admin no cambia su posición',
     assert.equal(respuesta.code, 400);
     assert.equal(llamadas.length, antes, 'no se escribe nada con una posición inválida');
 });
+
+// ── F01 ──────────────────────────────────────────────────────────────────────
+// El servidor exige, para el manifiesto y sus derivados, un token atado al video
+// y a la sesión. El JWT de la cuenta no vale: esta es la razón por la que el
+// catálogo de Android no llegaba a reproducir.
+const jwt = require('jsonwebtoken');
+
+function authorizeMediaAislada(secreto) {
+    const cuerpo = extractFunction('async function authorizeMedia(');
+    const contexto = vm.createContext({
+        jwt, JWT_SECRET: secreto,
+        accessPolicy: { authorizeSession: async (claims, sessionId) => ({ user: claims, sessionId }) },
+        requestDevice: () => 'dispositivo-de-prueba',
+        mediaJwt: () => '',
+    });
+    vm.runInContext(cuerpo, contexto);
+    return contexto.authorizeMedia;
+}
+
+test('F01: el servidor rechaza el JWT de la cuenta para pedir el manifiesto', async () => {
+    const secreto = 'secreto-sintetico-de-prueba';
+    const authorizeMedia = authorizeMediaAislada(secreto);
+    const cuenta = jwt.sign({ sub: 'alumno', email: 'qa@edulock.invalid', role: 'student' }, secreto);
+    await assert.rejects(() => authorizeMedia({ headers: {}, query: {} }, 'video-1', cuenta),
+        error => error.code === 'SESSION_REQUIRED' && error.status === 403);
+});
+
+test('F01: un token de reproducción de otro video tampoco sirve', async () => {
+    const secreto = 'secreto-sintetico-de-prueba';
+    const authorizeMedia = authorizeMediaAislada(secreto);
+    const otro = jwt.sign({ sub: 'alumno', videoId: 'video-2', sessionId: 's1' }, secreto);
+    await assert.rejects(() => authorizeMedia({ headers: {}, query: {} }, 'video-1', otro),
+        error => error.code === 'SESSION_REQUIRED');
+});
+
+test('F01: el token de reproducción del propio video sí se acepta', async () => {
+    const secreto = 'secreto-sintetico-de-prueba';
+    const authorizeMedia = authorizeMediaAislada(secreto);
+    const bueno = jwt.sign({ sub: 'alumno', videoId: 'video-1', sessionId: 's1' }, secreto);
+    const contexto = await authorizeMedia({ headers: {}, query: {} }, 'video-1', bueno);
+    assert.equal(contexto.user.videoId, 'video-1');
+});
+
+test('F01: el catálogo de Android entrega ese token al reproductor', () => {
+    const catalogo = fs.readFileSync(path.join(__dirname, '..', 'player-apk-android', 'app', 'src', 'main',
+        'kotlin', 'com', 'edulock', 'player', 'ui', 'CatalogActivity.kt'), 'utf8');
+    assert.ok(catalogo.includes('EXTRA_AUTH_TOKEN, plan.mediaToken'),
+        'sin esto el reproductor volvería a autenticar el manifiesto con el JWT de la cuenta');
+    const reproductor = fs.readFileSync(path.join(__dirname, '..', 'player-apk-android', 'app', 'src', 'main',
+        'kotlin', 'com', 'edulock', 'player', 'ui', 'PlayerActivity.kt'), 'utf8');
+    assert.ok(!reproductor.includes('?: getJwtToken()'),
+        'el manifiesto no puede volver a caer en el JWT de la cuenta');
+});
+
+test('F08: las dos pantallas de Android usan la misma política de reproducción', () => {
+    const base = path.join(__dirname, '..', 'player-apk-android', 'app', 'src', 'main', 'kotlin', 'com', 'edulock', 'player', 'ui');
+    for (const archivo of ['CatalogActivity.kt', 'WaitingActivity.kt']) {
+        const texto = fs.readFileSync(path.join(base, archivo), 'utf8');
+        assert.ok(texto.includes('PlaybackPolicy.plan('), archivo + ' debe usar la política compartida');
+        assert.ok(texto.includes('VdoDirect'), archivo + ' debe contemplar vdocipher_direct');
+    }
+});
