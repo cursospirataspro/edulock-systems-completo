@@ -186,6 +186,9 @@ data class ResourceViewResponse(
 data class PlayUrlResponse(
     val sourceType: String? = null,
     val manifestUrl: String? = null,
+    // Direccion directa de VdoCipher. Sin este campo el catalogo no podia
+    // reproducir ese tipo de clase aunque el servidor lo enviara (F08).
+    val directUrl: String? = null,
     val mediaToken: String? = null,
     val watermarkText: String? = null,
     val otp: String? = null,

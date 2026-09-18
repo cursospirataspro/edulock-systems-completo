@@ -299,6 +299,12 @@ async function initDb() {
     // Traslado de clase entre módulos: la colección de Bunny se sincroniza fuera de la transacción;
     // si el proveedor falla, la marca permite reintentarlo en la reconciliación periódica.
     await q(`ALTER TABLE catalog ADD COLUMN IF NOT EXISTS collection_sync_pending BOOLEAN NOT NULL DEFAULT FALSE`).catch(() => {});
+    // Biblioteca del servicio de video en la que vive esta clase. Si el curso
+    // cambia de biblioteca, las clases anteriores se siguen consultando y
+    // borrando en la suya y no en la nueva (R01). Las filas antiguas quedan en
+    // NULL y se resuelven con la biblioteca vigente del curso, que es donde
+    // estan mientras el curso no haya cambiado de biblioteca.
+    await q(`ALTER TABLE catalog ADD COLUMN IF NOT EXISTS bunny_library_id TEXT`).catch(() => {});
     await q(`CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_public_code ON catalog(public_code) WHERE public_code IS NOT NULL`).catch(() => {});
 
     // Migración: Bunny Stream — biblioteca por curso, colección por módulo (auto-provisión)
@@ -1664,9 +1670,41 @@ module.exports.deleteModule = async (id) => {
             UNION SELECT m.id, m.course_id FROM modules m JOIN subtree s
               ON m.parent_id=s.id AND m.course_id=s.course_id
         ) SELECT id FROM subtree`, [id])).rows.map(row => row.id);
-        if (!descendants.length) return;
+        if (!descendants.length) return { deleted: [], resourcesClosed: 0, queuedDeletions: [] };
+
+        // Antes de borrar, se resuelve que hay que borrar en el servicio de video
+        // y se anota en esta misma transaccion, igual que hace el panel del
+        // productor. Solo se encola lo que consta que creo esta plataforma.
+        const remotos = (await client.query(`SELECT m.id, m.bunny_collection_id, m.course_id,
+                c.bunny_library_id, c.bunny_library_key, c.producer_id,
+                r.remote_id AS owned_remote_id
+            FROM modules m
+            JOIN courses c ON c.id = m.course_id
+            LEFT JOIN stream_resources r ON r.resource_key = 'module:' || m.id
+            WHERE m.id = ANY($1::text[])`, [descendants])).rows;
+        const queuedDeletions = [];
+        for (const fila of remotos) {
+            if (!fila.bunny_collection_id || !fila.bunny_library_id || !fila.bunny_library_key) continue;
+            if (!fila.owned_remote_id || String(fila.owned_remote_id) !== String(fila.bunny_collection_id)) continue;
+            const pendiente = crypto.randomUUID();
+            await module.exports.enqueueProviderDeletion(client, {
+                id: pendiente, kind: 'module', producerId: fila.producer_id || null,
+                courseId: fila.course_id, moduleId: fila.id, videoId: null,
+                libraryId: fila.bunny_library_id, libraryKey: fila.bunny_library_key,
+                remoteId: fila.bunny_collection_id });
+            queuedDeletions.push(pendiente);
+        }
+
+        // Las clases se quedan sin modulo (diferencia legitima del panel de admin).
         await client.query('UPDATE catalog SET module_id=NULL WHERE module_id=ANY($1::text[])', [descendants]);
+        // Ningun documento ni ajuste puede quedar apuntando a un modulo inexistente.
+        const cerrados = (await client.query(`UPDATE protected_resources SET deleted_at=NOW()
+            WHERE target_kind='module' AND target_id=ANY($1::text[]) AND deleted_at IS NULL RETURNING id`, [descendants])).rowCount;
+        await client.query(`DELETE FROM producer_content_settings WHERE entity_kind='module' AND entity_id=ANY($1::text[])`, [descendants]).catch(() => {});
+        await client.query(`DELETE FROM stream_resources WHERE resource_key = ANY($1::text[])`,
+            [descendants.map(x => 'module:' + x)]);
         await client.query('DELETE FROM modules WHERE id=ANY($1::text[])', [descendants]);
+        return { deleted: descendants, resourcesClosed: cerrados, queuedDeletions };
     });
 };
 
@@ -1717,6 +1755,27 @@ module.exports.setConfig = async (key, value) => {
 // ================================================================
 //  API — BUNNY STREAM (biblioteca por curso, colección por módulo)
 // ================================================================
+
+/** Deja constancia de la biblioteca en la que quedo esta clase. */
+module.exports.setVideoLibrary = async (videoId, libraryId) => {
+    await q('UPDATE catalog SET bunny_library_id=$2 WHERE video_id=$1', [videoId, libraryId ? String(libraryId) : null]);
+};
+
+/** Biblioteca anotada para esta clase, o null si es una fila anterior a este registro. */
+module.exports.getVideoLibraryId = async videoId => {
+    const row = (await q('SELECT bunny_library_id FROM catalog WHERE video_id=$1', [videoId])).rows[0];
+    return row?.bunny_library_id || null;
+};
+
+/** Bibliotecas que el curso dejo de usar, con sus claves, para seguir operando sobre lo antiguo. */
+module.exports.getCoursePreviousLibraries = async courseId => {
+    const row = (await q('SELECT bunny_previous_libraries FROM courses WHERE id=$1', [courseId])).rows[0];
+    const list = row?.bunny_previous_libraries;
+    if (!Array.isArray(list)) return [];
+    return list.map(e => ({ libraryId: e?.libraryId ? String(e.libraryId) : null,
+        libraryKey: e?.libraryKey ? decField(e.libraryKey) : null,
+        pullZone: e?.pullZone || null, archivedAt: e?.archivedAt || null }));
+};
 
 module.exports.setCourseBunnyLibrary = async (courseId, { libraryId, libraryKey, pullZone, tokenKey }) => {
     await q(`UPDATE courses SET bunny_library_id=$1, bunny_library_key=$2, bunny_pull_zone=$3,

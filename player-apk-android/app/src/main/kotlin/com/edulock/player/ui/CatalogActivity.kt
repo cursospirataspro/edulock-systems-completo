@@ -281,42 +281,55 @@ class CatalogActivity : AppCompatActivity() {
                     apiService.getPlayUrl(realId, "Bearer $jwtToken")
                 }
 
-                if (playResponse.manifestUrl != null && playResponse.mediaToken != null) {
-                    Log.i(TAG, "✅ URL obtenida (Bunny): ${video.title}")
-
-                    // Navegar a PlayerActivity
-                    val intent = Intent(this@CatalogActivity, PlayerActivity::class.java).apply {
-                        putExtra(PlayerActivity.EXTRA_VIDEO_ID, realId)
-                        putExtra(PlayerActivity.EXTRA_VIDEO_TITLE, video.title)
-                        putExtra(PlayerActivity.EXTRA_MANIFEST_URL, playResponse.manifestUrl)
-                        putExtra(PlayerActivity.EXTRA_DRM_SCHEME, playResponse.drmScheme)
-                        putExtra(PlayerActivity.EXTRA_DRM_LICENSE_URL, playResponse.drmLicenseUrl)
-                        putExtra(PlayerActivity.EXTRA_MEDIA_TOKEN, playResponse.mediaToken)
-                        putExtra(PlayerActivity.EXTRA_WATERMARK_TEXT, playResponse.watermarkText ?: "")
-                        putExtra(PlayerActivity.EXTRA_COURSE_ID, playResponse.courseId ?: "__default__")
-                        putExtra(PlayerActivity.EXTRA_WATERMARK_CONFIG, playResponse.watermarkConfig?.toString() ?: "")
+                // Misma politica que el camino del enlace: un solo sitio decide como
+                // se reproduce cada tipo de clase y con que credencial (F01, F08).
+                val plan = PlaybackPolicy.plan(
+                    PlaybackPolicy.Source(
+                        sourceType = playResponse.sourceType,
+                        manifestUrl = playResponse.manifestUrl,
+                        directUrl = playResponse.directUrl,
+                        otp = playResponse.otp,
+                        playbackInfo = playResponse.playbackInfo,
+                        mediaToken = playResponse.mediaToken,
+                        drmScheme = playResponse.drmScheme,
+                        drmLicenseUrl = playResponse.drmLicenseUrl,
+                        error = playResponse.error
+                    )
+                )
+                val base = Intent(this@CatalogActivity, PlayerActivity::class.java).apply {
+                    putExtra(PlayerActivity.EXTRA_VIDEO_ID, realId)
+                    putExtra(PlayerActivity.EXTRA_VIDEO_TITLE, video.title)
+                    putExtra(PlayerActivity.EXTRA_MEDIA_TOKEN, playResponse.mediaToken ?: "")
+                    putExtra(PlayerActivity.EXTRA_SESSION_ID, playResponse.sessionId ?: "")
+                    putExtra(PlayerActivity.EXTRA_WATERMARK_TEXT, playResponse.watermarkText ?: "")
+                    putExtra(PlayerActivity.EXTRA_COURSE_ID, playResponse.courseId ?: "__default__")
+                    putExtra(PlayerActivity.EXTRA_WATERMARK_CONFIG, playResponse.watermarkConfig?.toString() ?: "")
+                }
+                when (plan) {
+                    is PlaybackPolicy.Plan.Hls -> {
+                        Log.i(TAG, "URL obtenida: ${video.title}")
+                        base.putExtra(PlayerActivity.EXTRA_SOURCE_TYPE, "bunny")
+                        base.putExtra(PlayerActivity.EXTRA_MANIFEST_URL, plan.manifestUrl)
+                        base.putExtra(PlayerActivity.EXTRA_DRM_SCHEME, plan.drmScheme)
+                        base.putExtra(PlayerActivity.EXTRA_DRM_LICENSE_URL, plan.drmLicenseUrl)
+                        // El contenido se autentica con el token de reproduccion.
+                        base.putExtra(PlayerActivity.EXTRA_AUTH_TOKEN, plan.mediaToken)
+                        startActivity(base)
                     }
-                    startActivity(intent)
-
-                } else if (playResponse.sourceType == "vdocipher" &&
-                           playResponse.otp != null && playResponse.playbackInfo != null) {
-                    Log.i(TAG, "✅ OTP VdoCipher obtenido: ${video.title}")
-
-                    val intent = Intent(this@CatalogActivity, PlayerActivity::class.java).apply {
-                        putExtra(PlayerActivity.EXTRA_VIDEO_ID, realId)
-                        putExtra(PlayerActivity.EXTRA_VIDEO_TITLE, video.title)
-                        putExtra(PlayerActivity.EXTRA_SOURCE_TYPE, "vdocipher")
-                        putExtra(PlayerActivity.EXTRA_VDO_OTP, playResponse.otp)
-                        putExtra(PlayerActivity.EXTRA_VDO_PLAYBACK_INFO, playResponse.playbackInfo)
-                        putExtra(PlayerActivity.EXTRA_MEDIA_TOKEN, playResponse.mediaToken ?: "")
-                        putExtra(PlayerActivity.EXTRA_WATERMARK_TEXT, playResponse.watermarkText ?: "")
-                        putExtra(PlayerActivity.EXTRA_COURSE_ID, playResponse.courseId ?: "__default__")
-                        putExtra(PlayerActivity.EXTRA_WATERMARK_CONFIG, playResponse.watermarkConfig?.toString() ?: "")
+                    is PlaybackPolicy.Plan.VdoOtp -> {
+                        base.putExtra(PlayerActivity.EXTRA_SOURCE_TYPE, "vdocipher")
+                        base.putExtra(PlayerActivity.EXTRA_VDO_OTP, plan.otp)
+                        base.putExtra(PlayerActivity.EXTRA_VDO_PLAYBACK_INFO, plan.playbackInfo)
+                        startActivity(base)
                     }
-                    startActivity(intent)
-
-                } else {
-                    showError("No se puede reproducir este video: ${playResponse.error}")
+                    is PlaybackPolicy.Plan.VdoDirect -> {
+                        base.putExtra(PlayerActivity.EXTRA_SOURCE_TYPE, "vdocipher_direct")
+                        base.putExtra(PlayerActivity.EXTRA_VDO_DIRECT_URL, plan.directUrl)
+                        startActivity(base)
+                    }
+                    is PlaybackPolicy.Plan.Unsupported -> showError(plan.message)
+                    is PlaybackPolicy.Plan.Incomplete -> showError(plan.message)
+                    is PlaybackPolicy.Plan.Rejected -> showError(plan.message)
                 }
 
             } catch (e: Exception) {

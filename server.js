@@ -2235,8 +2235,20 @@ app.put('/api/modules/:id', requireAdmin, async (req, res) => {
 
 /** DELETE /api/modules/:id — Elimina un módulo (y sus hijos; videos quedan sin módulo) */
 app.delete('/api/modules/:id', requireAdmin, async (req, res) => {
-    await db.deleteModule(req.params.id);
-    res.json({ ok: true });
+    const resultado = await db.deleteModule(req.params.id);
+    if (!resultado || !resultado.deleted.length) return res.status(404).json({ error: 'Módulo no encontrado' });
+    // El borrado en el servicio de video quedó anotado dentro de la transacción;
+    // aquí solo se intenta ejecutarlo ya, y si falla lo reintenta la cola.
+    let providerFilesDeleted = false;
+    if (resultado.queuedDeletions.length) {
+        try {
+            await streamService.runProviderDeletions({ limit: 10 });
+            const estados = await Promise.all(resultado.queuedDeletions.map(x => db.getProviderDeletion(x)));
+            providerFilesDeleted = estados.every(e => e && (e.state === 'done' || e.state === 'gone'));
+        } catch { providerFilesDeleted = false; }
+    }
+    res.json({ ok: true, deleted: resultado.deleted.length, resourcesClosed: resultado.resourcesClosed,
+        providerFilesDeleted, providerPending: resultado.queuedDeletions.length && !providerFilesDeleted });
 });
 
 /** POST /api/courses/set-module — Asigna un video a un módulo específico */

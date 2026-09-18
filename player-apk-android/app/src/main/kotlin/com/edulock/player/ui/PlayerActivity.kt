@@ -352,11 +352,17 @@ class PlayerActivity : AppCompatActivity() {
     }
     private fun initializePlayer(videoId: String, manifestUrl: String, mediaToken: String, watermarkText: String) {
         try {
-            // Para enlaces cdp:// se usa el mediaToken (bloqueado al video); si no
-            // viene, se usa el JWT de login del catálogo. Así el mismo enlace abre
-            // cualquier dispositivo autorizado.
+            // El manifiesto, sus variantes, las claves y los segmentos se piden con
+            // el token de reproduccion, que esta atado a este video y a esta sesion.
+            // El JWT de la cuenta NO sirve aqui: el servidor lo rechaza con
+            // SESSION_REQUIRED, asi que antes el catalogo no llegaba a reproducir (F01).
             val manifestAuth = intent.getStringExtra(EXTRA_AUTH_TOKEN)?.takeIf { it.isNotBlank() }
-                ?: getJwtToken()
+                ?: mediaToken.takeIf { it.isNotBlank() }
+                ?: ""
+            if (manifestAuth.isBlank()) {
+                showError("La sesion de reproduccion no esta disponible. Vuelve a abrir la clase.")
+                return
+            }
 
             // Añadir el token también como parámetro en la URL (igual que el
             // reproductor PC). El servidor lee `?token=` como fallback si la

@@ -293,51 +293,42 @@ class WaitingActivity : AppCompatActivity() {
             putExtra(PlayerActivity.EXTRA_COURSE_ID, data.courseId ?: "__default__")
             putExtra(PlayerActivity.EXTRA_WATERMARK_CONFIG, data.watermarkConfig?.toString() ?: "")
         }
-        when (data.sourceType) {
-            "edu" -> {
-                toast("Este video .edu requiere Edulock para escritorio. Android admite Bunny Stream/HLS y VdoCipher.")
-                return
-            }
-            "vdocipher" -> {
-                if (data.otp.isNullOrBlank() || data.playbackInfo.isNullOrBlank()) {
-                    toast("Credenciales de video no disponibles.")
-                    return
-                }
-                intent.putExtra(PlayerActivity.EXTRA_SOURCE_TYPE, "vdocipher")
-                intent.putExtra(PlayerActivity.EXTRA_VDO_OTP, data.otp)
-                intent.putExtra(PlayerActivity.EXTRA_VDO_PLAYBACK_INFO, data.playbackInfo)
-            }
-            "vdocipher_direct" -> {
-                if (data.directUrl.isNullOrBlank()) {
-                    toast("URL de video no disponible.")
-                    return
-                }
-                intent.putExtra(PlayerActivity.EXTRA_SOURCE_TYPE, "vdocipher_direct")
-                intent.putExtra(PlayerActivity.EXTRA_VDO_DIRECT_URL, data.directUrl)
-            }
-            else -> {
-                val manifest = data.manifestUrl
-                if (manifest.isNullOrBlank()) {
-                    toast("El servidor no devolvió la URL del video.")
-                    return
-                }
+        // La misma politica que usa el catalogo: un solo sitio decide como se
+        // reproduce cada tipo de clase y con que credencial (F01, F08).
+        val plan = PlaybackPolicy.plan(
+            PlaybackPolicy.Source(
+                sourceType = data.sourceType,
+                manifestUrl = data.manifestUrl,
+                directUrl = data.directUrl,
+                otp = data.otp,
+                playbackInfo = data.playbackInfo,
+                mediaToken = data.mediaToken,
+                sessionToken = data.sessionToken,
+                drmScheme = data.drmScheme,
+                drmLicenseUrl = data.drmLicenseUrl,
+                error = data.error
+            )
+        )
+        when (plan) {
+            is PlaybackPolicy.Plan.Hls -> {
                 intent.putExtra(PlayerActivity.EXTRA_SOURCE_TYPE, "bunny")
-                intent.putExtra(PlayerActivity.EXTRA_MANIFEST_URL, manifest)
-                // DRM opcional entregado por el servidor para esta clase.
-                intent.putExtra(PlayerActivity.EXTRA_DRM_SCHEME, data.drmScheme)
-                intent.putExtra(PlayerActivity.EXTRA_DRM_LICENSE_URL, data.drmLicenseUrl)
-                // El manifest se autentica con el token bloqueado al video. Los
-                // enlaces `t=`/`cmd=` devuelven `mediaToken`; los enlaces
-                // permanentes `p=` devuelven `sessionToken` (role:perm, también
-                // bloqueado al videoId). Sin este fallback el token quedaba vacío
-                // y se usaba el JWT de login → el servidor respondía 403 "Sin
-                // acceso a este video". Así el mismo enlace abre cualquier
-                // dispositivo autorizado, igual que el reproductor de PC.
-                intent.putExtra(
-                    PlayerActivity.EXTRA_AUTH_TOKEN,
-                    data.mediaToken ?: data.sessionToken ?: ""
-                )
+                intent.putExtra(PlayerActivity.EXTRA_MANIFEST_URL, plan.manifestUrl)
+                intent.putExtra(PlayerActivity.EXTRA_DRM_SCHEME, plan.drmScheme)
+                intent.putExtra(PlayerActivity.EXTRA_DRM_LICENSE_URL, plan.drmLicenseUrl)
+                intent.putExtra(PlayerActivity.EXTRA_AUTH_TOKEN, plan.mediaToken)
             }
+            is PlaybackPolicy.Plan.VdoOtp -> {
+                intent.putExtra(PlayerActivity.EXTRA_SOURCE_TYPE, "vdocipher")
+                intent.putExtra(PlayerActivity.EXTRA_VDO_OTP, plan.otp)
+                intent.putExtra(PlayerActivity.EXTRA_VDO_PLAYBACK_INFO, plan.playbackInfo)
+            }
+            is PlaybackPolicy.Plan.VdoDirect -> {
+                intent.putExtra(PlayerActivity.EXTRA_SOURCE_TYPE, "vdocipher_direct")
+                intent.putExtra(PlayerActivity.EXTRA_VDO_DIRECT_URL, plan.directUrl)
+            }
+            is PlaybackPolicy.Plan.Unsupported -> { toast(plan.message); return }
+            is PlaybackPolicy.Plan.Incomplete -> { toast(plan.message); return }
+            is PlaybackPolicy.Plan.Rejected -> { toast(plan.message); return }
         }
         startActivity(intent)
     }

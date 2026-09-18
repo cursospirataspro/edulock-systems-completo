@@ -14,7 +14,7 @@ const { createResourceWindows } = require('./resource-window');
 
 const {
     app, BrowserWindow, ipcMain, shell,
-    dialog, Menu, Tray, nativeImage, session, protocol,
+    dialog, Menu, Tray, nativeImage, session, protocol, safeStorage,
 } = require('electron');
 
 // CastLabs Electron expone components API para Widevine CDM
@@ -44,8 +44,55 @@ const LEGAL_NOTICE =
     'Software y del formato .edu, por cualquier medio, incluidos modelos de inteligencia ' +
     'artificial. El contenido lleva marca de agua y es rastreable. Ver EULA.txt.';
 
+/**
+ * Abre un enlace en el navegador del sistema solo si es http o https. Antes
+ * cualquier direccion que no fuera file:// se entregaba tal cual al sistema
+ * operativo, incluidos esquemas que pueden lanzar otros programas (R04).
+ */
+function openExternalSafely(url) {
+    try {
+        const parsed = new URL(String(url));
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') shell.openExternal(parsed.href);
+    } catch { /* direccion no valida: no se abre nada */ }
+}
+
+/** Host exacto (o subdominio real) de la lista de inicio de sesion. */
+function isAuthWindowUrl(url) {
+    try {
+        const parsed = new URL(String(url));
+        if (parsed.protocol !== 'https:') return false;
+        const host = parsed.hostname.toLowerCase();
+        const esHost = dominio => host === dominio || host.endsWith('.' + dominio);
+        if (esHost('accounts.google.com')) return true;
+        if (esHost('firebaseapp.com') && parsed.pathname.startsWith('/__/auth/')) return true;
+        return false;
+    } catch { return false; }
+}
+
+/**
+ * Comprueba que un mensaje IPC venga de una ventana nuestra y de nuestra propia
+ * pagina (file://), no de contenido remoto incrustado.
+ */
+function isTrustedSender(event) {
+    try {
+        const sender = event && event.sender;
+        if (!sender || sender.isDestroyed()) return false;
+        const propias = [mainWindow, authWindow].filter(Boolean).map(w => w.webContents);
+        if (!propias.includes(sender)) return false;
+        const origen = sender.getURL() || '';
+        return origen.startsWith('file://');
+    } catch { return false; }
+}
+
 // ─── Constantes ──────────────────────────────────────────────────────────────
-const IS_DEV  = process.argv.includes('--dev');
+// Modo de desarrollo. La bandera sola no basta: en un binario empaquetado
+// app.isPackaged es true y IS_DEV queda en false pase lo que pase por la linea de
+// ordenes. Antes cualquiera podia arrancar el reproductor distribuido con --dev y
+// con eso se saltaba el control de sesion remota, el escaneo de seguridad
+// periodico y la actualizacion obligatoria, ademas de abrir las herramientas de
+// desarrollo (F04). Las excepciones de desarrollo solo existen ejecutando desde
+// el codigo fuente.
+const IS_DEV  = !app.isPackaged && process.argv.includes('--dev');
 const IS_MAC  = process.platform === 'darwin';
 const IS_WIN  = process.platform === 'win32';
 const PROTOCOL    = 'edulock';
@@ -799,7 +846,7 @@ function createWindow() {
     mainWindow.webContents.on('will-navigate', (e, url) => {
         if (!url.startsWith('file://')) {
             e.preventDefault();
-            shell.openExternal(url);
+            openExternalSafely(url);   // solo http/https, nunca otros esquemas
         }
     });
 
@@ -850,10 +897,10 @@ function createAuthWindow() {
     authWindow.loadFile(path.join(__dirname, 'renderer', 'auth.html'));
     // Allow Firebase Google OAuth popups; deny everything else
     authWindow.webContents.setWindowOpenHandler(({ url }) => {
-        if (
-            url.includes('accounts.google.com') ||
-            url.includes('firebaseapp.com/__/auth/')
-        ) {
+        // Se compara el host exacto, no una subcadena: con includes(), una
+        // direccion como https://sitio.ajeno/?x=accounts.google.com pasaba el
+        // filtro y se abria una ventana con la pagina del atacante (R04).
+        if (isAuthWindowUrl(url)) {
             return { action: 'allow', overrideBrowserWindowOptions: { width: 500, height: 620, webPreferences: { sandbox: true } } };
         }
         return { action: 'deny' };
@@ -1018,10 +1065,43 @@ function _decodeJwtPayload(token) {
     } catch { return null; }
 }
 
+// ── Sesion guardada: protegida con el almacen del sistema operativo ─────────
+// El archivo contenia el token de la cuenta en texto plano dentro de userData.
+// Ahora se cifra con safeStorage (DPAPI en Windows, Llavero en macOS, libsecret
+// en Linux). Compatibilidad: un archivo antiguo en texto plano se sigue leyendo
+// y se vuelve a escribir cifrado la primera vez, sin que el alumno note nada.
+// Si el sistema no ofrece cifrado (por ejemplo, Linux sin llavero), se conserva
+// el comportamiento anterior y se deja constancia, en vez de impedir el uso.
+function writeSessionFile(data) {
+    const plano = JSON.stringify(data);
+    try {
+        if (safeStorage && safeStorage.isEncryptionAvailable()) {
+            const sobre = JSON.stringify({ v: 1, enc: safeStorage.encryptString(plano).toString('base64') });
+            fs.writeFileSync(SESSION_PATH, sobre, { encoding: 'utf8', mode: 0o600 });
+            return true;
+        }
+    } catch (e) { log.warn('[SESSION] no se pudo cifrar la sesion:', e.message); }
+    fs.writeFileSync(SESSION_PATH, plano, { encoding: 'utf8', mode: 0o600 });
+    return true;
+}
+
+function readSessionFile() {
+    let raw;
+    try { raw = fs.readFileSync(SESSION_PATH, 'utf8'); } catch { return null; }
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { return null; }
+    if (parsed && parsed.v === 1 && typeof parsed.enc === 'string') {
+        try { return JSON.parse(safeStorage.decryptString(Buffer.from(parsed.enc, 'base64'))); }
+        catch (e) { log.warn('[SESSION] la sesion guardada no se pudo descifrar:', e.message); return null; }
+    }
+    // Archivo antiguo en texto plano: se migra a cifrado en el acto.
+    try { writeSessionFile(parsed); } catch {}
+    return parsed;
+}
+
 function isSavedSessionValid() {
     try {
-        const raw = fs.readFileSync(SESSION_PATH, 'utf8');
-        const session = JSON.parse(raw);
+        const session = readSessionFile();
         if (!session || !session.token) return false;
         const payload = _decodeJwtPayload(session.token);
         if (!payload) return false;
@@ -1034,7 +1114,7 @@ function isSavedSessionValid() {
 
 // Lee la sesión guardada (sin validar expiración). Devuelve el objeto o null.
 function readSavedSession() {
-    try { return JSON.parse(fs.readFileSync(SESSION_PATH, 'utf8')); }
+    try { return readSessionFile(); }
     catch { return null; }
 }
 
@@ -1081,14 +1161,14 @@ function canEnterDirectly() {
 }
 
 ipcMain.handle('save-session', (_e, data) => {
-    try { resourceWindows.invalidate(); fs.writeFileSync(SESSION_PATH, JSON.stringify(data), 'utf8'); return true; }
+    try { resourceWindows.invalidate(); writeSessionFile(data); return true; }
     catch { return false; }
 });
 
 ipcMain.handle('get-session', () => {
     try {
         if (!fs.existsSync(SESSION_PATH)) return null;
-        return JSON.parse(fs.readFileSync(SESSION_PATH, 'utf8'));
+        return readSessionFile();
     } catch { return null; }
 });
 
@@ -1119,7 +1199,7 @@ function startTokenRefresh() {
                 { method: 'POST', headers: { Authorization: `Bearer ${saved.token}` } }
             );
             if (r.status === 200 && r.body && r.body.token) {
-                fs.writeFileSync(SESSION_PATH, JSON.stringify({ ...saved, token: r.body.token }), 'utf8');
+                writeSessionFile({ ...saved, token: r.body.token });
                 log.info('[TOKEN-REFRESH] token renovado automaticamente');
                 if (mainWindow && !mainWindow.isDestroyed()) {
                     mainWindow.webContents.send('token-refreshed', r.body.token);
@@ -1156,7 +1236,7 @@ ipcMain.handle('edu-open', async (_e, { contentId, deviceId, mediaToken } = {}) 
 
         // Token de sesión del alumno (login persistido en disco).
         let token = '';
-        try { if (fs.existsSync(SESSION_PATH)) token = (JSON.parse(fs.readFileSync(SESSION_PATH, 'utf8')) || {}).token || ''; } catch {}
+        try { if (fs.existsSync(SESSION_PATH)) token = (readSessionFile() || {}).token || ''; } catch {}
         if (!token || !_userIsLoggedIn) return { ok: false, error: 'No hay sesión. Inicia sesión de nuevo.' };
         token = mediaToken || token;
 
@@ -1678,10 +1758,9 @@ ipcMain.on('close-player', () => {
     if (mainWindow) mainWindow.close();
 });
 
-ipcMain.on('open-external', (_e, url) => {
-    if (typeof url === 'string' && /^https?:\/\//.test(url)) {
-        shell.openExternal(url);
-    }
+ipcMain.on('open-external', (event, url) => {
+    if (!isTrustedSender(event)) return;
+    openExternalSafely(url);
 });
 
 // Pantalla completa nativa de Electron (más fiable que la API HTML5 dentro de
