@@ -24,6 +24,9 @@ before(async () => {
 after(async () => {
     try {
         await query('DELETE FROM producer_content_settings WHERE producer_id=ANY($1::text[])', [tracked.producers]);
+        // La cola de borrados es global: lo que deje esta prueba se limpia aqui
+        // para no interferir con las demas ni con ejecuciones posteriores.
+        await query('DELETE FROM provider_deletions WHERE producer_id=ANY($1::text[]) OR course_id=ANY($2::text[])', [tracked.producers, tracked.courses]);
         await query('DELETE FROM deleted_videos WHERE video_id=ANY($1::text[])', [tracked.catalog]);
         for (const table of ['protected_resources', 'stream_operations', 'licenses', 'license_lots', 'catalog', 'modules', 'courses', 'producers']) if (tracked[table].length) await query(`DELETE FROM ${table} WHERE ${table === 'catalog' ? 'video_id' : 'id'}=ANY($1::text[])`, [tracked[table]]);
     } finally { await db.pool.end(); }
