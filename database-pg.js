@@ -81,24 +81,28 @@ const isLocalDb = DB_HOST === '' || DB_HOST === 'localhost' || DB_HOST === '127.
  * silenciosa: sin autoridad configurada el arranque se detiene con un aviso,
  * salvo que se pida explícitamente PGSSLMODE=no-verify, que queda registrado.
  */
-function databaseTls() {
-    if (isLocalDb) return false;                      // conexión local: como antes
+function databaseTls(host = DB_HOST, env = process.env) {
+    const local = host === '' || host === 'localhost' || host === '127.0.0.1'
+        || host === '::1' || host === '[::1]' || host.startsWith('/') || host.startsWith('%2F');
+    if (local) return false;                          // conexión local: como antes
     const fs = require('fs');
-    let ca = process.env.DATABASE_CA_CERT || null;
-    const caPath = process.env.PGSSLROOTCERT || null;
+    let ca = env.DATABASE_CA_CERT || null;
+    const caPath = env.PGSSLROOTCERT || null;
     if (!ca && caPath) {
         try { ca = fs.readFileSync(caPath, 'utf8'); }
         catch (error) { throw new Error('[db-pg] No se pudo leer PGSSLROOTCERT: ' + error.message); }
     }
-    if (ca) return { ca, rejectUnauthorized: true, servername: DB_HOST };
-    if ((process.env.PGSSLMODE || '').toLowerCase() === 'no-verify') {
+    if (ca) return { ca, rejectUnauthorized: true, servername: host };
+    if ((env.PGSSLMODE || '').toLowerCase() === 'no-verify') {
         console.warn('[db-pg] AVISO: PGSSLMODE=no-verify — la conexión va cifrada pero NO se comprueba la identidad del servidor de base de datos.');
         return { rejectUnauthorized: false };
     }
-    throw new Error('[db-pg] DATABASE_URL apunta a un servidor remoto (' + DB_HOST + ') sin autoridad certificadora. '
+    throw new Error('[db-pg] DATABASE_URL apunta a un servidor remoto (' + host + ') sin autoridad certificadora. '
         + 'Configura PGSSLROOTCERT (ruta del certificado de la CA) o DATABASE_CA_CERT (contenido PEM). '
         + 'Para aceptar a propósito una conexión sin verificar, define PGSSLMODE=no-verify.');
 }
+
+module.exports._databaseTls = databaseTls;   // export para pruebas
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,

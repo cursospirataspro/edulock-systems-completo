@@ -1,0 +1,190 @@
+'use strict';
+// Regresiones de la auditoría: F05 (contraseña de administrador por omisión),
+// F06 (documentos cifrados que desaparecían del catálogo), F07 (éxito anunciado
+// antes de guardar) y R03 (TLS de PostgreSQL sin verificar).
+// Las funciones de server.js se extraen de su propio archivo y se ejecutan en un
+// contexto aislado, igual que hacen las pruebas existentes del panel: se prueba
+// el mismo texto que corre en producción, no una copia.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const crypto = require('node:crypto');
+
+const serverSource = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8').replace(/\r\n/g, '\n');
+
+/** Extrae una función completa de server.js por su primera línea. */
+function extractFunction(header) {
+    const start = serverSource.indexOf(header);
+    assert.ok(start >= 0, 'no se encontró en server.js: ' + header);
+    const end = serverSource.indexOf('\n}', start);
+    assert.ok(end > start);
+    return serverSource.slice(start, end + 2);
+}
+
+/** Contexto con un sistema de archivos simulado para probar loadUsers(). */
+function authContext({ env = {}, users = null }) {
+    const files = new Map();
+    if (users) files.set('USERS', JSON.stringify(users, null, 2));
+    const fakeFs = {
+        existsSync: p => (String(p).includes('users.json') ? files.has('USERS') : true),
+        readFileSync: () => files.get('USERS'),
+        writeFileSync: (p, data) => files.set('USERS', data),
+        mkdirSync: () => {},
+    };
+    const context = vm.createContext({
+        process: { env }, fs: fakeFs, crypto, console: { log() {}, warn() {}, error() {} },
+        path: { dirname: () => '/data', resolve: () => '/data/users.json' },
+        USERS_PATH: '/data/users.json',
+        uuidv4: () => '00000000-0000-4000-8000-000000000000',
+        hashPassword: pass => 'hash:' + crypto.createHash('sha256').update(String(pass)).digest('hex'),
+        verifyPassword: (pass, stored) => stored === 'hash:' + crypto.createHash('sha256').update(String(pass)).digest('hex'),
+    });
+    vm.runInContext(extractFunction('function adminPassFromEnv()'), context);
+    vm.runInContext(extractFunction('function adminCredentialVersion()'), context);
+    vm.runInContext(extractFunction('function loadUsers()'), context);
+    return { context, files };
+}
+
+const adminUser = pass => ([{ id: 'a1', username: 'admin', admin: true, label: 'Administrador',
+    passwordHash: 'hash:' + crypto.createHash('sha256').update(pass).digest('hex') }]);
+
+// ── F05 ──────────────────────────────────────────────────────────────────────
+test('F05: sin ADMIN_PASS no se restablece la contraseña del administrador existente', () => {
+    const original = adminUser('una-contrasena-real-del-cliente');
+    const { context, files } = authContext({ env: { ADMIN_USER: 'admin' }, users: original });
+    const result = context.loadUsers();
+    assert.equal(result[0].passwordHash, original[0].passwordHash,
+        'la contraseña existente debe quedar intacta cuando ADMIN_PASS no está configurada');
+    assert.equal(JSON.parse(files.get('USERS'))[0].passwordHash, original[0].passwordHash);
+    assert.notEqual(result[0].passwordHash, 'hash:' + crypto.createHash('sha256').update('changeme').digest('hex'));
+});
+
+test('F05: sin ADMIN_PASS y sin administrador, el arranque se detiene en vez de crear uno conocido', () => {
+    const { context } = authContext({ env: { ADMIN_USER: 'admin' }, users: null });
+    assert.throws(() => context.loadUsers(), /ADMIN_PASS/);
+});
+
+test('F05: con ADMIN_PASS configurada el administrador se crea y se sincroniza como siempre', () => {
+    const { context } = authContext({ env: { ADMIN_USER: 'admin', ADMIN_PASS: 'clave-sintetica-de-prueba' }, users: null });
+    const users = context.loadUsers();
+    assert.equal(users.length, 1);
+    assert.equal(users[0].admin, true);
+    assert.ok(context.verifyPassword('clave-sintetica-de-prueba', users[0].passwordHash));
+});
+
+test('F05: la huella de la credencial cambia al cambiar la contraseña, lo que revoca las sesiones', () => {
+    const a = authContext({ env: { ADMIN_USER: 'admin', ADMIN_PASS: 'clave-uno' }, users: adminUser('clave-uno') });
+    const b = authContext({ env: { ADMIN_USER: 'admin', ADMIN_PASS: 'clave-dos' }, users: adminUser('clave-uno') });
+    assert.notEqual(a.context.adminCredentialVersion(), b.context.adminCredentialVersion());
+});
+
+test('F05: el inicio de sesión de administrador ya no acepta ninguna contraseña por omisión', () => {
+    assert.ok(!serverSource.includes("ADMIN_PASS || 'changeme'"),
+        'server.js no debe contener ninguna contraseña de administrador por omisión');
+    assert.ok(serverSource.includes('const envPass = adminPassFromEnv()'));
+    assert.ok(serverSource.includes('if (envPass && uname === envUser'),
+        'sin ADMIN_PASS configurada no puede haber una vía de acceso por variables de entorno');
+});
+
+// ── F06 ──────────────────────────────────────────────────────────────────────
+const db = require('../database-pg.js');
+
+test('F06: los documentos guardados en texto plano se siguen leyendo', () => {
+    const r = db.parseDocuments(JSON.stringify([{ name: 'Guía', url: 'https://ejemplo.test/a.pdf' }]));
+    assert.equal(r.reason, null);
+    assert.equal(r.documents.length, 1);
+    assert.equal(r.documents[0].name, 'Guía');
+});
+
+test('F06: los documentos cifrados se leen en vez de desaparecer', () => {
+    const original = [{ name: 'Material histórico', url: 'https://ejemplo.test/b.pdf' }];
+    const guardado = db._encField(JSON.stringify(original));
+    const r = db.parseDocuments(guardado);
+    assert.equal(r.reason, null, 'una fila cifrada no puede quedar como "sin materiales"');
+    assert.deepEqual(r.documents, original);
+});
+
+test('F06: un valor cifrado que no se puede abrir se informa, no se convierte en lista vacía silenciosa', () => {
+    const r = db.parseDocuments('enc1:' + Buffer.from('basura que no descifra').toString('base64'));
+    assert.deepEqual(r.documents, []);
+    assert.equal(r.reason, 'unreadable');
+});
+
+test('F06: se distingue "no hay materiales" de "están corruptos"', () => {
+    assert.deepEqual(db.parseDocuments(null), { documents: [], reason: null });
+    assert.deepEqual(db.parseDocuments(''), { documents: [], reason: null });
+    assert.equal(db.parseDocuments('{esto no es json').reason, 'corrupt');
+    assert.equal(db.parseDocuments('{"a":1}').reason, 'unexpected');
+});
+
+test('F06: ni el catálogo ni el repositorio de recursos vuelven a interpretar la columna sin descifrarla', () => {
+    assert.ok(!serverSource.includes('JSON.parse(r.documents'),
+        'server.js no debe interpretar la columna documents sin pasar por el conversor');
+    const repo = fs.readFileSync(path.join(__dirname, '..', 'lib', 'resource-repository.js'), 'utf8');
+    assert.ok(!repo.includes('JSON.parse(row.documents'),
+        'resource-repository.js no debe interpretar la columna documents sin pasar por el conversor');
+});
+
+// ── F07 ──────────────────────────────────────────────────────────────────────
+function routeBody(marker) {
+    const from = serverSource.indexOf(marker);
+    assert.ok(from >= 0, 'no se encontró la ruta ' + marker);
+    const rest = serverSource.slice(from);
+    return rest.slice(0, rest.indexOf('\n});'));
+}
+
+test('F07: el catálogo de Bunny se guarda antes de responder "listo"', () => {
+    const cuerpo = routeBody("app.post('/api/catalog/add-bunny'");
+    const guardado = cuerpo.indexOf('await addToCatalog(');
+    const respuesta = cuerpo.indexOf('res.status(201)');
+    assert.ok(guardado > 0, 'la escritura debe esperarse');
+    assert.ok(guardado < respuesta, 'la escritura debe completarse antes de responder');
+    assert.match(cuerpo, /catch \(error\)[\s\S]{0,300}res\.status\(500\)/,
+        'si la escritura falla, la respuesta debe ser un error y no un éxito');
+});
+
+test('F07: la subida solo responde "procesando" cuando la fila ya quedó registrada', () => {
+    const cuerpo = routeBody("app.post('/api/video/upload'");
+    const guardado = cuerpo.indexOf('await addToCatalog(');
+    const respuesta = cuerpo.indexOf("status: 'processing'", guardado);
+    assert.ok(guardado > 0 && respuesta > guardado);
+    assert.ok(cuerpo.includes('res.status(500)'));
+});
+
+test('F07: no queda ninguna llamada a addToCatalog sin esperar', () => {
+    for (const linea of serverSource.split('\n')) {
+        if (/[^a-zA-Z.]addToCatalog\(/.test(linea) && !linea.includes('const addToCatalog')) {
+            assert.match(linea, /await\s+(db\.)?addToCatalog\(/, 'sin await: ' + linea.trim().slice(0, 80));
+        }
+    }
+});
+
+// ── R03 ──────────────────────────────────────────────────────────────────────
+test('R03: la conexión local sigue sin TLS, como antes', () => {
+    for (const host of ['', 'localhost', '127.0.0.1', '::1', '/var/run/postgresql']) {
+        assert.equal(db._databaseTls(host, {}), false, 'host local: ' + host);
+    }
+});
+
+test('R03: la conexión remota verifica el certificado y la identidad del servidor', () => {
+    const tls = db._databaseTls('base.ejemplo.net', { DATABASE_CA_CERT: '-----BEGIN CERTIFICATE-----' });
+    assert.equal(tls.rejectUnauthorized, true);
+    assert.equal(tls.servername, 'base.ejemplo.net');
+    assert.ok(tls.ca);
+});
+
+test('R03: una base remota sin autoridad certificadora detiene el arranque en vez de degradarse', () => {
+    assert.throws(() => db._databaseTls('base.ejemplo.net', {}), /autoridad certificadora/);
+});
+
+test('R03: solo una orden explícita permite conectarse sin verificar', () => {
+    const tls = db._databaseTls('base.ejemplo.net', { PGSSLMODE: 'no-verify' });
+    assert.equal(tls.rejectUnauthorized, false);
+});
+
+test('R03: ya no queda ningún rejectUnauthorized:false incondicional', () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'database-pg.js'), 'utf8');
+    assert.ok(!/ssl:\s*\(process\.env\.NODE_ENV[^\n]*rejectUnauthorized:\s*false/.test(source));
+});
