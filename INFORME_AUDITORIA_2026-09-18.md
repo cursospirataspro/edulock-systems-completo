@@ -264,7 +264,7 @@ corresponde a la versión **anterior** a esta revisión: hay que recompilarlo.
 
 ---
 
-## 9. Qué queda pendiente y qué necesita una acción tuya
+## 8. Qué queda pendiente y qué necesita una acción tuya
 
 | Pendiente | Por qué | Quién |
 |---|---|---|
