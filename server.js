@@ -153,6 +153,25 @@ const eduUploader = {
 };
 
 const streamService = createStreamService({ db, getAccountKey: getBunnyAccountKey, createKey: generateKey, logger: console, edu: eduUploader });
+
+// Metricas del panel. Una sola definicion de cada indicador para el Home, la
+// analitica, los detalles y las exportaciones. Solo lee: no crea recursos ni
+// consulta al proveedor de video.
+const { createAdminAnalytics, resolverPeriodo } = require('./lib/admin-analytics');
+const adminAnalytics = createAdminAnalytics({ db });
+
+// Consumo y costos del proveedor de video. El cliente solo hace GET: no crea
+// bibliotecas ni zonas, que es lo unico que costaria dinero.
+const { createBunnyUsageClient } = require('./lib/bunny-usage-client');
+const { createConsumptionRepository } = require('./lib/consumption-repository');
+const { createConsumptionService } = require('./lib/consumption-service');
+const consumptionRepo = createConsumptionRepository({ db });
+const consumption = createConsumptionService({
+    db,
+    repositorio: consumptionRepo,
+    cliente: createBunnyUsageClient({ obtenerClave: getBunnyAccountKey }),
+    logger: console,
+});
 const https = require('https');
 const http  = require('http');
 
@@ -4526,6 +4545,220 @@ app.get('/api/admin/segment-audit', requireAdmin, async (req, res) => {
  * Retorna stats agregados para el dashboard sin transferir registros crudos.
  * Mucho más rápido que traer 500 entradas y agruparlas en el cliente.
  */
+/**
+ * GET /api/admin/analytics/summary?dias=30   [ADMIN]
+ * Los ocho indicadores del Home. Cada valor trae unidad, ambito, fuente y
+ * calidad; lo que no se puede medir vuelve como null, nunca como cero.
+ */
+app.get('/api/admin/analytics/summary', requireAdmin, async (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await adminAnalytics.resumenHome({ periodo: periodoDeAnalitica(req.query) }));
+    } catch (error) {
+        console.error('[analytics/summary]', error.message);
+        res.status(500).json({ error: 'No se pudieron calcular los indicadores.' });
+    }
+});
+
+/**
+ * GET /api/admin/analytics/courses   [ADMIN]
+ * Formaciones con sus cifras. La ordenacion, el filtrado y el total se
+ * resuelven en el servidor: la pagina es solo un tramo del conjunto completo.
+ */
+app.get('/api/admin/analytics/courses', requireAdmin, async (req, res) => {
+    const { pagina, porPagina, orden, productor, buscar } = req.query;
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await adminAnalytics.listaFormaciones({
+            pagina: parseInt(pagina, 10) || 1,
+            porPagina: parseInt(porPagina, 10) || 12,
+            orden: typeof orden === 'string' ? orden : 'alumnos',
+            productorId: typeof productor === 'string' && productor ? productor : null,
+            busqueda: typeof buscar === 'string' && buscar.trim() ? buscar.trim().slice(0, 120) : null,
+            periodo: periodoDeAnalitica(req.query),
+        }));
+    } catch (error) {
+        console.error('[analytics/courses]', error.message);
+        res.status(500).json({ error: 'No se pudo cargar la lista de formaciones.' });
+    }
+});
+
+/**
+ * Traduce lo que pide el panel a un intervalo concreto en America/Lima:
+ * `preset` (hoy, 7d, 30d, 90d, mes), `dias`, o `desde`/`hasta` en formato
+ * AAAA-MM-DD. Lo que no se entiende cae a los ultimos 30 dias y lo avisa.
+ */
+function clienteDeAnalitica(query) {
+    const v = query.productor;
+    return typeof v === 'string' && v ? v.slice(0, 64) : null;
+}
+
+function periodoDeAnalitica(query) {
+    const texto = v => (typeof v === 'string' && v ? v.slice(0, 20) : null);
+    return resolverPeriodo({
+        preset: texto(query.preset),
+        dias: query.dias,
+        desde: texto(query.desde),
+        hasta: texto(query.hasta),
+    });
+}
+
+/**
+ * GET /api/admin/analytics/overview?dias=30   [ADMIN]
+ * Resumen general de la pestaña A: altas, actividad, licencias y contenido.
+ */
+app.get('/api/admin/analytics/overview', requireAdmin, async (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await adminAnalytics.resumenAnalitica({ periodo: periodoDeAnalitica(req.query) }));
+    } catch (error) {
+        console.error('[analytics/overview]', error.message);
+        res.status(500).json({ error: 'No se pudo calcular el resumen del período.' });
+    }
+});
+
+/**
+ * GET /api/admin/analytics/activity?dias=30   [ADMIN]
+ * Serie diaria de actividad. Los días sin actividad vienen en cero explícito.
+ */
+app.get('/api/admin/analytics/activity', requireAdmin, async (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await adminAnalytics.serieActividad({
+            periodo: periodoDeAnalitica(req.query),
+            productorId: clienteDeAnalitica(req.query),
+        }));
+    } catch (error) {
+        console.error('[analytics/activity]', error.message);
+        res.status(500).json({ error: 'No se pudo calcular la serie de actividad.' });
+    }
+});
+
+/**
+ * GET /api/admin/analytics/producers?dias=30   [ADMIN]
+ * Tabla de clientes con sus formaciones, alumnos, licencias y actividad.
+ */
+app.get('/api/admin/analytics/producers', requireAdmin, async (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await adminAnalytics.listaProductores({ periodo: periodoDeAnalitica(req.query) }));
+    } catch (error) {
+        console.error('[analytics/producers]', error.message);
+        res.status(500).json({ error: 'No se pudo cargar la lista de clientes.' });
+    }
+});
+
+/**
+ * GET /api/admin/analytics/courses/:id?dias=30   [ADMIN]
+ * Detalle de una formación con sus clases. No expone claves de licencia ni
+ * identificadores del proveedor de video.
+ */
+app.get('/api/admin/analytics/courses/:id', requireAdmin, async (req, res) => {
+    try {
+        const r = await adminAnalytics.detalleFormacion(String(req.params.id), {
+            periodo: periodoDeAnalitica(req.query),
+        });
+        if (!r) return res.status(404).json({ error: 'Esa formación no existe.' });
+        res.set('Cache-Control', 'no-store');
+        res.json(r);
+    } catch (error) {
+        console.error('[analytics/course]', error.message);
+        res.status(500).json({ error: 'No se pudo cargar el detalle de la formación.' });
+    }
+});
+
+/**
+ * GET /api/admin/analytics/top   [ADMIN]
+ * Clases más vistas y alumnos más activos dentro del período.
+ */
+app.get('/api/admin/analytics/top', requireAdmin, async (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await adminAnalytics.topActividad({
+            periodo: periodoDeAnalitica(req.query),
+            limite: parseInt(req.query.limite, 10) || 10,
+            productorId: clienteDeAnalitica(req.query),
+        }));
+    } catch (error) {
+        console.error('[analytics/top]', error.message);
+        res.status(500).json({ error: 'No se pudo calcular la actividad destacada.' });
+    }
+});
+
+/*
+ * Consumo y costos del proveedor. Todas leen lo ultimo que guardo el recolector;
+ * ninguna llama al proveedor durante la peticion, para que el panel no dependa
+ * de que Bunny responda rapido ni se dispare una llamada por cada visita.
+ */
+
+/** GET /api/admin/analytics/consumption   [ADMIN] — resumen de cuenta. */
+app.get('/api/admin/analytics/consumption', requireAdmin, async (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await consumption.resumen());
+    } catch (error) {
+        console.error('[consumo/resumen]', error.message);
+        res.status(500).json({ error: 'No se pudo leer el consumo guardado.' });
+    }
+});
+
+/** GET /api/admin/analytics/consumption/courses   [ADMIN] — reparto por formación. */
+app.get('/api/admin/analytics/consumption/courses', requireAdmin, async (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await consumption.porFormacion());
+    } catch (error) {
+        console.error('[consumo/formaciones]', error.message);
+        res.status(500).json({ error: 'No se pudo repartir el consumo por formación.' });
+    }
+});
+
+/** GET /api/admin/analytics/consumption/rates   [ADMIN] — tarifas vigentes. */
+app.get('/api/admin/analytics/consumption/rates', requireAdmin, async (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await consumption.tarifas());
+    } catch (error) {
+        console.error('[consumo/tarifas]', error.message);
+        res.status(500).json({ error: 'No se pudieron leer las tarifas guardadas.' });
+    }
+});
+
+/** GET /api/admin/analytics/consumption/status   [ADMIN] — salud del recolector. */
+app.get('/api/admin/analytics/consumption/status', requireAdmin, async (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await consumption.estado());
+    } catch (error) {
+        console.error('[consumo/estado]', error.message);
+        res.status(500).json({ error: 'No se pudo leer el estado del recolector.' });
+    }
+});
+
+/*
+ * POST /api/admin/analytics/consumption/sync   [ADMIN]
+ * Fuerza una recolección. Se limita a una cada dos minutos: el proveedor cobra
+ * por peticion a su API y un boton sin freno es una factura esperando a pasar.
+ */
+let ultimaSincronizacionManual = 0;
+app.post('/api/admin/analytics/consumption/sync', requireAdmin, async (req, res) => {
+    const ahora = Date.now();
+    if (ahora - ultimaSincronizacionManual < 120000) {
+        return res.status(429).json({
+            error: 'Espera un par de minutos entre actualizaciones manuales.',
+            segundosRestantes: Math.ceil((120000 - (ahora - ultimaSincronizacionManual)) / 1000),
+        });
+    }
+    ultimaSincronizacionManual = ahora;
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await consumption.sincronizar({ dueno: 'panel:' + (req.user?.sub || 'admin') }));
+    } catch (error) {
+        console.error('[consumo/sync]', error.message);
+        res.status(500).json({ error: 'No se pudo recolectar el consumo.' });
+    }
+});
+
 app.get('/api/dashboard/stats', requireAdmin, async (req, res) => {
     try {
         const adminEmail = req.user.email || (process.env.ADMIN_USER || 'admin@edulocksystemsoficial.dpdns.org').trim();
@@ -6614,6 +6847,40 @@ const producerMailTimer = setInterval(async () => {
     finally { producerMailBusy = false; }
 }, 15000);
 producerMailTimer.unref();
+
+/*
+ * Recoleccion horaria del consumo del proveedor. El arriendo vive en la base,
+ * asi que dos instancias del servidor no recolectan a la vez y no se duplican
+ * los snapshots. La primera pasada se retrasa un minuto para no competir con el
+ * arranque, y los fallos del proveedor no se reintentan aqui: el cliente ya
+ * reintenta lo que tiene arreglo, y lo demas se vuelve a intentar a la hora.
+ */
+const CONSUMO_CADA_MS = 60 * 60 * 1000;
+let consumoOcupado = false;
+async function recolectarConsumo(porque) {
+    if (!dbReady || consumoOcupado) return;
+    consumoOcupado = true;
+    try {
+        const r = await consumption.sincronizar({ dueno: 'servidor:' + process.pid });
+        if (r.hecho) {
+            console.log('[consumo] ' + porque + ': ' + r.guardadas + ' métricas' +
+                (r.tarifasNuevas ? ', ' + r.tarifasNuevas + ' tarifas nuevas' : '') +
+                (r.fallos.length ? ' (no se pudo leer: ' + r.fallos.map(f => f.lectura).join(', ') + ')' : ''));
+        } else if (r.motivo !== 'ya_en_curso') {
+            console.warn('[consumo] ' + porque + ': no se guardó nada' +
+                (r.fallos && r.fallos.length ? ' — ' + r.fallos.map(f => f.lectura + ': ' + f.motivo).join('; ') : ''));
+        }
+    } catch (e) {
+        console.warn('[consumo] ' + porque + ': ' + e.message);
+    } finally {
+        consumoOcupado = false;
+    }
+}
+if (process.env.NODE_ENV !== 'test') {
+    setTimeout(() => recolectarConsumo('arranque'), 60000).unref();
+    const consumoTimer = setInterval(() => recolectarConsumo('horario'), CONSUMO_CADA_MS);
+    consumoTimer.unref();
+}
 app.use(async (req, res) => res.status(404).json({ error: 'No encontrado' }));
 
 // ================================================================

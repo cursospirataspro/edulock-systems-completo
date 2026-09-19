@@ -264,6 +264,66 @@
         #leak-result.notfound { border-left: 3px solid var(--c-muted); }
 
         /* ---- Import drop ---- */
+        /* ── Analítica ── */
+        .anl-filtros { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;
+                       padding:12px 14px; background:var(--c-surface); border:1px solid var(--c-border); border-radius:8px }
+        .anl-filtros label { font-size:0.74rem; color:var(--c-muted); text-transform:uppercase; letter-spacing:.4px }
+        .anl-filtros select, .anl-filtros input {
+            padding:6px 10px; background:var(--c-surface2); border:1px solid var(--c-border);
+            border-radius:6px; color:var(--c-text); font-size:0.82rem; outline:none }
+        .anl-aviso { font-size:0.78rem; color:#b8860b; margin:0 0 10px }
+        .anl-nota  { font-size:0.76rem; color:var(--c-muted); margin:6px 0 0 }
+        .anl-panel { display:none }
+        .anl-panel.activo { display:block }
+        .anl-vacio { color:var(--c-muted); font-size:0.82rem; padding:10px 0 }
+        .anl-barras { display:flex; align-items:flex-end; gap:2px; height:140px; padding:6px 0;
+                      border-bottom:1px solid var(--c-border) }
+        .anl-barra { flex:1 1 0; min-width:3px; background:var(--c-primary); border-radius:2px 2px 0 0;
+                     opacity:.85; transition:opacity .15s }
+        .anl-barra:hover { opacity:1 }
+        .anl-barra.cero { background:var(--c-border); min-height:2px }
+        .anl-ejes { display:flex; justify-content:space-between; font-size:0.72rem; color:var(--c-muted); margin-top:4px }
+        .anl-nd { border:1px dashed var(--c-border); border-radius:8px; padding:18px; text-align:center }
+        .anl-nd h4 { margin:0 0 6px; font-size:0.95rem }
+        .anl-nd p  { margin:0 auto; max-width:60ch; font-size:0.82rem; color:var(--c-muted); line-height:1.5 }
+        .anl-dos { display:grid; grid-template-columns:1fr 1fr; gap:12px }
+        @media (max-width:760px){ .anl-dos { grid-template-columns:1fr } }
+        .anl-lista { list-style:none; margin:0; padding:0 }
+        .anl-lista li { display:flex; justify-content:space-between; gap:12px; padding:7px 0;
+                        border-bottom:1px solid var(--c-border); font-size:0.84rem }
+        .anl-lista li:last-child { border-bottom:none }
+        .anl-lista .sec { color:var(--c-muted); font-size:0.76rem }
+
+        /* ── Home: ocho indicadores y fichas de formaciones ── */
+        .kpi-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:8px }
+        @media (max-width:1100px){ .kpi-grid{ grid-template-columns:repeat(2,1fr) } }
+        @media (max-width:560px){ .kpi-grid{ grid-template-columns:1fr } }
+        .kpi { background:var(--c-surface); border:1px solid var(--c-border); border-radius:8px; padding:12px 14px; position:relative }
+        .kpi .v { font-size:1.6rem; font-weight:700; line-height:1.1 }
+        .kpi .v.nd { font-size:1rem; color:var(--c-muted); font-weight:600 }
+        .kpi .t { font-size:0.74rem; text-transform:uppercase; letter-spacing:.4px; color:var(--c-muted); margin-top:4px }
+        .kpi .s { font-size:0.74rem; color:var(--c-muted); margin-top:5px; min-height:1em }
+        .kpi .q { position:absolute; top:10px; right:12px; font-size:0.64rem; padding:1px 5px; border-radius:8px;
+                  text-transform:uppercase; letter-spacing:.3px }
+        .kpi .q.medido   { background:rgba(26,127,75,.14); color:#1a7f4b }
+        .kpi .q.derivado { background:rgba(90,102,115,.16); color:#5a6673 }
+        .kpi .q.parcial,.kpi .q.estimado { background:rgba(184,134,11,.16); color:#b8860b }
+        .kpi .q.no_disponible { background:rgba(200,16,46,.14); color:#c8102e }
+        .kpi[title] { cursor:help }
+        .form-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:12px }
+        @media (max-width:1100px){ .form-cards{ grid-template-columns:repeat(2,1fr) } }
+        @media (max-width:640px){ .form-cards{ grid-template-columns:1fr } }
+        .fcard { border:1px solid var(--c-border); border-radius:8px; padding:12px 14px; background:var(--c-surface) }
+        .fcard h4 { margin:0 0 2px; font-size:0.92rem; line-height:1.3; word-break:break-word }
+        .fcard .prod { font-size:0.76rem; color:var(--c-muted); margin-bottom:8px }
+        .fcard .prod.sin { color:#b8860b }
+        .fcard .datos { display:flex; flex-wrap:wrap; gap:4px 12px; font-size:0.78rem; margin-bottom:9px }
+        .fcard .datos b { font-weight:700 }
+        .fcard .acc { display:flex; gap:6px; flex-wrap:wrap }
+        .fcard .vacio { font-size:0.74rem; color:#b8860b }
+        .paginador { display:flex; gap:8px; align-items:center; justify-content:space-between; margin-top:12px; flex-wrap:wrap }
+        .paginador .info { font-size:0.78rem; color:var(--c-muted) }
+
         #import-drop {
             border: 2px dashed var(--c-border); border-radius: 8px;
             padding: 22px 16px; text-align: center; cursor: pointer;
@@ -588,12 +648,12 @@
         </div>
         <nav>
             <a class="active" data-page="dashboard">Dashboard</a>
+            <a data-page="analytics">Analítica</a>
             <a data-page="catalog">Catalogo</a>
             <a data-page="students">Alumnos</a>
-            <a data-page="playback-audit">Auditoría <span id="nav-unreviewed-badge" style="display:none;background:#d81f2a;color:#fff;border-radius:10px;padding:1px 6px;font-size:0.7rem;margin-left:4px;vertical-align:middle"></span></a>
             <a data-page="leak">Detectar Fuga</a>
             <a data-page="watermark">Marcas de agua</a>
-            <a data-page="security">Seguridad <span id="nav-security-badge" style="display:none;background:#d81f2a;color:#fff;border-radius:10px;padding:1px 6px;font-size:0.7rem;margin-left:4px;vertical-align:middle"></span></a>
+            <a data-page="security">Integraciones <span id="nav-security-badge" style="display:none;background:#d81f2a;color:#fff;border-radius:10px;padding:1px 6px;font-size:0.7rem;margin-left:4px;vertical-align:middle"></span></a>
             <a data-page="player-version">Versión Reproductor</a>
             <a data-page="licenses">Licencias y Ventas</a>
             <a data-page="producers">Productores (Clientes)</a>
@@ -609,19 +669,153 @@
         <div class="page active" id="page-dashboard">
             <h2>Dashboard</h2>
             <p class="subtitle">Resumen del sistema de proteccion.</p>
-            <div class="stats-grid" id="stats-grid">
-                <div class="stat-card"><div class="num" id="stat-videos">—</div><div class="lbl">Videos procesados</div></div>
-                <div class="stat-card"><div class="num" id="stat-deliveries">—</div><div class="lbl">Entregas registradas</div></div>
-                <div class="stat-card"><div class="num" id="stat-users">—</div><div class="lbl">Usuarios unicos</div></div>
-            </div>
+            <div class="kpi-grid" id="kpi-fila1"></div>
+            <div class="kpi-grid" id="kpi-fila2" style="margin-bottom:16px"></div>
+
             <div class="card">
-                <h3>Reproducciones por usuario <span style="font-size:0.72rem;color:var(--c-muted);font-weight:400">— clic en un usuario para ver su historial completo</span></h3>
-                <div class="table-wrap">
-                    <table id="recent-table">
-                        <thead><tr><th>Usuario</th><th>Reproducciones</th><th>Último acceso</th><th></th></tr></thead>
-                        <tbody id="recent-body"><tr><td colspan="3" style="color:var(--c-muted)">Cargando...</td></tr></tbody>
-                    </table>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+                    <h3 style="margin:0">Formaciones de clientes</h3>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                        <input type="text" id="f-buscar" placeholder="Buscar formación o cliente"
+                            style="padding:6px 10px;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:0.82rem;outline:none;width:210px">
+                        <select id="f-productor" style="padding:6px 10px;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:0.82rem;max-width:200px">
+                            <option value="">Todos los clientes</option>
+                            <option value="__sin__">Sin cliente asignado</option>
+                        </select>
+                        <select id="f-orden" style="padding:6px 10px;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:0.82rem">
+                            <option value="alumnos">Más alumnos</option>
+                            <option value="alumnos_asc">Menos alumnos</option>
+                            <option value="actividad">Más actividad (30 d)</option>
+                            <option value="recientes">Más recientes</option>
+                            <option value="actividad_ultima">Última actividad</option>
+                            <option value="clases">Más clases</option>
+                            <option value="nombre">Nombre A–Z</option>
+                        </select>
+                        <button class="btn btn-ghost" onclick="cargarFormaciones(1)">Actualizar</button>
+                    </div>
                 </div>
+                <div class="form-cards" id="form-cards"></div>
+                <div class="paginador">
+                    <span class="info" id="form-info"></span>
+                    <span style="display:flex;gap:6px">
+                        <button class="btn btn-ghost" id="form-prev" onclick="cargarFormaciones(FORM_PAGINA-1)">← Anterior</button>
+                        <button class="btn btn-ghost" id="form-next" onclick="cargarFormaciones(FORM_PAGINA+1)">Siguiente →</button>
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ---- ANALITICA ---- -->
+        <div class="page" id="page-analytics">
+            <h2>Analítica</h2>
+            <p class="subtitle">Cifras de la plataforma con su fuente y su calidad. Lo que no se puede medir se dice, no se estima.</p>
+
+            <div class="anl-filtros">
+                <label for="anl-preset">Período</label>
+                <select id="anl-preset">
+                    <option value="hoy">Hoy</option>
+                    <option value="7d">Últimos 7 días</option>
+                    <option value="30d" selected>Últimos 30 días</option>
+                    <option value="90d">Últimos 90 días</option>
+                    <option value="mes">Este mes</option>
+                    <option value="rango">Rango personalizado…</option>
+                </select>
+                <span id="anl-rango" style="display:none;gap:6px;align-items:center">
+                    <input type="date" id="anl-desde"> <span style="color:var(--c-muted)">a</span> <input type="date" id="anl-hasta">
+                </span>
+                <label for="anl-productor" style="margin-left:8px">Cliente</label>
+                <select id="anl-productor">
+                    <option value="">Todos los clientes</option>
+                    <option value="__sin__">Sin cliente asignado</option>
+                </select>
+                <button class="btn btn-ghost" onclick="cargarAnalitica(true)">Actualizar</button>
+                <span style="flex:1"></span>
+                <span class="anl-nota" id="anl-periodo-actual"></span>
+            </div>
+            <p class="anl-aviso" id="anl-aviso" style="display:none"></p>
+
+            <div style="display:flex;gap:0;margin-bottom:18px;border-bottom:1px solid var(--c-border);flex-wrap:wrap">
+                <button class="pa-tab pa-tab-active" data-anl="resumen"     onclick="anlPestana('resumen')">Resumen general</button>
+                <button class="pa-tab" data-anl="formaciones" onclick="anlPestana('formaciones')">Formaciones</button>
+                <button class="pa-tab" data-anl="clientes"    onclick="anlPestana('clientes')">Clientes</button>
+                <button class="pa-tab" data-anl="actividad"   onclick="anlPestana('actividad')">Actividad y uso</button>
+                <button class="pa-tab" data-anl="consumo"     onclick="anlPestana('consumo')">Consumo y costos</button>
+            </div>
+
+            <!-- A · Resumen general -->
+            <div class="anl-panel activo" id="anl-panel-resumen">
+                <div class="kpi-grid" id="anl-kpi1"></div>
+                <div class="kpi-grid" id="anl-kpi2" style="margin-bottom:8px"></div>
+                <p class="anl-nota" id="anl-resumen-nota"></p>
+            </div>
+
+            <!-- B · Formaciones -->
+            <div class="anl-panel" id="anl-panel-formaciones">
+                <div class="card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+                        <h3 style="margin:0">Formaciones</h3>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                            <input type="text" id="anl-buscar" placeholder="Buscar formación o cliente"
+                                style="padding:6px 10px;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:0.82rem;width:210px">
+                            <select id="anl-orden" style="padding:6px 10px;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:0.82rem">
+                                <option value="alumnos">Más alumnos</option>
+                                <option value="actividad">Más actividad</option>
+                                <option value="actividad_ultima">Última actividad</option>
+                                <option value="clases">Más clases</option>
+                                <option value="recientes">Más recientes</option>
+                                <option value="nombre">Nombre A–Z</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Formación</th><th>Cliente</th><th>Alumnos</th><th>Clases</th><th>Inicios</th><th>Última actividad</th><th></th></tr></thead>
+                            <tbody id="anl-form-body"><tr><td colspan="7" class="anl-vacio">Cargando…</td></tr></tbody>
+                        </table>
+                    </div>
+                    <div class="paginador">
+                        <span class="info" id="anl-form-info"></span>
+                        <span style="display:flex;gap:6px">
+                            <button class="btn btn-ghost" id="anl-form-prev" onclick="anlFormaciones(ANL.pagina-1)">← Anterior</button>
+                            <button class="btn btn-ghost" id="anl-form-next" onclick="anlFormaciones(ANL.pagina+1)">Siguiente →</button>
+                        </span>
+                    </div>
+                </div>
+                <div class="card" id="anl-form-detalle" style="display:none"></div>
+            </div>
+
+            <!-- C · Clientes -->
+            <div class="anl-panel" id="anl-panel-clientes">
+                <div class="card">
+                    <h3>Clientes</h3>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Cliente</th><th>Estado</th><th>Formaciones</th><th>Clases</th><th>Alumnos</th><th>Activos</th><th>Licencias</th><th>Inicios</th></tr></thead>
+                            <tbody id="anl-cli-body"><tr><td colspan="8" class="anl-vacio">Cargando…</td></tr></tbody>
+                        </table>
+                    </div>
+                    <p class="anl-nota" id="anl-cli-nota"></p>
+                </div>
+            </div>
+
+            <!-- D · Actividad y uso -->
+            <div class="anl-panel" id="anl-panel-actividad">
+                <div class="card">
+                    <h3>Inicios de reproducción por día</h3>
+                    <div id="anl-serie"><p class="anl-vacio">Cargando…</p></div>
+                    <p class="anl-nota" id="anl-serie-nota"></p>
+                </div>
+                <div class="anl-dos" id="anl-top-grid">
+                    <div class="card"><h3>Clases más vistas</h3><ul class="anl-lista" id="anl-top-clases"></ul></div>
+                    <div class="card"><h3>Alumnos más activos</h3><ul class="anl-lista" id="anl-top-alumnos"></ul></div>
+                </div>
+            </div>
+
+            <!-- E · Consumo y costos -->
+            <div class="anl-panel" id="anl-panel-consumo">
+                <div class="card" id="anl-consumo"><p class="anl-vacio">Cargando…</p></div>
+                <div class="card" id="anl-consumo-reparto" style="display:none"></div>
+                <div class="card" id="anl-consumo-tarifas" style="display:none"></div>
             </div>
         </div>
 
@@ -1024,70 +1218,8 @@
 
         <!-- ---- ALUMNOS ---- -->
         <div class="page" id="page-students">
-            <h2>Gestión de Alumnos</h2>
-            <p class="subtitle">Administra quién puede acceder y a qué videos.</p>
-
-            <!-- Agregar alumno manualmente -->
-            <div class="card" style="margin-bottom:16px">
-                <h3>Agregar alumno</h3>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
-                    <div class="form-row" style="margin:0">
-                        <label>Correo electrónico *</label>
-                        <input type="email" id="ns-email" maxlength="120" placeholder="alumno@correo.com">
-                    </div>
-                    <div class="form-row" style="margin:0">
-                        <label>ID de alumno *</label>
-                        <input type="text" id="ns-sid" maxlength="60" placeholder="ALU-001">
-                    </div>
-                    <div class="form-row" style="margin:0">
-                        <label>Nombre (opcional)</label>
-                        <input type="text" id="ns-name" maxlength="100" placeholder="Juan Pérez">
-                    </div>
-                </div>
-                <div class="form-row" style="margin-bottom:12px">
-                    <label>Videos permitidos (deja en blanco para todos, o IDs separados por coma)</label>
-                    <input type="text" id="ns-videos" placeholder="* ó uuid1,uuid2" maxlength="2000">
-                </div>
-                <div style="display:flex;gap:10px;align-items:center">
-                    <button class="btn btn-red" id="btn-add-student">Crear alumno</button>
-                    <span id="add-student-msg" style="font-size:0.8rem"></span>
-                </div>
-            </div>
-
-            <!-- Importar alumnos -->
-            <div class="card" style="margin-bottom:16px">
-                <h3>Importar alumnos</h3>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-                    <!-- CSV -->
-                    <div>
-                        <p style="font-size:0.8rem;color:var(--c-muted);margin-bottom:8px">
-                            <strong>CSV</strong> &mdash; columnas: <code style="background:var(--c-surface2);padding:1px 5px;border-radius:3px">email,studentId,nombre</code>
-                        </p>
-                        <div id="import-drop">
-                            <p>📎 Arrastra un .csv aquí o haz clic</p>
-                            <input type="file" id="csv-file" accept=".csv,.txt" style="display:none">
-                        </div>
-                        <div style="display:flex;gap:8px;align-items:center">
-                            <button class="btn btn-ghost" id="btn-import-csv">Importar CSV</button>
-                            <span id="csv-msg" style="font-size:0.78rem"></span>
-                        </div>
-                    </div>
-                    <!-- JSON -->
-                    <div>
-                        <p style="font-size:0.8rem;color:var(--c-muted);margin-bottom:8px">
-                            <strong>JSON</strong> &mdash; pega un array:
-                            <code style="background:var(--c-surface2);padding:1px 5px;border-radius:3px">[{&quot;email&quot;:&quot;...&quot;,&quot;studentId&quot;:&quot;...&quot;}]</code>
-                        </p>
-                        <textarea id="json-import" rows="4"
-                            style="width:100%;background:var(--c-surface2);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text);font-size:0.78rem;padding:8px;resize:vertical;font-family:monospace"
-                            placeholder='[{"email":"a@b.com","studentId":"ALU-01","name":"Ana"}]'></textarea>
-                        <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-                            <button class="btn btn-ghost" id="btn-import-json">Importar JSON</button>
-                            <span id="json-msg" style="font-size:0.78rem"></span>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <h2>Alumnos de nuestros clientes</h2>
+            <p class="subtitle">Los estudiantes de tus productores. Para dar de alta clientes usa «Productores (Clientes)».</p>
 
             <!-- Tabla de alumnos -->
             <div class="card">
@@ -1107,10 +1239,10 @@
                 <div class="table-wrap">
                     <table>
                         <thead><tr>
-                            <th>Correo</th><th>ID alumno</th><th>Nombre</th><th>Productor</th>
-                            <th>Videos</th><th>Dispositivo</th><th>Estado</th><th>Último acceso</th><th>Acciones</th>
+                            <th>Correo</th><th>Nombre</th>
+                            <th>Estado</th><th>Último acceso</th><th>Acciones</th>
                         </tr></thead>
-                        <tbody id="students-body"><tr><td colspan="9" style="color:var(--c-muted)">Cargando...</td></tr></tbody>
+                        <tbody id="students-body"><tr><td colspan="5" style="color:var(--c-muted)">Cargando...</td></tr></tbody>
                     </table>
                 </div>
                 <p id="students-count" style="font-size:0.75rem;color:var(--c-muted);margin-top:8px"></p>
@@ -1840,8 +1972,8 @@
 
         <!-- ---- SEGURIDAD ---- -->
         <div class="page" id="page-security">
-            <h2>Seguridad</h2>
-            <p class="subtitle">Eventos de seguridad reportados por el reproductor y auditoría granular de descargas HLS.</p>
+            <h2>Integraciones</h2>
+            <p class="subtitle">Clave del proveedor de video, control de descargas y dominios permitidos.</p>
 
             <div class="card">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -1866,21 +1998,6 @@
                 <div id="btk-status" style="font-size:0.8rem;margin-top:6px"></div>
             </div>
 
-            <div class="card" style="margin-top:14px">
-                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-                    <h3 style="margin:0">�🛡️ Eventos del reproductor (cliente)</h3>
-                    <button class="btn btn-ghost" onclick="loadSecurity()">Actualizar</button>
-                </div>
-                <p style="font-size:0.8rem;color:var(--c-muted);margin:6px 0 10px">
-                    Bloqueos de proxy MITM, sesión remota, grabadores de pantalla, Secure Boot/HVCI desactivado, etc.
-                </p>
-                <div class="table-wrap">
-                    <table>
-                        <thead><tr><th>Evento</th><th>Dispositivo</th><th>IP</th><th>Detalle</th><th>Fecha</th></tr></thead>
-                        <tbody id="security-events-body"><tr><td colspan="5" style="color:var(--c-muted)">Cargando...</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
 
             <div class="card" style="margin-top:14px">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -2119,22 +2236,39 @@ function showApp(payload) {
 // ================================================================
 //  NAVEGACION
 // ================================================================
+/**
+ * Abre una pagina del panel. Es la unica via: el menu la llama al hacer clic y
+ * cualquier enlace interno (por ejemplo «Administrar formacion» desde el Home)
+ * la llama igual, asi que las dos rutas dejan el panel en el mismo estado.
+ */
+function irAPagina(nombre) {
+    const destino = $('page-' + nombre);
+    if (!destino) return false;
+    document.querySelectorAll('nav a').forEach(x => x.classList.toggle('active', x.dataset.page === nombre));
+    document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
+    destino.classList.add('active');
+    // Cada pagina carga sus propios datos al abrirse. Un fallo en una de ellas
+    // no puede dejar al admin en una pantalla en blanco sin saber por que.
+    // Las que devuelven una promesa la propagan, para poder encadenar despues.
+    try {
+        if (nombre === 'catalog')        return loadCatalog();
+        if (nombre === 'dashboard')      loadDashboard();
+        if (nombre === 'analytics')      cargarAnalitica();
+        if (nombre === 'playback-audit') loadPlaybackAudit();
+        if (nombre === 'player-version') { loadPlayerVersion(); loadSecurityWhitelist(); }
+        if (nombre === 'watermark')      loadWmConfig();
+        if (nombre === 'security')       loadSecurity();
+        if (nombre === 'licenses')       loadLicensesPage();
+        if (nombre === 'producers')      { loadProducers(); loadProducerRequests(); }
+        if (nombre === 'students')       loadStudents();
+    } catch (e) {
+        console.error('[panel] fallo al cargar la pagina ' + nombre, e);
+    }
+    return true;
+}
+
 document.querySelectorAll('nav a').forEach(a => {
-    a.addEventListener('click', () => {
-        document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
-        document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
-        a.classList.add('active');
-        $('page-' + a.dataset.page).classList.add('active');
-        if (a.dataset.page === 'catalog')        loadCatalog();
-        if (a.dataset.page === 'dashboard')      loadDashboard();
-        if (a.dataset.page === 'playback-audit') loadPlaybackAudit();
-        if (a.dataset.page === 'player-version') { loadPlayerVersion(); loadSecurityWhitelist(); }
-        if (a.dataset.page === 'watermark')      loadWmConfig();
-        if (a.dataset.page === 'security')       loadSecurity();
-        if (a.dataset.page === 'licenses')       loadLicensesPage();
-        if (a.dataset.page === 'producers')      { loadProducers(); loadProducerRequests(); }
-        if (a.dataset.page === 'students')       loadStudents();
-    });
+    a.addEventListener('click', () => irAPagina(a.dataset.page));
 });
 
 function initWatermarkTabs() {
@@ -2276,7 +2410,7 @@ function showCoursesView() {
     currentCourseId = null;
     $('courses-view').style.display = '';
     $('course-detail-view').style.display = 'none';
-    loadCourses();
+    return loadCourses();
 }
 
 async function openCourse(courseId) {
@@ -2296,7 +2430,7 @@ async function openCourse(courseId) {
 
 async function loadCourseVideos(courseId) {
     const tbody = $('catalog-body');
-    tbody.innerHTML = '<tr><td colspan="9" style="color:var(--c-muted)">Cargando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--c-muted)">Cargando...</td></tr>';
     clearBulkSelection();
     try {
         // Cargar módulos del curso para el badge de módulo en cada video
@@ -2314,7 +2448,7 @@ async function loadCourseVideos(courseId) {
         const data = await api('GET', url);
         const videos = data.videos || [];
         if (!videos.length) {
-            tbody.innerHTML = '<tr><td colspan="9" style="color:var(--c-muted)">No hay videos en este curso.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" style="color:var(--c-muted)">No hay videos en este curso.</td></tr>';
             return;
         }
         const base = window.location.origin;
@@ -2355,7 +2489,7 @@ async function loadCourseVideos(courseId) {
         }).join('');
         // Populate docs cache for this batch of videos
         videos.forEach(v => { if (v.documents) _videoDocsCache[v.videoId] = v.documents; });
-    } catch (err) { tbody.innerHTML = `<tr><td colspan="9" style="color:var(--c-error)">${esc(err.message)}</td></tr>`; }
+    } catch (err) { tbody.innerHTML = `<tr><td colspan="5" style="color:var(--c-error)">${esc(err.message)}</td></tr>`; }
 }
 
 // Drag & drop reorder
@@ -3069,7 +3203,7 @@ async function deleteSelectedVideos() {
 }
 
 // Cargar catalogo legacy (para compatibilidad con el nav)
-function loadCatalog() { showCoursesView(); }
+function loadCatalog() { return showCoursesView(); }
 
 // ================================================================
 //  MÓDULOS
@@ -3595,13 +3729,13 @@ function producerLabel(s) {
 
 async function loadStudents() {
     const tbody = $('students-body'), countEl = $('students-count');
-    tbody.innerHTML = '<tr><td colspan="9" style="color:var(--c-muted)">Cargando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--c-muted)">Cargando...</td></tr>';
     try {
         const [{ students }] = await Promise.all([api('GET', '/api/students'), loadProducerOptions()]);
         allStudents = students || [];
         renderStudents();
     } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="9" style="color:var(--c-error)">${esc(err.message)}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" style="color:var(--c-error)">${esc(err.message)}</td></tr>`;
     }
 }
 
@@ -3619,7 +3753,7 @@ function renderStudents() {
     );
     $('students-count').textContent = list.length + ' / ' + allStudents.length + ' alumnos';
     if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="9" style="color:var(--c-muted)">Sin alumnos con ese filtro.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="color:var(--c-muted)">Sin alumnos con ese filtro.</td></tr>';
         return;
     }
     tbody.innerHTML = list.map(s => {
@@ -3632,26 +3766,16 @@ function renderStudents() {
         const videos = (s.allowedVideos || ['*']).includes('*') ? 'Todos' :
             (s.allowedVideos || []).length + ' video(s)';
         const lastLogin = s.lastLogin ? new Date(s.lastLogin).toLocaleString() : '—';
+        // El productor, el ID, los videos y el dispositivo ya no se listan aqui:
+        // el productor es el filtro de arriba y el resto vive en «Detalle».
         return `<tr>
             <td>${esc(s.email)}</td>
-            <td style="font-family:monospace">${esc(s.studentId)}</td>
             <td>${esc(s.name || '—')}</td>
-            <td style="font-size:0.78rem">${producerLabel(s)}</td>
-            <td>${esc(videos)}</td>
-            <td>${deviceBadge}</td>
             <td>${activeBadge}</td>
             <td style="font-size:0.75rem">${lastLogin}</td>
             <td style="white-space:nowrap">
                 <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;border-color:#5a6470;color:#5a6470"
                     onclick="openStudentDetail('${esc(s.id)}','${esc(s.email)}')">Detalle</button>
-                <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;margin-left:4px"
-                    onclick="toggleStudent('${esc(s.id)}',${!s.active})">${s.active ? 'Desactivar' : 'Activar'}</button>
-                <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;margin-left:4px;border-color:#a1121b;color:#a1121b"
-                    onclick="generateLicense('${esc(s.id)}','${esc(s.email)}')">Generar clave</button>
-                <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;margin-left:4px;border-color:#8a5a00;color:#8a5a00"
-                    onclick="resetActivations('${esc(s.id)}','${esc(s.email)}')">Reset activac.</button>
-                <button class="btn btn-ghost" style="padding:3px 7px;font-size:0.7rem;margin-left:4px;border-color:#c41f28;color:#c41f28"
-                    onclick="deleteStudent('${esc(s.id)}','${esc(s.email)}')">Eliminar</button>
             </td>
         </tr>`;
     }).join('');
@@ -3672,26 +3796,8 @@ $('btn-add-vdo').addEventListener('click', addVdoCipherVideo);
 $('btn-add-vdo-direct').addEventListener('click', addVdoCipherDirectVideo);
 
 // --- Agregar alumno ---
-$('btn-add-student').addEventListener('click', async () => {
-    const msgEl = $('add-student-msg');
-    const email = $('ns-email').value.trim();
-    const studentId = $('ns-sid').value.trim();
-    const name = $('ns-name').value.trim();
-    const rawVideos = $('ns-videos').value.trim();
-    const allowedVideos = rawVideos === '' || rawVideos === '*'
-        ? ['*']
-        : rawVideos.split(',').map(v => v.trim()).filter(Boolean);
-
-    if (!email || !studentId) { msgEl.style.color='var(--c-error)'; msgEl.textContent='Email e ID son requeridos.'; return; }
-    msgEl.textContent = 'Creando...'; msgEl.style.color = 'var(--c-muted)';
-    try {
-        await api('POST', '/api/students', { email, studentId, name, allowedVideos });
-        $('ns-email').value = $('ns-sid').value = $('ns-name').value = $('ns-videos').value = '';
-        msgEl.style.color = 'var(--c-success)'; msgEl.textContent = 'Alumno creado.';
-        loadStudents();
-    } catch (err) { msgEl.style.color = 'var(--c-error)'; msgEl.textContent = err.message; }
-});
-
+// El formulario salio del panel: los alumnos los dan de alta sus productores.
+// La ruta /api/students sigue existiendo; solo se retira este manejador.
 // --- Toggle activo ---
 async function toggleStudent(id, active) {
     try { await api('PUT', '/api/students/' + id, { active }); loadStudents(); }
@@ -3930,6 +4036,9 @@ async function openStudentDetail(id, email) {
         const curLic    = list[0] || null;
         const curLicId  = curLic ? (curLic.id || '') : '';
         const curActive = !!(curLic && curLic.status === 'active');
+        // Estado del propio alumno (distinto del estado de su licencia).
+        const fichaAlumno = (typeof allStudents !== 'undefined' ? allStudents : []).find(x => x.id === id);
+        const alumnoActivo = fichaAlumno ? !!fichaAlumno.active : true;
 
         const body = `
             <div class="user-modal-section">
@@ -3941,6 +4050,14 @@ async function openStudentDetail(id, email) {
                     <button class="btn btn-ghost" style="font-size:0.78rem;border-color:#5a6470;color:#5a6470" onclick="resendLicense('${esc(id)}','${esc(email)}')">Reenviar licencia</button>
                     <button class="btn btn-ghost" style="font-size:0.78rem;border-color:#c41f28;color:#c41f28" onclick="resetActivations('${esc(id)}','${esc(email)}')">Resetear dispositivos</button>
                     <button class="btn btn-ghost" style="font-size:0.78rem" onclick="openStudentDetail('${esc(id)}','${esc(email)}')">Ver historial</button>
+                </div>
+                <!-- Estas dos salieron de la lista para simplificarla, pero se conservan
+                     aqui: la gestion del alumno no se pierde, solo cambia de sitio. -->
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:10px;border-top:1px solid var(--c-border)">
+                    <button class="btn btn-ghost" style="font-size:0.78rem"
+                        onclick="toggleStudent('${esc(id)}',${!alumnoActivo});closeUserModal&&closeUserModal()">${alumnoActivo ? 'Desactivar alumno' : 'Activar alumno'}</button>
+                    <button class="btn btn-ghost" style="font-size:0.78rem;border-color:#c41f28;color:#c41f28"
+                        onclick="deleteStudent('${esc(id)}','${esc(email)}')">Eliminar alumno</button>
                 </div>
                 ${backupNote}
             </div>
@@ -3993,55 +4110,6 @@ async function deleteStudent(id, email) {
     catch (err) { alert('Error: ' + err.message); }
 }
 
-// --- Importar CSV ---
-const importDrop = $('import-drop');
-const csvFileInput = $('csv-file');
-importDrop.addEventListener('click', () => csvFileInput.click());
-importDrop.addEventListener('dragover', e => { e.preventDefault(); importDrop.style.borderColor='var(--c-primary)'; });
-importDrop.addEventListener('dragleave', () => importDrop.style.borderColor='');
-importDrop.addEventListener('drop', e => {
-    e.preventDefault(); importDrop.style.borderColor = '';
-    const f = e.dataTransfer.files[0]; if (f) { csvFileInput._selected = f; $('csv-msg').textContent = f.name; }
-});
-csvFileInput.addEventListener('change', () => {
-    if (csvFileInput.files[0]) { csvFileInput._selected = csvFileInput.files[0]; $('csv-msg').textContent = csvFileInput.files[0].name; }
-});
-
-$('btn-import-csv').addEventListener('click', async () => {
-    const msgEl = $('csv-msg');
-    const file = csvFileInput._selected || csvFileInput.files[0];
-    if (!file) { msgEl.style.color='var(--c-error)'; msgEl.textContent='Selecciona un archivo CSV.'; return; }
-    msgEl.style.color='var(--c-muted)'; msgEl.textContent='Importando...';
-    const fd = new FormData(); fd.append('csv', file);
-    try {
-        const r = await fetch('/api/students/import-csv', { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd });
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.error || r.status);
-        msgEl.style.color='var(--c-success)';
-        msgEl.textContent = `+${d.added} agregados, ${d.skipped} omitidos. Total: ${d.total}.`;
-        if (d.errors && d.errors.length) console.warn('CSV errors:', d.errors);
-        loadStudents();
-    } catch (err) { msgEl.style.color='var(--c-error)'; msgEl.textContent=err.message; }
-});
-
-// --- Importar JSON ---
-$('btn-import-json').addEventListener('click', async () => {
-    const msgEl = $('json-msg'), raw = $('json-import').value.trim();
-    if (!raw) { msgEl.style.color='var(--c-error)'; msgEl.textContent='Pega el JSON primero.'; return; }
-    let students;
-    try { students = JSON.parse(raw); } catch { msgEl.style.color='var(--c-error)'; msgEl.textContent='JSON inválido.'; return; }
-    if (!Array.isArray(students)) students = [students];
-    msgEl.style.color='var(--c-muted)'; msgEl.textContent='Importando...';
-    try {
-        const d = await api('POST', '/api/students/import-json', { students });
-        msgEl.style.color='var(--c-success)';
-        msgEl.textContent = `+${d.added} agregados, ${d.skipped} omitidos. Total: ${d.total}.`;
-        $('json-import').value = '';
-        loadStudents();
-    } catch (err) { msgEl.style.color='var(--c-error)'; msgEl.textContent=err.message; }
-});
-
-// ================================================================
 //  AUDITORIA — definición base (sobreescrita al final del script)
 // ================================================================
 async function loadAudit() { /* sobreescrita al final */ }
@@ -5028,41 +5096,735 @@ async function openUserHistoryModal(uid, email) {
     }
 }
 
-loadDashboard = (function(_orig) {
-    return async function() {
-        try {
-            const stats = await api('GET', '/api/dashboard/stats');
-            $('stat-videos').textContent     = stats.videoCount     || 0;
-            $('stat-deliveries').textContent = stats.deliveryCount  || 0;
-            $('stat-users').textContent      = (stats.users || []).length;
 
-            const tbody = $('recent-body');
-            const users = stats.users || [];
-            if (!users.length) {
-                tbody.innerHTML = '<tr><td colspan="4" style="color:var(--c-muted)">Sin registros aun</td></tr>';
-            } else {
-                const rows = users.map(u => {
-                    const label = u.email && u.email !== u.uid
-                        ? esc(u.email)
-                        : esc((u.uid||'—').slice(0,24));
-                    const last  = new Date(u.lastAt).toLocaleString();
-                    return `<tr class="user-row" onclick="openUserHistoryModal(${JSON.stringify(u.uid)}, ${JSON.stringify(u.email)})">
-                        <td>${label}</td>
-                        <td><span class="user-count-badge">${u.count}</span></td>
-                        <td>${last}</td>
-                        <td><button class="btn btn-ghost" style="padding:3px 8px;font-size:0.75rem;border-color:#c41f28;color:#c41f28" data-uid="${esc(u.uid)}" onclick="event.stopPropagation();deleteAllAuditForUser(this.dataset.uid)">🗑 Eliminar todo</button></td>
-                    </tr>`;
-                });
-                tbody.innerHTML = rows.join('');
-            }
+// ════════════════════════════════════════════════════════════════════════════
+//  HOME — ocho indicadores y formaciones de clientes
+//
+//  Las cifras vienen del servicio compartido (lib/admin-analytics.js), el mismo
+//  que usaran la analitica y los detalles: no se calculan aqui. Cada indicador
+//  llega con su unidad, su ambito, su fuente y su calidad, y lo que no se puede
+//  medir se muestra como «No disponible», nunca como cero.
+// ════════════════════════════════════════════════════════════════════════════
 
-            // Refrescar badges en paralelo
-            const unreviewedBadge = $('nav-unreviewed-badge');
-            if (stats.unreviewedCount > 0) { unreviewedBadge.textContent = stats.unreviewedCount; unreviewedBadge.style.display = 'inline'; }
-            else unreviewedBadge.style.display = 'none';
-        } catch (err) { console.error(err); }
+const KPI_ORDEN = [
+    ['clientes',           'Clientes',               'kpi-fila1'],
+    ['cuentasRegistradas', 'Cuentas registradas',    'kpi-fila1'],
+    ['usuariosActivos',    'Usuarios activos',       'kpi-fila1'],
+    ['formaciones',        'Formaciones',            'kpi-fila1'],
+    ['licencias',          'Licencias activas',      'kpi-fila2'],
+    ['inicios',            'Inicios de reproducción','kpi-fila2'],
+    ['clases',             'Clases listas',          'kpi-fila2'],
+    ['almacenamiento',     'Almacenamiento',         'kpi-fila2'],
+];
+
+function kpiCifra(m) {
+    if (m.valor === null || m.valor === undefined) return null;
+    if (m.unidad === 'bytes') {
+        const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let v = Number(m.valor), i = 0;
+        while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+        return (i === 0 ? v : v.toFixed(v < 10 ? 2 : 1)) + ' ' + u[i];
+    }
+    return Number(m.valor).toLocaleString('es');
+}
+
+// Subtitulo de cada tarjeta: solo lo que el dato respalda.
+function kpiSubtitulo(clave, m) {
+    const d = m.detalle || {};
+    if (m.valor === null) return m.nota ? String(m.nota).slice(0, 90) : 'Sin fuente disponible';
+    switch (clave) {
+        case 'clientes':
+            return d.habilitados + ' habilitados · ' + d.suspendidos + ' suspendidos';
+        case 'cuentasRegistradas':
+            return d.alumnos + ' alumnos · ' + d.productores + ' clientes';
+        case 'usuariosActivos':
+            return d.alumnos + ' alumnos · ' + d.productores + ' clientes';
+        case 'formaciones':
+            return d.conContenidoListo + ' con contenido listo'
+                + (d.sinProductor ? ' · ' + d.sinProductor + ' sin cliente' : '');
+        case 'licencias':
+            return d.generadasSinDueno + ' generadas sin dueño · ' + d.asignadas + ' asignadas';
+        case 'inicios':
+            return d.alumnos + ' alumnos · ' + d.clases + ' clases';
+        case 'clases': {
+            const e = d.porEstado || {};
+            const pend = (e.processing || 0) + (e.uploading || 0);
+            const err = e.error || 0;
+            const partes = [];
+            if (pend) partes.push(pend + ' en proceso');
+            if (err) partes.push(err + ' con error');
+            if (d.contenedoresEdu) partes.push(d.contenedoresEdu + ' protegidas .edu');
+            return partes.join(' · ') || 'todas listas';
+        }
+        case 'almacenamiento':
+            return 'Originales registrados, no consumo del proveedor';
+        default: return '';
+    }
+}
+
+function pintarKpis(datos) {
+    const filas = { 'kpi-fila1': [], 'kpi-fila2': [] };
+    for (const [clave, titulo, fila] of KPI_ORDEN) {
+        const m = (datos.indicadores || {})[clave] || { valor: null, calidad: 'no_disponible' };
+        const cifra = kpiCifra(m);
+        const periodo = m.ambito === 'periodo' && m.periodo ? ' · ' + m.periodo : '';
+        const ayuda = [m.nota, 'Fuente: ' + (m.fuente || '—')].filter(Boolean).join('\n');
+        filas[fila].push(
+            '<div class="kpi" title="' + esc(ayuda) + '">' +
+                '<span class="q ' + esc(m.calidad) + '">' + esc(m.calidad.replace('_', ' ')) + '</span>' +
+                '<div class="v' + (cifra === null ? ' nd' : '') + '">' + (cifra === null ? 'No disponible' : esc(cifra)) + '</div>' +
+                '<div class="t">' + esc(titulo) + esc(periodo) + '</div>' +
+                '<div class="s">' + esc(kpiSubtitulo(clave, m)) + '</div>' +
+            '</div>');
+    }
+    $('kpi-fila1').innerHTML = filas['kpi-fila1'].join('');
+    $('kpi-fila2').innerHTML = filas['kpi-fila2'].join('');
+}
+
+/** Rellena el filtro de clientes con los productores reales, una sola vez. */
+async function cargarFiltroClientes() {
+    const sel = $('f-productor');
+    if (!sel || sel.dataset.listo) return;
+    try {
+        const r = await api('GET', '/api/owner/producers');
+        const lista = r.producers || r || [];
+        for (const p of lista) {
+            const o = document.createElement('option');
+            o.value = p.id;
+            o.textContent = p.name || p.email;
+            sel.appendChild(o);
+        }
+        sel.dataset.listo = '1';
+    } catch (e) { /* el filtro se queda con las dos opciones fijas */ }
+}
+
+loadDashboard = async function () {
+    cargarFiltroClientes();
+    for (const id of ['kpi-fila1', 'kpi-fila2']) {
+        $(id).innerHTML = '<div class="kpi"><div class="v nd">Cargando…</div></div>'.repeat(4);
+    }
+    try {
+        pintarKpis(await api('GET', '/api/admin/analytics/summary?dias=30'));
+    } catch (err) {
+        // Un fallo aqui no puede dejar el panel inservible: se dice y se sigue.
+        const aviso = '<div class="kpi"><div class="v nd">No disponible</div>' +
+            '<div class="s">' + esc(err.message) + '</div></div>';
+        $('kpi-fila1').innerHTML = aviso;
+        $('kpi-fila2').innerHTML = '';
+    }
+    cargarFormaciones(1);
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+//  ANALÍTICA
+//
+//  Los filtros (período y cliente) son de la página entera, no de cada pestaña:
+//  cambiar de pestaña no los pierde. Cada pestaña se carga la primera vez que se
+//  abre y cuando cambia un filtro, no en cada clic.
+// ════════════════════════════════════════════════════════════════════════════
+
+const ANL = { preset: '30d', desde: '', hasta: '', productor: '', pestana: 'resumen', pagina: 1, cargadas: {} };
+
+/** Los parámetros que toda lectura comparte. */
+function anlParams(extra) {
+    const q = new URLSearchParams();
+    if (ANL.preset === 'rango' && ANL.desde && ANL.hasta) { q.set('desde', ANL.desde); q.set('hasta', ANL.hasta); }
+    else q.set('preset', ANL.preset === 'rango' ? '30d' : ANL.preset);
+    if (ANL.productor) q.set('productor', ANL.productor);
+    for (const [k, v] of Object.entries(extra || {})) if (v !== null && v !== undefined && v !== '') q.set(k, v);
+    return q.toString();
+}
+
+function anlAviso(texto) {
+    const el = $('anl-aviso');
+    el.style.display = texto ? 'block' : 'none';
+    el.textContent = texto || '';
+}
+
+function anlPestana(nombre) {
+    ANL.pestana = nombre;
+    document.querySelectorAll('#page-analytics .pa-tab')
+        .forEach(t => t.classList.toggle('pa-tab-active', t.dataset.anl === nombre));
+    document.querySelectorAll('#page-analytics .anl-panel')
+        .forEach(x => x.classList.toggle('activo', x.id === 'anl-panel-' + nombre));
+    if (!ANL.cargadas[nombre]) anlCargarPestana(nombre);
+}
+
+function anlCargarPestana(nombre) {
+    ANL.cargadas[nombre] = true;
+    if (nombre === 'resumen')     return anlResumen();
+    if (nombre === 'formaciones') return anlFormaciones(1);
+    if (nombre === 'clientes')    return anlClientes();
+    if (nombre === 'actividad')   return anlActividad();
+    if (nombre === 'consumo')     return anlConsumo();
+}
+
+/**
+ * Punto de entrada de la página. Con `recargar` se olvida lo ya cargado, que es
+ * lo que hay que hacer cuando cambia un filtro: si no, una pestaña abierta antes
+ * seguiría enseñando el período anterior sin avisar.
+ */
+function cargarAnalitica(recargar) {
+    if (recargar) ANL.cargadas = {};
+    anlCargarFiltroClientes();
+    anlCargarPestana(ANL.pestana);
+}
+
+async function anlCargarFiltroClientes() {
+    const sel = $('anl-productor');
+    if (!sel || sel.dataset.cargado) return;
+    try {
+        const r = await api('GET', '/api/admin/analytics/producers?preset=30d');
+        for (const c of r.clientes) {
+            const o = document.createElement('option');
+            o.value = c.id; o.textContent = c.nombre;
+            sel.appendChild(o);
+        }
+        sel.dataset.cargado = '1';
+    } catch (e) { /* sin lista, el filtro sigue sirviendo para «todos» y «sin cliente» */ }
+}
+
+// ── A · Resumen general ─────────────────────────────────────────────────────
+
+const ANL_KPI = [
+    ['altas',              'Altas de cuentas',      1],
+    ['usuariosActivos',    'Usuarios activos',      1],
+    ['inicios',            'Inicios de reproducción', 1],
+    ['licenciasAsignadas', 'Licencias asignadas',   1],
+    ['licenciasActivas',   'Licencias activas',     2],
+    ['formaciones',        'Formaciones',           2],
+    ['clases',             'Clases listas',         2],
+    ['almacenamiento',     'Almacenamiento',        2],
+];
+
+function anlSubtitulo(clave, m) {
+    const d = m.detalle || {};
+    if (m.valor === null) return m.nota ? String(m.nota).slice(0, 90) : 'Sin fuente disponible';
+    switch (clave) {
+        case 'altas':              return d.alumnos + ' alumnos · ' + d.clientes + ' clientes';
+        case 'usuariosActivos':    return d.alumnos + ' alumnos · ' + d.productores + ' clientes';
+        case 'inicios':            return d.alumnos + ' alumnos · ' + d.clases + ' clases';
+        case 'licenciasAsignadas': return d.alumnos + ' alumnos · ' + d.formaciones + ' formaciones';
+        case 'licenciasActivas':   return d.generadasSinDueno + ' sin dueño · ' + d.asignadas + ' asignadas';
+        case 'formaciones':        return d.conContenidoListo + ' con contenido listo';
+        case 'clases':             return (d.contenedoresEdu || 0) + ' protegidas .edu';
+        case 'almacenamiento':     return 'Originales registrados, no consumo del proveedor';
+        default: return '';
+    }
+}
+
+async function anlResumen() {
+    $('anl-kpi1').innerHTML = '<div class="kpi"><div class="v nd">Cargando…</div></div>'.repeat(4);
+    $('anl-kpi2').innerHTML = '';
+    try {
+        const r = await api('GET', '/api/admin/analytics/overview?' + anlParams());
+        $('anl-periodo-actual').textContent = 'Período: ' + r.periodo;
+        const filas = { 1: [], 2: [] };
+        for (const [clave, titulo, fila] of ANL_KPI) {
+            const m = r.indicadores[clave] || { valor: null, calidad: 'no_disponible' };
+            const cifra = kpiCifra(m);
+            const ayuda = [m.nota, 'Fuente: ' + (m.fuente || '—')].filter(Boolean).join('\n');
+            filas[fila].push(
+                '<div class="kpi" title="' + esc(ayuda) + '">' +
+                    '<span class="q ' + esc(m.calidad) + '">' + esc(m.calidad.replace('_', ' ')) + '</span>' +
+                    '<div class="v' + (cifra === null ? ' nd' : '') + '">' +
+                        (cifra === null ? 'No disponible' : esc(cifra)) + '</div>' +
+                    '<div class="t">' + esc(titulo) + '</div>' +
+                    '<div class="s">' + esc(anlSubtitulo(clave, m)) + '</div>' +
+                '</div>');
+        }
+        $('anl-kpi1').innerHTML = filas[1].join('');
+        $('anl-kpi2').innerHTML = filas[2].join('');
+        // El resumen es de toda la plataforma. Un alta de alumno no pertenece a
+        // ningún cliente hasta que activa una licencia, así que filtrarlo por
+        // cliente daría una cifra inventada; se dice en vez de disimularlo.
+        $('anl-resumen-nota').textContent = ANL.productor
+            ? 'Estas cifras son de toda la plataforma: las altas y las licencias no se pueden atribuir a un cliente concreto. Para las cifras de un cliente, usa la pestaña Clientes.'
+            : '';
+    } catch (err) {
+        $('anl-kpi1').innerHTML = '<div class="kpi"><div class="v nd">No disponible</div><div class="s">' + esc(err.message) + '</div></div>';
+        $('anl-kpi2').innerHTML = '';
+    }
+}
+
+// ── B · Formaciones ─────────────────────────────────────────────────────────
+
+async function anlFormaciones(pagina) {
+    ANL.pagina = Math.max(1, pagina || 1);
+    const cuerpo = $('anl-form-body');
+    cuerpo.innerHTML = '<tr><td colspan="7" class="anl-vacio">Cargando…</td></tr>';
+    $('anl-form-detalle').style.display = 'none';
+    try {
+        const r = await api('GET', '/api/admin/analytics/courses?' + anlParams({
+            pagina: ANL.pagina, porPagina: 15,
+            orden: $('anl-orden').value,
+            buscar: $('anl-buscar').value.trim(),
+        }));
+        if (!r.formaciones.length) {
+            cuerpo.innerHTML = '<tr><td colspan="7" class="anl-vacio">Ninguna formación con estos filtros.</td></tr>';
+        } else {
+            cuerpo.innerHTML = r.formaciones.map(f => '<tr>' +
+                '<td>' + esc(f.nombre) + '</td>' +
+                '<td' + (f.sinProductor ? ' style="color:#b8860b"' : '') + '>' +
+                    esc(f.productor || 'Sin cliente') + '</td>' +
+                '<td>' + f.alumnosConAcceso + '</td>' +
+                '<td>' + f.clases.listas + '/' + f.clases.total + '</td>' +
+                '<td>' + f.iniciosPeriodo + '</td>' +
+                '<td>' + esc(fechaCorta(f.ultimaActividad) || '—') + '</td>' +
+                '<td><button class="btn btn-ghost" style="font-size:0.74rem;padding:3px 8px" ' +
+                    'data-detalle="' + esc(f.id) + '">Ver detalle</button></td>' +
+            '</tr>').join('');
+        }
+        const desde = (ANL.pagina - 1) * r.porPagina + 1;
+        const hasta = Math.min(ANL.pagina * r.porPagina, r.total);
+        $('anl-form-info').textContent = r.total
+            ? 'Mostrando ' + desde + '–' + hasta + ' de ' + r.total + ' · ' + r.periodo : '';
+        $('anl-form-prev').disabled = ANL.pagina <= 1;
+        $('anl-form-next').disabled = hasta >= r.total;
+    } catch (err) {
+        cuerpo.innerHTML = '<tr><td colspan="7" style="color:var(--c-error)">' + esc(err.message) + '</td></tr>';
+    }
+}
+
+document.addEventListener('click', ev => {
+    const ver = ev.target.closest('[data-detalle]');
+    if (ver) return anlDetalleFormacion(ver.dataset.detalle);
+    if (ev.target.closest('[data-cerrar-detalle]')) $('anl-form-detalle').style.display = 'none';
+});
+
+async function anlDetalleFormacion(id) {
+    const caja = $('anl-form-detalle');
+    caja.style.display = 'block';
+    caja.innerHTML = '<p class="anl-vacio">Cargando detalle…</p>';
+    try {
+        const d = await api('GET', '/api/admin/analytics/courses/' + encodeURIComponent(id) + '?' + anlParams());
+        caja.innerHTML =
+            '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">' +
+                '<div><h3 style="margin:0 0 2px">' + esc(d.nombre) + '</h3>' +
+                '<div style="font-size:0.78rem;color:var(--c-muted)">' +
+                    esc(d.productor || 'Sin cliente asignado') +
+                    (d.autor ? ' · autor: ' + esc(d.autor) : '') + '</div></div>' +
+                '<div style="display:flex;gap:6px">' +
+                    '<button class="btn btn-ghost" data-formacion="' + esc(d.id) + '">Administrar</button>' +
+                    '<button class="btn btn-ghost" data-cerrar-detalle>Cerrar</button>' +
+                '</div>' +
+            '</div>' +
+            '<div class="fcard datos" style="display:flex;gap:4px 18px;flex-wrap:wrap;font-size:0.82rem;margin:10px 0;border:none;padding:0">' +
+                '<span><b>' + d.alumnosConAcceso + '</b> alumno(s) con acceso</span>' +
+                '<span><b>' + d.licencias.activas + '</b>/' + d.licencias.total + ' licencias activas</span>' +
+                '<span><b>' + d.clases.length + '</b> clase(s)</span>' +
+            '</div>' +
+            (d.clases.length
+                ? '<div class="table-wrap"><table><thead><tr><th>Clase</th><th>Módulo</th><th>Estado</th><th>Inicios</th><th>Última actividad</th></tr></thead><tbody>' +
+                  d.clases.map(c => '<tr>' +
+                      '<td>' + esc(c.titulo || '(sin título)') + '</td>' +
+                      '<td>' + esc(c.modulo || '—') + '</td>' +
+                      '<td>' + esc(c.estado) + '</td>' +
+                      '<td>' + c.iniciosPeriodo + '</td>' +
+                      '<td>' + esc(fechaCorta(c.ultimaActividad) || '—') + '</td>' +
+                  '</tr>').join('') + '</tbody></table></div>'
+                : '<p class="anl-vacio">Esta formación todavía no tiene clases.</p>') +
+            '<p class="anl-nota">' + esc(d.nota) + '</p>';
+    } catch (err) {
+        caja.innerHTML = '<p style="color:var(--c-error);font-size:0.82rem">' + esc(err.message) + '</p>';
+    }
+}
+
+// ── C · Clientes ────────────────────────────────────────────────────────────
+
+async function anlClientes() {
+    const cuerpo = $('anl-cli-body');
+    cuerpo.innerHTML = '<tr><td colspan="8" class="anl-vacio">Cargando…</td></tr>';
+    try {
+        const r = await api('GET', '/api/admin/analytics/producers?' + anlParams());
+        const filas = r.clientes.filter(c => !ANL.productor || ANL.productor === '__sin__' || c.id === ANL.productor);
+        cuerpo.innerHTML = filas.length
+            ? filas.map(c => '<tr>' +
+                '<td>' + esc(c.nombre) + '<div style="font-size:0.74rem;color:var(--c-muted)">' + esc(c.correo) + '</div></td>' +
+                '<td>' + (c.habilitado ? 'Habilitado' : '<span style="color:#b8860b">Suspendido</span>') +
+                    (c.misCursos ? '<div style="font-size:0.72rem;color:var(--c-muted)">Mis Cursos activo</div>' : '') + '</td>' +
+                '<td>' + c.formaciones + '</td>' +
+                '<td>' + c.clases + '</td>' +
+                '<td>' + c.alumnos + '</td>' +
+                '<td>' + c.alumnosActivos + '</td>' +
+                '<td>' + c.licencias.activas + '/' + c.licencias.total +
+                    (c.cuota.licencias ? '<div style="font-size:0.72rem;color:var(--c-muted)">cuota ' + c.cuota.licencias + '</div>' : '') + '</td>' +
+                '<td>' + c.iniciosPeriodo + '</td>' +
+              '</tr>').join('')
+            : '<tr><td colspan="8" class="anl-vacio">Ningún cliente con estos filtros.</td></tr>';
+        $('anl-cli-nota').textContent = r.nota +
+            (r.sinCliente.formaciones
+                ? ' Hay ' + r.sinCliente.formaciones + ' formación(es) y ' + r.sinCliente.clases +
+                  ' clase(s) sin cliente asignado, que no se suman a nadie.'
+                : '');
+    } catch (err) {
+        cuerpo.innerHTML = '<tr><td colspan="8" style="color:var(--c-error)">' + esc(err.message) + '</td></tr>';
+    }
+}
+
+// ── D · Actividad y uso ─────────────────────────────────────────────────────
+
+async function anlActividad() {
+    const caja = $('anl-serie');
+    caja.innerHTML = '<p class="anl-vacio">Cargando…</p>';
+    $('anl-top-clases').innerHTML = '';
+    $('anl-top-alumnos').innerHTML = '';
+    try {
+        const [serie, top] = await Promise.all([
+            api('GET', '/api/admin/analytics/activity?' + anlParams()),
+            api('GET', '/api/admin/analytics/top?' + anlParams({ limite: 10 })),
+        ]);
+        const maximo = Math.max(1, ...serie.puntos.map(p => p.inicios));
+        caja.innerHTML = serie.puntos.length
+            ? '<div class="anl-barras">' + serie.puntos.map(p =>
+                  '<div class="anl-barra' + (p.inicios ? '' : ' cero') + '"' +
+                  ' style="height:' + Math.round((p.inicios / maximo) * 100) + '%"' +
+                  ' title="' + esc(p.dia + ': ' + p.inicios + ' inicio(s), ' + p.usuarios + ' usuario(s)') + '"></div>').join('') +
+              '</div><div class="anl-ejes"><span>' + esc(serie.puntos[0].dia) + '</span>' +
+              '<span>máximo ' + maximo + '</span>' +
+              '<span>' + esc(serie.puntos[serie.puntos.length - 1].dia) + '</span></div>'
+            : '<p class="anl-vacio">Sin días en el período.</p>';
+        $('anl-serie-nota').textContent = serie.nota;
+
+        const vacia = '<li class="anl-vacio">Sin actividad en el período.</li>';
+        $('anl-top-clases').innerHTML = top.clases.length
+            ? top.clases.map(c => '<li><span>' + esc(c.titulo) +
+                (c.formacion ? '<div class="sec">' + esc(c.formacion) + '</div>' : '') + '</span>' +
+                '<span><b>' + c.inicios + '</b> inicio(s)<div class="sec">' + c.alumnos + ' alumno(s)</div></span></li>').join('')
+            : vacia;
+        $('anl-top-alumnos').innerHTML = top.alumnos.length
+            ? top.alumnos.map(a => '<li><span>' + esc(a.nombre) +
+                '<div class="sec">' + esc(fechaCorta(a.ultima) || 'sin fecha') + '</div></span>' +
+                '<span><b>' + a.inicios + '</b> inicio(s)<div class="sec">' + a.clases + ' clase(s)</div></span></li>').join('')
+            : vacia;
+    } catch (err) {
+        caja.innerHTML = '<p style="color:var(--c-error);font-size:0.82rem">' + esc(err.message) + '</p>';
+    }
+}
+
+// ── E · Consumo y costos ────────────────────────────────────────────────────
+
+function bytesLegibles(b) {
+    if (b === null || b === undefined) return 'No disponible';
+    const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let v = Number(b), i = 0;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return (i === 0 ? v : v.toFixed(v < 10 ? 2 : 1)) + ' ' + u[i];
+}
+
+function dinero(v, moneda) {
+    if (v === null || v === undefined) return 'No disponible';
+    return Number(v).toFixed(2) + ' ' + (moneda || 'EUR');
+}
+
+async function anlConsumo() {
+    const caja = $('anl-consumo');
+    caja.innerHTML = '<p class="anl-vacio">Cargando…</p>';
+    $('anl-consumo-reparto').style.display = 'none';
+    $('anl-consumo-tarifas').style.display = 'none';
+    try {
+        const r = await api('GET', '/api/admin/analytics/consumption');
+        if (!r.disponible) {
+            const e = r.estado || {};
+            caja.innerHTML =
+                '<div class="anl-nd"><h4>Consumo y costos: no disponible</h4>' +
+                '<p>' + esc(r.motivo) + '</p>' +
+                (e.ultimoError ? '<p style="margin-top:8px">Último error del proveedor: ' +
+                    esc(e.ultimoError) + '</p>' : '') +
+                '<p style="margin-top:10px"><button class="btn btn-ghost" data-sincronizar-consumo>' +
+                    'Recolectar ahora</button></p></div>';
+            return;
+        }
+        anlPintarConsumo(caja, r);
+        anlRepartoDeConsumo();
+        anlTarifas();
+    } catch (err) {
+        caja.innerHTML = '<p style="color:var(--c-error);font-size:0.82rem">' + esc(err.message) + '</p>';
+    }
+}
+
+function anlPintarConsumo(caja, r) {
+    const i = r.indicadores || {};
+    const a = r.almacenamiento || {};
+    const t = r.trafico || {};
+    const ficha = (titulo, valor, m) => {
+        const nd = valor === 'No disponible';
+        return '<div class="kpi" title="' + esc((m && m.nota) || '') + '">' +
+            '<span class="q ' + esc((m && m.calidad) || 'no_disponible') + '">' +
+                esc(((m && m.calidad) || 'no disponible').replace('_', ' ')) + '</span>' +
+            '<div class="v' + (nd ? ' nd' : '') + '">' + esc(valor) + '</div>' +
+            '<div class="t">' + esc(titulo) + '</div></div>';
     };
-})(loadDashboard);
+
+    // Una foto vieja se avisa: mirar cifras de dinero de hace un día sin saberlo
+    // es peor que no verlas.
+    const aviso = r.fresco ? '' :
+        '<p class="anl-aviso" style="display:block">Estas cifras son de hace ' +
+        esc(String(r.horasDeAntiguedad)) + ' horas. El recolector no ha conseguido actualizarlas.</p>';
+
+    caja.innerHTML = aviso +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">' +
+            '<h3 style="margin:0">Cuenta del proveedor</h3>' +
+            '<span style="display:flex;gap:8px;align-items:center">' +
+                '<span class="anl-nota">Leído: ' + esc(fechaHora(r.datosDe)) + '</span>' +
+                '<button class="btn btn-ghost" data-sincronizar-consumo>Actualizar</button>' +
+            '</span>' +
+        '</div>' +
+        '<div class="kpi-grid">' +
+            ficha('Cobrado este mes', dinero(i.cargosDelMes && i.cargosDelMes.valor, r.moneda), i.cargosDelMes) +
+            ficha('Saldo disponible', dinero(i.saldoDisponible && i.saldoDisponible.valor, r.moneda), i.saldoDisponible) +
+            ficha('Almacenamiento cobrado', dinero(i.almacenamientoCobrado && i.almacenamientoCobrado.valor, r.moneda), i.almacenamientoCobrado) +
+            ficha('Tráfico servido 30 d', bytesLegibles(i.traficoServido && i.traficoServido.valor), i.traficoServido) +
+        '</div>' +
+        '<div class="table-wrap" style="margin-top:14px"><table>' +
+            '<thead><tr><th>Reparto</th><th>De Edulock</th><th>Fuera de Edulock</th><th>Total</th></tr></thead>' +
+            '<tbody>' +
+                '<tr><td>Almacenamiento</td><td>' + esc(bytesLegibles(a.deEdulockBytes)) + '</td>' +
+                    '<td>' + esc(bytesLegibles(a.fueraDeEdulockBytes)) + '</td>' +
+                    '<td>' + esc(bytesLegibles(a.totalBytes)) + '</td></tr>' +
+                '<tr><td>Tráfico del mes</td><td>' + esc(bytesLegibles(t.deEdulockBytes)) + '</td>' +
+                    '<td>' + esc(bytesLegibles(t.fueraDeEdulockBytes)) + '</td>' +
+                    '<td>' + esc(bytesLegibles((t.deEdulockBytes || 0) + (t.fueraDeEdulockBytes || 0))) + '</td></tr>' +
+                '<tr><td>Bibliotecas</td><td>' + (a.bibliotecasDeEdulock || 0) + '</td>' +
+                    '<td>' + ((a.bibliotecas || 0) - (a.bibliotecasDeEdulock || 0)) + '</td>' +
+                    '<td>' + (a.bibliotecas || 0) + '</td></tr>' +
+            '</tbody></table></div>' +
+        '<p class="anl-nota">' + esc(a.nota || '') + '</p>';
+}
+
+function fechaHora(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return isNaN(d) ? '—' : d.toLocaleString('es');
+}
+
+async function anlRepartoDeConsumo() {
+    const caja = $('anl-consumo-reparto');
+    caja.style.display = 'block';
+    caja.innerHTML = '<p class="anl-vacio">Cargando reparto…</p>';
+    try {
+        const r = await api('GET', '/api/admin/analytics/consumption/courses');
+        if (!r.disponible) { caja.innerHTML = '<p class="anl-vacio">' + esc(r.motivo) + '</p>'; return; }
+        const fila = f => '<tr>' +
+            '<td>' + esc(f.formacion || f.biblioteca || '(biblioteca ' + f.bibliotecaId + ')') +
+                (f.compartidaCon ? '<div class="anl-nota">comparte biblioteca con ' +
+                    (f.compartidaCon - 1) + ' formación(es) más</div>' : '') + '</td>' +
+            '<td>' + esc(f.productor || '—') + '</td>' +
+            '<td>' + esc(bytesLegibles(f.almacenamientoBytes)) + '</td>' +
+            '<td>' + esc(bytesLegibles(f.traficoBytes)) + '</td>' +
+            '<td>' + f.porcentajeDelAlmacenamiento + ' %</td>' +
+            '<td>' + esc(dinero(f.costoImputado, r.moneda)) + '</td></tr>';
+        caja.innerHTML =
+            '<h3>Reparto del almacenamiento</h3>' +
+            '<p class="anl-nota" style="margin:0 0 10px">Cobro de almacenamiento del mes: <b>' +
+                esc(dinero(r.cobroDeAlmacenamientoDelMes, r.moneda)) + '</b></p>' +
+            (r.formaciones.length
+                ? '<div class="table-wrap"><table>' +
+                  '<thead><tr><th>Formación</th><th>Cliente</th><th>Almacenamiento</th><th>Tráfico</th><th>%</th><th>Costo imputado</th></tr></thead>' +
+                  '<tbody>' + r.formaciones.map(fila).join('') + '</tbody></table></div>'
+                : '<div class="anl-nd"><h4>Ninguna formación consume en esta cuenta</h4>' +
+                  '<p>Las bibliotecas de vídeo que usan las formaciones no están en la cuenta cuya clave está configurada, ' +
+                  'así que todo el consumo de esta cuenta es de otro contenido. No se reparte nada entre clientes.</p></div>') +
+            (r.fueraDeEdulock.length
+                ? '<h3 style="margin-top:18px">Fuera de Edulock</h3>' +
+                  '<p class="anl-nota" style="margin:0 0 10px">Este consumo no se imputa a ningún cliente.</p>' +
+                  '<div class="table-wrap"><table>' +
+                  '<thead><tr><th>Biblioteca</th><th></th><th>Almacenamiento</th><th>Tráfico</th><th>%</th><th>Costo imputado</th></tr></thead>' +
+                  '<tbody>' + r.fueraDeEdulock.map(fila).join('') + '</tbody></table></div>'
+                : '') +
+            '<p class="anl-nota">' + esc(r.nota) + '</p>';
+    } catch (err) {
+        caja.innerHTML = '<p style="color:var(--c-error);font-size:0.82rem">' + esc(err.message) + '</p>';
+    }
+}
+
+async function anlTarifas() {
+    const caja = $('anl-consumo-tarifas');
+    caja.style.display = 'block';
+    caja.innerHTML = '<p class="anl-vacio">Cargando tarifas…</p>';
+    try {
+        const r = await api('GET', '/api/admin/analytics/consumption/rates');
+        if (!r.disponible) { caja.innerHTML = '<p class="anl-vacio">' + esc(r.motivo) + '</p>'; return; }
+        const filas = Object.entries(r.porContinente).sort((a, b) => b[1].maximo - a[1].maximo);
+        caja.innerHTML = '<h3>Tarifas del proveedor</h3>' +
+            '<div class="table-wrap"><table>' +
+            '<thead><tr><th>Continente</th><th>Regiones</th><th>Precio por GB</th></tr></thead><tbody>' +
+            filas.map(([c, x]) => '<tr><td>' + esc(c) + '</td><td>' + x.regiones + '</td><td>' +
+                (x.minimo === x.maximo
+                    ? x.minimo + ' ' + esc(r.moneda)
+                    : x.minimo + ' – ' + x.maximo + ' ' + esc(r.moneda)) + '</td></tr>').join('') +
+            '</tbody></table></div>' +
+            '<p class="anl-nota">' + esc(r.nota) + '</p>';
+    } catch (err) {
+        caja.innerHTML = '<p style="color:var(--c-error);font-size:0.82rem">' + esc(err.message) + '</p>';
+    }
+}
+
+// El botón de recolectar pide al servidor que llame al proveedor. Se deja
+// deshabilitado mientras tanto: la llamada tarda y un doble clic serían dos
+// peticiones a una API que se paga.
+document.addEventListener('click', async ev => {
+    const boton = ev.target.closest('[data-sincronizar-consumo]');
+    if (!boton) return;
+    boton.disabled = true;
+    const original = boton.textContent;
+    boton.textContent = 'Recolectando…';
+    try {
+        const r = await api('POST', '/api/admin/analytics/consumption/sync', {});
+        if (!r.hecho && r.motivo === 'ya_en_curso') {
+            anlAviso('Ya hay una recolección en curso; espera a que termine.');
+        } else if (!r.hecho) {
+            anlAviso('No se pudo leer del proveedor' +
+                (r.fallos && r.fallos.length ? ': ' + r.fallos.map(f => f.lectura).join(', ') : '.'));
+        } else {
+            anlAviso('');
+        }
+        await anlConsumo();
+    } catch (err) {
+        anlAviso(err.message);
+    } finally {
+        boton.disabled = false;
+        boton.textContent = original;
+    }
+});
+
+// ── Filtros globales ────────────────────────────────────────────────────────
+
+if ($('anl-preset')) {
+    $('anl-preset').addEventListener('change', () => {
+        ANL.preset = $('anl-preset').value;
+        $('anl-rango').style.display = ANL.preset === 'rango' ? 'inline-flex' : 'none';
+        // Un rango a medida no se consulta hasta que tiene sus dos extremos.
+        if (ANL.preset === 'rango' && !(ANL.desde && ANL.hasta)) {
+            anlAviso('Elige las dos fechas del rango.');
+            return;
+        }
+        anlAviso('');
+        cargarAnalitica(true);
+    });
+    for (const id of ['anl-desde', 'anl-hasta']) {
+        $(id).addEventListener('change', () => {
+            ANL.desde = $('anl-desde').value;
+            ANL.hasta = $('anl-hasta').value;
+            if (!(ANL.desde && ANL.hasta)) return anlAviso('Elige las dos fechas del rango.');
+            if (ANL.desde > ANL.hasta) return anlAviso('La fecha inicial es posterior a la final.');
+            anlAviso('');
+            cargarAnalitica(true);
+        });
+    }
+    $('anl-productor').addEventListener('change', () => {
+        ANL.productor = $('anl-productor').value;
+        cargarAnalitica(true);
+    });
+    $('anl-orden').addEventListener('change', () => anlFormaciones(1));
+    let temporizador = null;
+    $('anl-buscar').addEventListener('input', () => {
+        clearTimeout(temporizador);
+        temporizador = setTimeout(() => anlFormaciones(1), 350);
+    });
+}
+
+// ── Formaciones de clientes (sin portadas) ──────────────────────────────────
+
+let FORM_PAGINA = 1;
+let FORM_TOTAL = 0;
+
+function fechaCorta(iso) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    return isNaN(d) ? null : d.toLocaleDateString('es');
+}
+
+async function cargarFormaciones(pagina) {
+    const cont = $('form-cards');
+    if (!cont) return;
+    FORM_PAGINA = Math.max(1, pagina || 1);
+    cont.innerHTML = '<p style="color:var(--c-muted);font-size:0.82rem">Cargando formaciones…</p>';
+    const par = new URLSearchParams({
+        pagina: FORM_PAGINA, porPagina: 12,
+        orden: ($('f-orden') || {}).value || 'alumnos',
+        dias: 30,
+    });
+    const prod = ($('f-productor') || {}).value;
+    if (prod) par.set('productor', prod);
+    const buscar = (($('f-buscar') || {}).value || '').trim();
+    if (buscar) par.set('buscar', buscar);
+
+    try {
+        const r = await api('GET', '/api/admin/analytics/courses?' + par.toString());
+        FORM_TOTAL = r.total;
+        if (!r.formaciones.length) {
+            cont.innerHTML = '<p style="color:var(--c-muted);font-size:0.82rem">' +
+                (buscar || prod ? 'Ninguna formación con esos filtros.' : 'Todavía no hay formaciones.') + '</p>';
+        } else {
+            cont.innerHTML = r.formaciones.map(f => {
+                const ult = fechaCorta(f.ultimaActividad);
+                const mods = f.modulos + (f.submodulos ? ' + ' + f.submodulos + ' sub' : '');
+                return '<div class="fcard">' +
+                    '<h4>' + esc(f.nombre) + '</h4>' +
+                    '<div class="prod' + (f.sinProductor ? ' sin' : '') + '">' +
+                        esc(f.productor || 'Sin cliente asignado') + '</div>' +
+                    '<div class="datos">' +
+                        '<span><b>' + f.alumnosConAcceso + '</b> alumno(s)</span>' +
+                        '<span><b>' + f.clases.listas + '</b>/' + f.clases.total + ' clases</span>' +
+                        '<span><b>' + mods + '</b> módulo(s)</span>' +
+                        '<span><b>' + f.iniciosPeriodo + '</b> inicio(s) 30 d</span>' +
+                    '</div>' +
+                    (ult ? '<div class="prod">Última actividad: ' + esc(ult) + '</div>'
+                         : '<div class="vacio">Sin actividad registrada</div>') +
+                    '<div class="acc" style="margin-top:8px">' +
+                        '<button class="btn btn-ghost" style="font-size:0.74rem;padding:4px 8px" ' +
+                            'data-formacion="' + esc(f.id) + '">Administrar formación</button>' +
+                    '</div>' +
+                '</div>';
+            }).join('');
+        }
+        const desde = (FORM_PAGINA - 1) * r.porPagina + 1;
+        const hasta = Math.min(FORM_PAGINA * r.porPagina, r.total);
+        $('form-info').textContent = r.total
+            ? 'Mostrando ' + desde + '–' + hasta + ' de ' + r.total + ' formaciones · ' + r.periodo
+            : '';
+        $('form-prev').disabled = FORM_PAGINA <= 1;
+        $('form-next').disabled = hasta >= r.total;
+    } catch (err) {
+        cont.innerHTML = '<p style="color:var(--c-error);font-size:0.82rem">' + esc(err.message) +
+            ' <button class="btn btn-ghost" style="font-size:0.74rem;padding:3px 8px" onclick="cargarFormaciones(' +
+            FORM_PAGINA + ')">Reintentar</button></p>';
+    }
+}
+
+// El id viaja en data-formacion, así que un id con comillas o acentos no puede
+// romper el marcado ni ejecutar nada.
+document.addEventListener('click', ev => {
+    const boton = ev.target.closest('[data-formacion]');
+    if (boton) verFormacion(boton.dataset.formacion);
+});
+
+/**
+ * Abre la formación en la pantalla de catálogo que ya existe. Espera a que el
+ * catálogo termine de cargar: `openCourse` saca el nombre y el autor de la
+ * lista ya descargada, y sin ella el detalle se abre titulado «Curso».
+ */
+async function verFormacion(id) {
+    const cargando = irAPagina('catalog');
+    if (cargando === false) return;
+    try { await cargando; } catch (e) { /* el catálogo ya muestra su propio error */ }
+    if (typeof openCourse === 'function') await openCourse(id);
+}
+
+// Los filtros recargan desde la primera página, para no quedarse en una vacía.
+['f-orden', 'f-productor'].forEach(id => {
+    const el = $(id);
+    if (el) el.addEventListener('change', () => cargarFormaciones(1));
+});
+if ($('f-buscar')) {
+    let t = null;
+    $('f-buscar').addEventListener('input', () => {
+        clearTimeout(t);
+        t = setTimeout(() => cargarFormaciones(1), 350);
+    });
+}
+
 
 // ================================================================
 //  AUDITORÍA — agrupada por usuario
@@ -5205,13 +5967,13 @@ loadSuspiciousActivity = (function() {
 loadAllDevices = (function() {
     return async function() {
         const tbody = $('devices-body');
-        tbody.innerHTML = '<tr><td colspan="9" style="color:var(--c-muted)">Cargando...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="color:var(--c-muted)">Cargando...</td></tr>';
         $('devices-actions').style.display = 'none';
         try {
             const d = await api('GET', '/api/admin/all-devices');
             const devs = d.devices || [];
             if (!devs.length) {
-                tbody.innerHTML = '<tr><td colspan="9" style="color:var(--c-muted)">No hay dispositivos registrados aún.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" style="color:var(--c-muted)">No hay dispositivos registrados aún.</td></tr>';
                 return;
             }
             const userMap = groupBy(devs, dv => dv.student_id || '?');
@@ -5253,7 +6015,7 @@ loadAllDevices = (function() {
             }
             tbody.innerHTML = rows.join('');
         } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="9" style="color:#c41f28">' + esc(err.message) + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" style="color:#c41f28">' + esc(err.message) + '</td></tr>';
         }
     };
 })();
