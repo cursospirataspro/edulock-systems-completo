@@ -24,6 +24,8 @@ internal object PlaybackPolicy {
         val playbackInfo: String? = null,
         val mediaToken: String? = null,
         val sessionToken: String? = null,
+        /** Identificador del contenedor .edu, cuando la clase esta protegida asi. */
+        val eduContentId: String? = null,
         val drmScheme: String? = null,
         val drmLicenseUrl: String? = null,
         val error: String? = null
@@ -40,6 +42,12 @@ internal object PlaybackPolicy {
 
         data class VdoOtp(val otp: String, val playbackInfo: String, val mediaToken: String) : Plan()
         data class VdoDirect(val directUrl: String, val mediaToken: String) : Plan()
+
+        /**
+         * Contenedor .edu: se descarga cifrado y se descifra trozo a trozo en el
+         * propio telefono. El mp4 nunca llega a existir entero.
+         */
+        data class Edu(val contentId: String, val mediaToken: String) : Plan()
 
         /** El formato existe pero esta plataforma no lo reproduce aquí. */
         data class Unsupported(val message: String) : Plan()
@@ -64,11 +72,14 @@ internal object PlaybackPolicy {
         val credential = mediaCredential(source)
         val tipo = source.sourceType?.trim()?.lowercase()
 
-        if (tipo == "edu") {
-            return Plan.Unsupported("Este video .edu requiere Edulock para escritorio. Android admite Bunny Stream/HLS y VdoCipher.")
-        }
-
         return when (tipo) {
+            "edu" -> {
+                // Sin contentId no hay nada que pedir; sin token de reproduccion el
+                // servidor no entrega la clave, asi que se dice en vez de fallar luego.
+                if (source.eduContentId.isNullOrBlank()) Plan.Incomplete("El contenido protegido no está disponible.")
+                else if (credential.isNullOrBlank()) Plan.Incomplete("La sesión de reproducción no está disponible. Vuelve a abrir la clase.")
+                else Plan.Edu(source.eduContentId, credential)
+            }
             "vdocipher" -> {
                 if (source.otp.isNullOrBlank() || source.playbackInfo.isNullOrBlank()) {
                     Plan.Incomplete("Credenciales de video no disponibles.")

@@ -17,7 +17,13 @@ const crypto = require('crypto');
 //  valor no lleva el prefijo 'enc1:', se devuelve tal cual (datos viejos).
 // ================================================================
 const FIELD_KEY = (() => {
-    const master = process.env.EDU_MASTER_KEY || process.env.APP_SECRET || process.env.JWT_SECRET || '';
+    // La clave del cifrado de campos NO puede depender de EDU_MASTER_KEY. Antes la
+    // miraba primero, asi que el dia que se configurara esa clave —para poder usar
+    // el formato .edu— la clave de campos cambiaria y TODO lo ya cifrado en la base
+    // (URL de videos, documentos) dejaria de poder leerse. Se ata a APP_SECRET, que
+    // es lo que ya se estaba usando de hecho, para que activar .edu no rompa nada.
+    // Si algun dia hay que rotarla, se hace a proposito y volviendo a cifrar.
+    const master = process.env.FIELD_ENC_KEY || process.env.APP_SECRET || process.env.JWT_SECRET || '';
     if (!master) return null;
     return crypto.createHash('sha256').update('edulock-field-enc|' + master).digest(); // 32 bytes
 })();
@@ -1605,19 +1611,20 @@ module.exports.deleteCourse = async (id) => {
             [id, curso.bunny_library_id || null])).rows[0].n);
         const conservaClases = clasesVivas > 0;
 
-        if (curso.bunny_library_id && curso.bunny_library_key && !conservaClases) {
+        const cursoLibraryKey = decField(curso.bunny_library_key);
+        if (curso.bunny_library_id && cursoLibraryKey && !conservaClases) {
             for (const m of modulos) {
                 if (!m.bunny_collection_id || !m.owned_collection) continue;
                 if (String(m.owned_collection) !== String(m.bunny_collection_id)) continue;
                 await encolar({ id: crypto.randomUUID(), kind: 'module', producerId: curso.producer_id || null,
                     courseId: id, moduleId: m.id, videoId: null,
-                    libraryId: curso.bunny_library_id, libraryKey: curso.bunny_library_key,
+                    libraryId: curso.bunny_library_id, libraryKey: cursoLibraryKey,
                     remoteId: m.bunny_collection_id });
             }
             if (curso.owned_library && String(curso.owned_library) === String(curso.bunny_library_id)) {
                 await encolar({ id: crypto.randomUUID(), kind: 'course', producerId: curso.producer_id || null,
                     courseId: id, moduleId: null, videoId: null,
-                    libraryId: curso.bunny_library_id, libraryKey: curso.bunny_library_key,
+                    libraryId: curso.bunny_library_id, libraryKey: cursoLibraryKey,
                     remoteId: curso.bunny_library_id });
             }
         }
@@ -1680,6 +1687,40 @@ module.exports.moveVideoToCourse = async (videoId, courseId) => {
  * video en el servicio de video —solo si consta que lo creo esta plataforma—.
  * Es la misma regla que aplica el panel del productor (F02, R02, F03).
  */
+/**
+ * Saca la zona y la ruta dentro de ella a partir de la URL guardada del .edu.
+ * Acepta las dos formas que genera el servidor: la de la API de almacenamiento
+ * (https://<host>/<zona>/edu/...) y la de una pull zone publica, donde la zona
+ * no aparece en la URL y se toma del identificador del contenido.
+ */
+function rutaDeContenedorEdu(bunnyUrl, contentId) {
+    if (!contentId) return null;
+    // Ruta por omision: la que escribe el empaquetador cuando no hay productor.
+    const porOmision = 'edu/' + contentId + '.edu';
+    // La columna viaja CIFRADA en la base de datos. Sin descifrarla aqui, lo que
+    // se guardaba en la cola era el propio blob cifrado y el borrado no encontraba
+    // nada que borrar.
+    const url = decField(bunnyUrl);
+    try {
+        const u = new URL(String(url || ''));
+        // Solo una URL http(s) de verdad: 'enc1:...' tambien se parsea como URL.
+        if (u.protocol !== 'https:' && u.protocol !== 'http:') return { zona: '', ruta: porOmision };
+        const partes = u.pathname.replace(/^\/+/, '').split('/').filter(Boolean);
+        if (!partes.length) return { zona: '', ruta: porOmision };
+        if (/(^|\.)storage\.bunnycdn\.com$/i.test(u.hostname) && partes.length > 1) {
+            // API de almacenamiento: /<zona>/<ruta...>
+            return { zona: partes[0], ruta: partes.slice(1).join('/') };
+        }
+        // Pull zone publica: la ruta es la misma; la zona se resuelve al ejecutar
+        // el borrado con la configuracion vigente.
+        return { zona: '', ruta: partes.join('/') };
+    } catch {
+        return { zona: '', ruta: porOmision };
+    }
+}
+
+module.exports.rutaDeContenedorEdu = rutaDeContenedorEdu;
+
 module.exports.deleteCatalogEntryWithProvider = async (videoId) => {
     return transaction(async client => {
         const fila = (await client.query(
@@ -1698,7 +1739,7 @@ module.exports.deleteCatalogEntryWithProvider = async (videoId) => {
         const libraryId = fila.bunny_library_id || fila.curso_library || null;
         const mismaBiblioteca = !fila.bunny_library_id || !fila.curso_library
             || String(fila.bunny_library_id) === String(fila.curso_library);
-        const libraryKey = mismaBiblioteca ? fila.curso_key : null;
+        const libraryKey = mismaBiblioteca ? decField(fila.curso_key) : null;
         const propio = fila.propio && String(fila.propio) === String(videoId);
         if (libraryId && libraryKey && propio) {
             const pendiente = crypto.randomUUID();
@@ -1707,6 +1748,27 @@ module.exports.deleteCatalogEntryWithProvider = async (videoId) => {
                 courseId: fila.course_id || null, moduleId: null, videoId,
                 libraryId, libraryKey, remoteId: videoId });
             queuedDeletions.push(pendiente);
+        }
+
+        // El contenedor .edu vive en el almacenamiento, no en el servicio de
+        // streaming: hay que encolar SU borrado aparte. Sin esto, la fila se iba
+        // de la base de datos y el archivo cifrado se quedaba en Bunny para
+        // siempre, ocupando y pagando.
+        const protegido = (await client.query(
+            'SELECT content_id, bunny_url FROM edu_content WHERE video_id=$1', [videoId])).rows[0];
+        if (protegido?.content_id) {
+            const rutaEnZona = rutaDeContenedorEdu(protegido.bunny_url, protegido.content_id);
+            if (rutaEnZona) {
+                const pendienteEdu = crypto.randomUUID();
+                await module.exports.enqueueProviderDeletion(client, {
+                    id: pendienteEdu, kind: 'edu', producerId: fila.producer_id || null,
+                    courseId: fila.course_id || null, moduleId: null, videoId,
+                    // Para un .edu, libraryId es la zona y remoteId la ruta dentro
+                    // de ella. La clave de acceso NO se guarda en la cola: se pide
+                    // al ejecutar, para no dejarla escrita en la base de datos.
+                    libraryId: rutaEnZona.zona, libraryKey: null, remoteId: rutaEnZona.ruta });
+                queuedDeletions.push(pendienteEdu);
+            }
         }
 
         const ahoraIso = new Date().toISOString();
@@ -1865,6 +1927,7 @@ module.exports.deleteModule = async (id) => {
         const queuedDeletions = [];
         for (const fila of remotos) {
             if (!fila.bunny_collection_id || !fila.bunny_library_id || !fila.bunny_library_key) continue;
+            fila.bunny_library_key = decField(fila.bunny_library_key);
             if (!fila.owned_remote_id || String(fila.owned_remote_id) !== String(fila.bunny_collection_id)) continue;
             if (clasesPorModulo.get(fila.id)) { conservadas += clasesPorModulo.get(fila.id); continue; }
             const pendiente = crypto.randomUUID();
@@ -1971,20 +2034,29 @@ module.exports.getCoursePreviousLibraries = async courseId => {
 module.exports.setCourseBunnyLibrary = async (courseId, { libraryId, libraryKey, pullZone, tokenKey }) => {
     await q(`UPDATE courses SET bunny_library_id=$1, bunny_library_key=$2, bunny_pull_zone=$3,
              bunny_token_key=CASE WHEN bunny_library_id IS DISTINCT FROM $1 THEN $4 ELSE COALESCE($4,bunny_token_key) END WHERE id=$5`,
-        [String(libraryId), libraryKey || null, pullZone || null, tokenKey || null, courseId]);
+        // La clave de biblioteca y la de firma son secretos de Bunny: con ellas se
+        // pueden crear, borrar y descargar videos de esa biblioteca. Se guardan
+        // cifradas, igual que la copia que vive en stream_resources; antes esta
+        // quedaba en claro y un volcado de la base las entregaba enteras.
+        [String(libraryId), encField(libraryKey || null), pullZone || null, encField(tokenKey || null), courseId]);
 };
 
 // Keeps the reference of a library the course stopped using (e.g. the Bunny account changed).
 // Nothing is deleted remotely; the previous classes keep their addresses and can be restored by hand.
 module.exports.archiveCourseBunnyLibrary = async (courseId, info) => {
-    const entry = { libraryId: info?.libraryId || null, libraryKey: info?.libraryKey || null, pullZone: info?.pullZone || null, tokenKey: info?.tokenKey || null, reason: info?.reason || null, archivedAt: new Date().toISOString() };
+    // El lector de este campo ya descifra; faltaba cifrar al archivar, asi que la
+    // clave de la biblioteca anterior quedaba en claro dentro del JSON.
+    const entry = { libraryId: info?.libraryId || null, libraryKey: encField(info?.libraryKey || null),
+        pullZone: info?.pullZone || null, tokenKey: encField(info?.tokenKey || null),
+        reason: info?.reason || null, archivedAt: new Date().toISOString() };
     await q(`UPDATE courses SET bunny_previous_libraries = COALESCE(bunny_previous_libraries, '[]'::jsonb) || $2::jsonb WHERE id=$1`, [courseId, JSON.stringify([entry])]);
 };
 
 module.exports.getCourseBunny = async (courseId) => {
     const r = (await q('SELECT bunny_library_id, bunny_library_key, bunny_pull_zone, bunny_token_key FROM courses WHERE id=$1', [courseId])).rows[0];
     if (!r) return null;
-    return { libraryId: r.bunny_library_id || null, libraryKey: r.bunny_library_key || null, pullZone: r.bunny_pull_zone || null, tokenKey: r.bunny_token_key || null };
+    return { libraryId: r.bunny_library_id || null, libraryKey: decField(r.bunny_library_key) || null,
+        pullZone: r.bunny_pull_zone || null, tokenKey: decField(r.bunny_token_key) || null };
 };
 
 module.exports.setModuleBunnyCollection = async (moduleId, collectionId) => {

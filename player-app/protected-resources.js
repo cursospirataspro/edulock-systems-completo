@@ -2,6 +2,9 @@
 
 const http = require('node:http');
 const https = require('node:https');
+const fs = require('node:fs');
+const path = require('node:path');
+const { fileURLToPath } = require('node:url');
 const { performance } = require('node:perf_hooks');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_PAGE_BYTES = 12 * 1024 * 1024;
@@ -34,10 +37,45 @@ function parseResourceLink(value) {
 function supportedProtection(platform, release) {
     return platform === 'win32' && Number(String(release).split('.')[2]) >= 19041;
 }
+/**
+ * Expande los nombres cortos 8.3 de Windows (C:\Users\KENDOR~1\...).
+ *
+ * Hace falta porque el ejecutable portable se extrae en %TEMP%, y en una cuenta
+ * cuyo nombre lleva espacios Windows entrega esa ruta en forma corta. Entonces
+ * la direccion que reporta la ventana y la que se calcula desde __dirname
+ * apuntan al mismo archivo pero como texto no coinciden, y la comprobacion de
+ * ventana de confianza rechazaba peticiones legitimas: «Mis materiales» y «Mis
+ * Cursos» dejaban de funcionar para esos usuarios.
+ *
+ * Solo se normaliza la parte REAL del disco; lo que va dentro del app.asar se
+ * conserva tal cual, porque ahi no hay nada que resolver.
+ */
+function rutaCanonica(fileUrl) {
+    let ruta;
+    try { ruta = fileURLToPath(fileUrl); } catch { return null; }
+    const marca = path.sep + 'app.asar';
+    const corte = ruta.indexOf(marca);
+    const raiz = corte >= 0 ? ruta.slice(0, corte) : ruta;
+    const resto = corte >= 0 ? ruta.slice(corte) : '';
+    try { return path.join(fs.realpathSync.native(raiz), resto); }
+    catch { return ruta; }
+}
+
+/**
+ * La peticion viene de la ventana esperada, de su marco principal, y esa ventana
+ * sigue mostrando exactamente la pagina autorizada. La comparacion se hace sobre
+ * la ruta canonica, no sobre el texto de la direccion.
+ */
 function trustedSender(event, win, exactUrl) {
-    return !!(win && !win.isDestroyed() && event.sender === win.webContents
-        && event.senderFrame === win.webContents.mainFrame && event.senderFrame?.url === exactUrl
-        && win.webContents.getURL() === exactUrl);
+    if (!(win && !win.isDestroyed() && event.sender === win.webContents
+        && event.senderFrame === win.webContents.mainFrame)) return false;
+    const esperada = rutaCanonica(exactUrl);
+    if (!esperada) return false;
+    const iguales = (url) => {
+        const r = rutaCanonica(url);
+        return !!r && r.toLowerCase() === esperada.toLowerCase();
+    };
+    return iguales(event.senderFrame?.url) && iguales(win.webContents.getURL());
 }
 
 // Node HTTP never follows redirects or writes page bodies into Electron's disk cache.

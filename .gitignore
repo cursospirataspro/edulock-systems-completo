@@ -51,3 +51,7 @@ server-qa.tar.gz
 
 _env_backup.json
 
+
+# Muestra .edu firmada con la clave de PRODUCCION: se genera con
+# scripts/probar-cadena-edu.js y no tiene por que vivir en el repositorio.
+player-apk-android/app/src/test/resources/cadena-real.*

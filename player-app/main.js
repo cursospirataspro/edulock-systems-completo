@@ -28,7 +28,7 @@ const os   = require('os');
 
 // ── DRM propio .edu (modelo InfoProtector): descarga + descifrado LOCAL ────────
 // Descifrado POR TROZOS bajo demanda: el mp4 nunca existe entero (guía §7).
-const { openEdu, readRange } = require('./edu-native');
+const { openEdu, openEduFile, readRange } = require('./edu-native');
 const _eduBuffers = new Map(); // contentId -> estado openEdu (el .edu CIFRADO + parseo)
 // El esquema edu:// debe registrarse como privilegiado ANTES de app ready.
 try {
@@ -1281,6 +1281,10 @@ function clearEduBuffers(contentId) {
         state.closed = true;
         state.cek?.fill(0);
         state.tKey?.fill(0);
+        // Soltar el archivo y borrarlo: el contenedor cifrado no hace falta una
+        // vez cerrada la clase, y asi no se acumulan clases en el disco.
+        try { state.close?.(); } catch {}
+        if (state.ruta) { try { fs.unlinkSync(state.ruta); } catch {} }
         _eduBuffers.delete(id);
     }
 }
@@ -1307,14 +1311,25 @@ ipcMain.handle('edu-open', async (_e, { contentId, deviceId, mediaToken } = {}) 
         const cek = Buffer.from(kr.body.cek, 'hex');
         const watermark = kr.body.watermark || '';
 
-        // 2) Descargar el .edu cifrado (proxy desde Bunny).
-        const eduBuf = await httpGetBuffer(`${apiBase}/api/edu/data/${encodeURIComponent(contentId)}?token=${encodeURIComponent(token)}`);
+        // 2) Descargar el .edu cifrado a disco (proxy desde Bunny). A disco y no a
+        //    RAM: una clase larga no cabe en memoria. Lo que queda en disco es el
+        //    contenedor CIFRADO, inservible sin la CEK, que solo vive en memoria.
+        //    El token va en la cabecera, nunca en la URL: en la query acabaria
+        //    escrito en claro en los logs de acceso del servidor.
+        const rutaEdu = path.join(eduCacheDir(), contentId.replace(/[^a-zA-Z0-9._-]/g, '_') + '.edu');
+        await httpDownloadToFile(`${apiBase}/api/edu/data/${encodeURIComponent(contentId)}`,
+            { Authorization: 'Bearer ' + token }, rutaEdu);
 
-        // 3) Abrir el .edu (verifica HMAC + cabecera). NO se descifra el video aquí:
-        //    el mp4 se descifra por trozos, bajo demanda, según lo pide el <video>.
-        //    En RAM solo queda el .edu CIFRADO (inútil sin la CEK) + la CEK.
-        const state = openEdu(eduBuf, cek);
-        if (epoch !== _eduEpoch || !_userIsLoggedIn) { state.cek.fill(0); state.tKey.fill(0); return { ok: false, error: 'Reproducción cancelada' }; }
+        // 3) Abrir el .edu (comprueba firma, HMAC y cabecera). NO se descifra el
+        //    video aquí: el mp4 se descifra por trozos, bajo demanda, según lo
+        //    pide el <video>, y nunca existe entero en ningún sitio.
+        const state = openEduFile(rutaEdu, cek);
+        if (epoch !== _eduEpoch || !_userIsLoggedIn) {
+            state.cek.fill(0); state.tKey.fill(0);
+            try { state.close(); } catch {}
+            try { fs.unlinkSync(rutaEdu); } catch {}
+            return { ok: false, error: 'Reproducción cancelada' };
+        }
         _eduBuffers.set(contentId, state);
         return { ok: true, url: `edu://media/${encodeURIComponent(contentId)}`, watermark };
     } catch (e) {
@@ -2068,6 +2083,51 @@ function httpFetch(url, options = {}, body = null) {
 }
 
 // Descarga binaria (GET) — para bajar el .edu cifrado del proxy de Bunny.
+/** Carpeta privada de la app donde se guardan los .edu descargados (cifrados). */
+function eduCacheDir() {
+    const dir = path.join(app.getPath('userData'), 'edu');
+    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+    return dir;
+}
+
+/**
+ * Descarga a un archivo, escribiendo segun llega. No acumula el cuerpo en
+ * memoria, que es lo que hacia imposible reproducir clases grandes.
+ */
+function httpDownloadToFile(url, headers, destino) {
+    return new Promise((resolve, reject) => {
+        const parsed = new URL(url);
+        const lib = parsed.protocol === 'https:' ? https : http;
+        const parcial = destino + '.parcial';
+        const salida = fs.createWriteStream(parcial);
+        const fallar = (e) => {
+            salida.destroy();
+            try { fs.unlinkSync(parcial); } catch {}
+            reject(e);
+        };
+        const req = lib.request({
+            hostname: parsed.hostname,
+            port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+            path: parsed.pathname + (parsed.search || ''),
+            method: 'GET', headers, timeout: 120000,
+            lookup: dnsFallbackLookup,
+            servername: parsed.protocol === 'https:' ? parsed.hostname : undefined,
+        }, (res) => {
+            if (res.statusCode >= 400) { res.resume(); fallar(new Error('HTTP ' + res.statusCode)); return; }
+            res.pipe(salida);
+            res.on('error', fallar);
+            salida.on('error', fallar);
+            salida.on('finish', () => {
+                try { fs.renameSync(parcial, destino); resolve(destino); }
+                catch (e) { fallar(e); }
+            });
+        });
+        req.on('error', fallar);
+        req.on('timeout', () => { req.destroy(); fallar(new Error('timeout')); });
+        req.end();
+    });
+}
+
 function httpGetBuffer(url, headers = {}) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(url);

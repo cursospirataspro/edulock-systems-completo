@@ -298,6 +298,7 @@ class CatalogActivity : AppCompatActivity() {
                         otp = playResponse.otp,
                         playbackInfo = playResponse.playbackInfo,
                         mediaToken = playResponse.mediaToken,
+                        eduContentId = playResponse.eduContentId,
                         drmScheme = playResponse.drmScheme,
                         drmLicenseUrl = playResponse.drmLicenseUrl,
                         error = playResponse.error
@@ -332,6 +333,13 @@ class CatalogActivity : AppCompatActivity() {
                     is PlaybackPolicy.Plan.VdoDirect -> {
                         base.putExtra(PlayerActivity.EXTRA_SOURCE_TYPE, "vdocipher_direct")
                         base.putExtra(PlayerActivity.EXTRA_VDO_DIRECT_URL, plan.directUrl)
+                        startActivity(base)
+                    }
+                    is PlaybackPolicy.Plan.Edu -> {
+                        base.putExtra(PlayerActivity.EXTRA_SOURCE_TYPE, "edu")
+                        base.putExtra(PlayerActivity.EXTRA_EDU_CONTENT_ID, plan.contentId)
+                        // La clave y el contenedor se piden con el token de reproduccion.
+                        base.putExtra(PlayerActivity.EXTRA_AUTH_TOKEN, plan.mediaToken)
                         startActivity(base)
                     }
                     is PlaybackPolicy.Plan.Unsupported -> showError(plan.message)

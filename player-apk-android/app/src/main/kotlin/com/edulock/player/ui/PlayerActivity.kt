@@ -11,6 +11,7 @@ import android.content.Intent
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.SimpleExoPlayer
+import com.google.android.exoplayer2.source.ProgressiveMediaSource
 import com.google.android.exoplayer2.source.hls.HlsMediaSource
 import com.google.android.exoplayer2.drm.DefaultDrmSessionManager
 import com.google.android.exoplayer2.drm.FrameworkMediaDrm
@@ -31,6 +32,10 @@ import com.edulock.player.api.data.ProgressRequest
 import com.edulock.player.api.data.WatermarkLogRequest
 import com.edulock.player.utils.DeviceFingerprintAdvanced
 import com.edulock.player.utils.DeviceChangeDetector
+import com.edulock.player.edu.EduContainer
+import com.edulock.player.edu.EduDataSourceFactory
+import com.edulock.player.edu.EduLoader
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -111,6 +116,8 @@ class PlayerActivity : AppCompatActivity() {
         const val EXTRA_VDO_OTP = "vdoOtp"
         const val EXTRA_VDO_PLAYBACK_INFO = "vdoPlaybackInfo"
         const val EXTRA_VDO_DIRECT_URL = "vdoDirectUrl"
+        // Identificador del contenedor .edu cuando la clase esta protegida asi.
+        const val EXTRA_EDU_CONTENT_ID = "eduContentId"
         // Token con el que se autentica el manifiesto. Para enlaces cdp:// es el
         // mediaToken (bloqueado al video); si falta, se usa el JWT de login.
         const val EXTRA_AUTH_TOKEN = "authToken"
@@ -121,6 +128,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private var exoPlayer: ExoPlayer? = null
+    private var eduAbierto: EduContainer.Abierto? = null
     private var vdoWebView: WebView? = null
     private var playbackBlocked = false
     private var vdoInterrupted = false
@@ -220,7 +228,17 @@ class PlayerActivity : AppCompatActivity() {
 
         // Inicializar reproductor según sourceType
         when (sourceType) {
-            "edu" -> showError("Los videos .edu requieren Edulock para escritorio.")
+            "edu" -> {
+                val contentId = intent.getStringExtra(EXTRA_EDU_CONTENT_ID) ?: ""
+                if (contentId.isNotEmpty()) {
+                    currentVideoId = videoId
+                    currentMediaToken = mediaToken
+                    currentSessionId = intent.getStringExtra(EXTRA_SESSION_ID)?.takeIf { it.isNotBlank() } ?: extractSessionId(mediaToken)
+                    initializeEduPlayer(videoId, contentId, mediaToken, watermarkText)
+                } else {
+                    showError("El contenido protegido no está disponible.")
+                }
+            }
             "vdocipher" -> {
                 if (vdoOtp.isNotEmpty() && vdoPlaybackInfo.isNotEmpty()) {
                     currentVideoId = videoId
@@ -395,6 +413,96 @@ class PlayerActivity : AppCompatActivity() {
             if (drmManager != null) hlsFactory.setDrmSessionManagerProvider { drmManager }
             val hlsSource = hlsFactory.createMediaSource(MediaItem.fromUri(authedManifestUrl))
 
+            montarExoPlayer(hlsSource, videoId, mediaToken, watermarkText)
+
+            playerView.player = exoPlayer
+            loadingView.visibility = android.view.View.VISIBLE
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error inicializando player: ${e.message}")
+            showError("Error al inicializar reproductor: ${e.message}")
+        }
+    }
+
+    /**
+     * Reproduce una clase .edu. La clave se pide al servidor y el contenedor se
+     * descarga cifrado; a partir de ahi ExoPlayer lee por rangos y cada trozo se
+     * descifra justo cuando hace falta. El mp4 completo no existe en ningun
+     * momento, ni en memoria ni en disco.
+     */
+    private fun initializeEduPlayer(videoId: String, contentId: String, mediaToken: String, watermarkText: String) {
+        // Se autentica con el token de reproduccion, igual que el manifiesto HLS:
+        // el JWT de la cuenta no sirve para pedir contenido.
+        val auth = intent.getStringExtra(EXTRA_AUTH_TOKEN)?.takeIf { it.isNotBlank() }
+            ?: mediaToken.takeIf { it.isNotBlank() }
+            ?: ""
+        if (auth.isBlank()) {
+            showError("La sesión de reproducción no está disponible. Vuelve a abrir la clase.")
+            return
+        }
+
+        loadingView.visibility = android.view.View.VISIBLE
+        lifecycleScope.launch {
+            // El aviso de progreso viaja a la interfaz por runOnUiThread, asi que el
+            // ultimo podia llegar DESPUES de poner el titulo y dejaba «Preparando la
+            // clase… 100%» encima del video ya en marcha.
+            var descargando = true
+            try {
+                val preparado = EduLoader.preparar(this@PlayerActivity, contentId, auth) { leidos, total ->
+                    if (total > 0) {
+                        val pct = (leidos * 100 / total).toInt()
+                        runOnUiThread { if (descargando) titleView.text = "Preparando la clase… $pct%" }
+                    }
+                }
+                descargando = false
+                if (isFinishing || isDestroyed) { preparado.abierto.close(); return@launch }
+
+                // Cerrar el contenedor anterior: cada uno mantiene abierto su
+                // archivo y su clave en memoria.
+                try { eduAbierto?.close() } catch (_: Exception) {}
+                eduAbierto = preparado.abierto
+                titleView.text = intent.getStringExtra(EXTRA_VIDEO_TITLE)?.takeIf { it.isNotBlank() }
+                    ?: preparado.titulo.takeIf { it.isNotBlank() }
+                    ?: "Clase"
+
+                // La marca de agua del contenedor la personaliza el servidor con el
+                // correo del alumno; si no viene, se usa la del contenedor.
+                val marca = watermarkText.takeIf { it.isNotBlank() } ?: preparado.marcaDeAgua
+
+                val fuente = ProgressiveMediaSource.Factory(EduDataSourceFactory(preparado.abierto))
+                    .createMediaSource(MediaItem.fromUri(android.net.Uri.parse("edu://" + contentId)))
+
+                montarExoPlayer(fuente, videoId, mediaToken, marca)
+                playerView.player = exoPlayer
+                // Arrancar aqui, y no solo en onResume: el contenedor .edu se
+                // descarga antes de crear el reproductor, asi que cuando llega
+                // este punto onResume ya paso y nadie llamaria a play().
+                if (!captureBlocked && !playbackBlocked) exoPlayer?.play()
+            } catch (e: Exception) {
+                descargando = false
+                Log.e(TAG, "❌ Error preparando .edu: ${e.message}")
+                showError(e.message ?: "No se pudo abrir el contenido protegido.")
+            }
+        }
+    }
+
+    /** Crea el ExoPlayer y engancha los avisos de estado, sea cual sea la fuente. */
+    private fun montarExoPlayer(
+        fuente: com.google.android.exoplayer2.source.MediaSource,
+        videoId: String,
+        mediaToken: String,
+        watermarkText: String,
+    ) {
+            // Soltar el reproductor anterior antes de crear otro. Si no, su
+            // descodificador de audio sigue reservado y el siguiente intento falla
+            // con "Decoder failed: c2.android.aac.decoder": el descodificador AAC
+            // por software solo admite unas pocas instancias a la vez.
+            exoPlayer?.let { viejo ->
+                try { viejo.stop(); viejo.clearMediaItems(); viejo.release() } catch (_: Exception) {}
+            }
+            exoPlayer = null
+            playerView.player = null
+
             // TrackSelector para control de calidad
             trackSelector = DefaultTrackSelector(this).apply {
                 setParameters(buildUponParameters().setForceHighestSupportedBitrate(false))
@@ -405,7 +513,7 @@ class PlayerActivity : AppCompatActivity() {
                 .setTrackSelector(trackSelector!!)
                 .build().apply {
 
-                setMediaSource(hlsSource)
+                setMediaSource(fuente)
                 prepare()
                 
                 // Agregar listener para rastrear reproducción
@@ -441,14 +549,6 @@ class PlayerActivity : AppCompatActivity() {
                     }
                 })
             }
-
-            playerView.player = exoPlayer
-            loadingView.visibility = android.view.View.VISIBLE
-
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error inicializando player: ${e.message}")
-            showError("Error al inicializar reproductor: ${e.message}")
-        }
     }
 
     private fun showQualityButtonIfAvailable() {
@@ -570,7 +670,7 @@ class PlayerActivity : AppCompatActivity() {
                             "Bearer " + getJwtToken()
                         )
                         
-                        if (response.ok) {
+                        if (response.registrado) {
                             Log.i(TAG, "✅ Watermark registrado: $videoId desde ${deviceInfo.deviceModel}")
                         } else {
                             Log.w(TAG, "⚠️ Error en watermark: ${response.error}")
@@ -1071,12 +1171,30 @@ class PlayerActivity : AppCompatActivity() {
         endSession()
         exoPlayer?.release()
         exoPlayer = null
+        // Cerrar el contenedor .edu suelta el archivo y, sobre todo, deja de tener
+        // la clave de contenido a mano: solo vive mientras dura la clase.
+        try { eduAbierto?.close() } catch (_: Exception) {}
+        eduAbierto = null
         // El WebView de VdoCipher tambien hay que soltarlo: si no, queda vivo con
         // su proceso y su sesion despues de cerrar la clase (R05).
         vdoWebView?.let { w ->
             try { w.stopLoading(); w.loadUrl("about:blank"); (w.parent as? android.view.ViewGroup)?.removeView(w); w.destroy() } catch (_: Exception) {}
         }
         vdoWebView = null
+    }
+
+    /**
+     * Llega otro enlace de reproduccion mientras esta clase sigue abierta.
+     * Con instancia unica no se apila otra pantalla, asi que se reinicia esta:
+     * onDestroy suelta el reproductor y el contenedor, y onCreate arranca con el
+     * intent nuevo. Sin esto quedaban varias instancias vivas reteniendo cada una
+     * su descodificador de audio, y la siguiente fallaba con "Decoder failed".
+     */
+    override fun onNewIntent(nuevoIntent: Intent?) {
+        super.onNewIntent(nuevoIntent)
+        if (nuevoIntent == null) return
+        setIntent(nuevoIntent)
+        recreate()
     }
 
     override fun onPause() {

@@ -198,6 +198,8 @@ data class PlayUrlResponse(
     val sessionId: String? = null,
     val ttl: Long? = null,
     val courseId: String? = null,
+    /** Identificador del contenedor .edu cuando la clase esta protegida asi. */
+    val eduContentId: String? = null,
     val watermarkConfig: com.google.gson.JsonElement? = null,
     val error: String? = null,
     /** DRM opcional. Si el servidor entrega un esquema y su licencia, ExoPlayer la usa;
@@ -233,8 +235,13 @@ data class WatermarkLogRequest(
 /** Respuesta de watermark/log. */
 data class WatermarkLogResponse(
     val ok: Boolean = false,
+    // El servidor responde {success:true}; sin leer este campo el registro se
+    // guardaba bien pero la app anotaba un aviso de error que no existia.
+    val success: Boolean = false,
     val error: String? = null
-)
+) {
+    val registrado: Boolean get() = ok || success
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // ESTADO Y VERSIÓN
@@ -400,6 +407,8 @@ data class ResolveResponse(
     val playbackInfo: String? = null,
     val ttl: Long? = null,
     val courseId: String? = null,
+    /** Identificador del contenedor .edu cuando la clase esta protegida asi. */
+    val eduContentId: String? = null,
     val watermarkConfig: com.google.gson.JsonElement? = null,
     val error: String? = null,
     /** DRM opcional (mismo contrato que PlayUrlResponse). */
@@ -409,3 +418,24 @@ data class ResolveResponse(
 
 /** POST /api/auth/logout — cierra la sesión de contenido en el servidor (conserva licencia y dispositivo). */
 data class LogoutRequest(val deviceId: String? = null)
+
+
+/** POST /api/edu/key — el servidor re-deriva la clave del contenedor por sesion. */
+data class EduKeyRequest(
+    val contentId: String
+)
+
+/**
+ * Clave de contenido .edu. Vive solo en memoria mientras dura la reproduccion:
+ * no se guarda en disco ni en preferencias. Sin ella el archivo descargado no
+ * es mas que ruido.
+ */
+data class EduKeyResponse(
+    val cek: String? = null,
+    val contentId: String? = null,
+    val salt: String? = null,
+    val title: String? = null,
+    val watermark: String? = null,
+    val chunkSize: Int? = null,
+    val error: String? = null
+)

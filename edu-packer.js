@@ -11,6 +11,7 @@
 const crypto = require('crypto');
 
 const MAGIC   = Buffer.from('EDU!');   // 45 44 55 21
+const SIG_MAGIC = Buffer.from('EDUS');  // remolque de firma al final del archivo
 const VERSION = 1;
 const CHUNK   = 8192;
 const FLAG_ONLINE    = 1 << 0;
@@ -29,8 +30,26 @@ function deriveCek(masterKeyHex, salt, contentId) {
     return hkdf(Buffer.from(masterKeyHex, 'hex'), info, 32);
 }
 
+/**
+ * Firma el contenedor con la clave privada del servidor y devuelve el archivo
+ * con el remolque de firma. El reproductor lleva solo la clave publica, de modo
+ * que un contenedor alterado no se puede volver a firmar desde el cliente.
+ * Sin clave privada configurada devuelve el contenedor tal cual.
+ */
+function signEdu(contenedor, privateKeyPem) {
+    if (!privateKeyPem) return contenedor;
+    const firma = crypto.sign('sha256', contenedor, {
+        key: privateKeyPem,
+        padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+    });
+    const largo = Buffer.alloc(2);
+    largo.writeUInt16LE(firma.length, 0);
+    return Buffer.concat([contenedor, firma, largo, SIG_MAGIC]);
+}
+
 // Empaqueta un mp4 (Buffer) en un .edu (Buffer). Devuelve { edu, salt, meta }.
-function packEdu(mp4, { contentId, title = '', watermark = 'buyer:{ID_COMPRADOR}', masterKeyHex }) {
+function packEdu(mp4, { contentId, title = '', watermark = 'buyer:{ID_COMPRADOR}', masterKeyHex, signingKeyPem = null }) {
     const salt = crypto.randomBytes(16);
     const cek  = deriveCek(masterKeyHex, salt, contentId);
     const flags = FLAG_ONLINE | FLAG_WATERMARK;
@@ -70,7 +89,9 @@ function packEdu(mp4, { contentId, title = '', watermark = 'buyer:{ID_COMPRADOR}
     // HMAC-SHA256 final
     const mac = crypto.createHmac('sha256', hkdf(cek, Buffer.from('mac'))).update(out).digest();
     out = Buffer.concat([out, mac]);
-    return { edu: out, salt: salt.toString('hex'), meta };
+    // Firma RSA del contenedor completo (opcional pero recomendada).
+    const firmado = signEdu(out, signingKeyPem);
+    return { edu: firmado, salt: salt.toString('hex'), meta, firmado: firmado.length !== out.length };
 }
 
-module.exports = { packEdu, deriveCek };
+module.exports = { packEdu, deriveCek, signEdu, SIG_MAGIC };

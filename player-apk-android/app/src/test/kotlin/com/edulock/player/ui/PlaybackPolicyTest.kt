@@ -71,11 +71,40 @@ class PlaybackPolicyTest {
     }
 
     @Test
-    fun `vdocipher sin credenciales se distingue de un formato no admitido`() {
-        val incompleto = PlaybackPolicy.plan(PlaybackPolicy.Source(sourceType = "vdocipher", mediaToken = "t"))
-        val noAdmitido = PlaybackPolicy.plan(PlaybackPolicy.Source(sourceType = "edu", mediaToken = "t"))
-        assertTrue(incompleto is PlaybackPolicy.Plan.Incomplete)
-        assertTrue(noAdmitido is PlaybackPolicy.Plan.Unsupported)
+    fun `faltar credenciales se distingue de faltar la direccion del contenido`() {
+        val sinOtp = PlaybackPolicy.plan(PlaybackPolicy.Source(sourceType = "vdocipher", mediaToken = "t"))
+        val sinContenedor = PlaybackPolicy.plan(PlaybackPolicy.Source(sourceType = "edu", mediaToken = "t"))
+        assertTrue(sinOtp is PlaybackPolicy.Plan.Incomplete)
+        assertTrue(sinContenedor is PlaybackPolicy.Plan.Incomplete)
+    }
+
+    @Test
+    fun `una clase edu con contenedor y token se reproduce en el telefono`() {
+        // Android ya descifra el contenedor .edu; antes esto devolvia Unsupported
+        // y el alumno de movil se quedaba sin la clase.
+        val plan = PlaybackPolicy.plan(
+            PlaybackPolicy.Source(sourceType = "edu", eduContentId = "edu-abc123", mediaToken = "t")
+        )
+        assertTrue(plan is PlaybackPolicy.Plan.Edu)
+        assertEquals("edu-abc123", (plan as PlaybackPolicy.Plan.Edu).contentId)
+        assertEquals("t", plan.mediaToken)
+    }
+
+    @Test
+    fun `una clase edu sin token de reproduccion no se intenta abrir`() {
+        // Sin el token atado al video el servidor no entrega la clave: es mejor
+        // decirlo que lanzar una descarga que va a fallar.
+        val plan = PlaybackPolicy.plan(PlaybackPolicy.Source(sourceType = "edu", eduContentId = "edu-abc123"))
+        assertTrue(plan is PlaybackPolicy.Plan.Incomplete)
+    }
+
+    @Test
+    fun `una clase edu acepta el sessionToken de un enlace permanente`() {
+        val plan = PlaybackPolicy.plan(
+            PlaybackPolicy.Source(sourceType = "edu", eduContentId = "edu-abc123", sessionToken = "s")
+        )
+        assertTrue(plan is PlaybackPolicy.Plan.Edu)
+        assertEquals("s", (plan as PlaybackPolicy.Plan.Edu).mediaToken)
     }
 
     @Test

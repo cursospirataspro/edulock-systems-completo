@@ -8,14 +8,52 @@
  * <video> por un protocolo propio con soporte de Range. Nunca se escribe a disco.
  */
 const crypto = require('crypto');
+const fs = require('fs');
 
 function hkdf(cek, info, len = 32) {
     return Buffer.from(crypto.hkdfSync('sha256', cek, Buffer.alloc(0), info, len));
 }
 function u32le(n) { const b = Buffer.alloc(4); b.writeUInt32LE(n >>> 0, 0); return b; }
 
+const SIG_MAGIC = Buffer.from('EDUS');
+
+/**
+ * Clave PUBLICA con la que se comprueba la firma de los .edu. Se rellena al
+ * empaquetar el reproductor (scripts/embed-edu-key.js) con la pareja del
+ * servidor. Vacia = no se comprueba firma, que es el comportamiento anterior.
+ */
+const EDU_PUBLIC_KEY = process.env.EDU_PUBLIC_KEY || require('./edu-public-key.js').PUBLIC_KEY || '';
+
+/**
+ * Separa el remolque de firma, si lo hay, y comprueba la firma RSA con la clave
+ * publica que viene con el reproductor. Devuelve { contenedor, firmado }.
+ * Con clave publica configurada, un contenedor SIN firma o con firma invalida se
+ * rechaza: es lo que impide que alguien sustituya el archivo por otro.
+ */
+function verificarFirma(buf, publicKeyPem) {
+    const traeFirma = buf.length > 6 && buf.subarray(buf.length - 4).equals(SIG_MAGIC);
+    if (!traeFirma) {
+        if (publicKeyPem) throw new Error('el contenido no esta firmado y este reproductor exige firma');
+        return { contenedor: buf, firmado: false };
+    }
+    const largo = buf.readUInt16LE(buf.length - 6);
+    const corte = buf.length - 6 - largo;
+    if (corte <= 0) throw new Error('remolque de firma invalido');
+    const contenedor = buf.subarray(0, corte);
+    const firma = buf.subarray(corte, corte + largo);
+    if (!publicKeyPem) return { contenedor, firmado: false };   // no se puede comprobar
+    const ok = crypto.verify('sha256', contenedor, {
+        key: publicKeyPem,
+        padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+    }, firma);
+    if (!ok) throw new Error('firma invalida — el contenido fue alterado o no lo emitio este servidor');
+    return { contenedor, firmado: true };
+}
+
 // Descifra un contenedor .edu completo dada la CEK. Devuelve { mp4: Buffer, meta }.
-function decryptEdu(buf, cek) {
+function decryptEdu(bufEntrada, cek) {
+    const { contenedor: buf } = verificarFirma(bufEntrada, EDU_PUBLIC_KEY);
     if (!(buf[0] === 0x45 && buf[1] === 0x44 && buf[2] === 0x55 && buf[3] === 0x21)) {
         throw new Error('magic inválido: no es un .edu');
     }
@@ -70,10 +108,13 @@ function decryptEdu(buf, cek) {
 
 // Abre un .edu: verifica magic + HMAC (una vez), descifra la cabecera y devuelve
 // el estado para lecturas por rango. NO descifra el video.
-function openEdu(buf, cek) {
-    if (!Buffer.isBuffer(buf) || buf.length < 76 || !Buffer.isBuffer(cek) || cek.length !== 32) {
+function openEdu(bufEntrada, cek) {
+    if (!Buffer.isBuffer(bufEntrada) || bufEntrada.length < 76 || !Buffer.isBuffer(cek) || cek.length !== 32) {
         throw new Error('Contenedor o clave .edu inválidos');
     }
+    // La firma se comprueba ANTES de tocar nada: si el archivo fue alterado o no
+    // lo emitió este servidor, no se sigue adelante.
+    const { contenedor: buf, firmado } = verificarFirma(bufEntrada, EDU_PUBLIC_KEY);
     if (!(buf[0] === 0x45 && buf[1] === 0x44 && buf[2] === 0x55 && buf[3] === 0x21)) {
         throw new Error('magic inválido: no es un .edu');
     }
@@ -150,7 +191,7 @@ function readRange(st, start, end) {
         const intra = bodyByteOff % 16;
         const dec = crypto.createDecipheriv('aes-256-ctr', st.tKey, ctrIv(st.salt.subarray(0, 16), blockIndex));
         if (intra) dec.update(Buffer.alloc(intra));       // alinear el keystream
-        const ct = dec.update(st.buf.subarray(ctStart, ctStart + ctLen));
+        const ct = dec.update(leerCrudo(st, ctStart, ctLen));
         // 2) descifrar el trozo AES-256-GCM
         const sub = hkdf(st.cek, Buffer.concat([Buffer.from('chunk'), u32le(i)]));
         const nonce = Buffer.alloc(12);
@@ -165,4 +206,112 @@ function readRange(st, start, end) {
     return full.subarray(sliceStart, sliceStart + (end - start + 1));
 }
 
-module.exports = { decryptEdu, openEdu, readRange };
+/** Lee bytes crudos del contenedor, esté en memoria o en disco. */
+function leerCrudo(st, off, len) {
+    if (st.buf) return st.buf.subarray(off, off + len);
+    const b = Buffer.alloc(len);
+    let leidos = 0;
+    while (leidos < len) {
+        const n = fs.readSync(st.fd, b, leidos, len - leidos, off + leidos);
+        if (n <= 0) throw new Error('lectura .edu incompleta');
+        leidos += n;
+    }
+    return b;
+}
+
+/** Recorre [desde, hasta) del archivo en bloques, sin cargarlo entero. */
+function recorrerArchivo(fd, desde, hasta, fn) {
+    const bloque = Buffer.alloc(64 * 1024);
+    let pos = desde;
+    while (pos < hasta) {
+        const pedir = Math.min(bloque.length, hasta - pos);
+        const n = fs.readSync(fd, bloque, 0, pedir, pos);
+        if (n <= 0) throw new Error('lectura .edu incompleta');
+        fn(bloque.subarray(0, n));
+        pos += n;
+    }
+}
+
+/**
+ * Abre un .edu que está en DISCO, sin cargarlo en memoria. Es el camino que usa
+ * el reproductor: una clase de 2 GB no cabe en RAM, y el archivo en disco es el
+ * contenedor cifrado, inútil sin la CEK (que solo vive en memoria).
+ *
+ * Devuelve el mismo estado que openEdu, más close().
+ */
+function openEduFile(ruta, cek) {
+    if (!Buffer.isBuffer(cek) || cek.length !== 32) throw new Error('Contenedor o clave .edu inválidos');
+    const fd = fs.openSync(ruta, 'r');
+    try {
+        const total = fs.fstatSync(fd).size;
+        if (total < 76) throw new Error('Contenedor o clave .edu inválidos');
+        const st = { fd, buf: null };
+
+        // 1) Firma. Se comprueba antes que nada y leyendo en bloques.
+        const cola = leerCrudo(st, total - 6, 6);
+        const traeFirma = cola.subarray(2, 6).equals(SIG_MAGIC);
+        let fin = total, firmado = false;
+        if (!traeFirma) {
+            if (EDU_PUBLIC_KEY) throw new Error('el contenido no esta firmado y este reproductor exige firma');
+        } else {
+            const largo = cola.readUInt16LE(0);
+            fin = total - 6 - largo;
+            if (fin <= 0) throw new Error('remolque de firma invalido');
+            if (EDU_PUBLIC_KEY) {
+                const v = crypto.createVerify('sha256');
+                recorrerArchivo(fd, 0, fin, b => v.update(b));
+                const ok = v.verify({ key: EDU_PUBLIC_KEY,
+                    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+                    saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+                }, leerCrudo(st, fin, largo));
+                if (!ok) throw new Error('firma invalida — el contenido fue alterado o no lo emitio este servidor');
+                firmado = true;
+            }
+        }
+
+        const cabeza = leerCrudo(st, 0, 28);
+        if (!(cabeza[0] === 0x45 && cabeza[1] === 0x44 && cabeza[2] === 0x55 && cabeza[3] === 0x21)) {
+            throw new Error('magic inválido: no es un .edu');
+        }
+        if (cabeza.readUInt16LE(4) !== 1 || (cabeza.readUInt16LE(6) & ~3)) throw new Error('Versión .edu no soportada');
+
+        // 2) HMAC, también en bloques.
+        const finCuerpo = fin - 32;
+        if (finCuerpo <= 28) throw new Error('Contenedor .edu truncado');
+        const h = crypto.createHmac('sha256', hkdf(cek, Buffer.from('mac')));
+        recorrerArchivo(fd, 0, finCuerpo, b => h.update(b));
+        if (!crypto.timingSafeEqual(h.digest(), leerCrudo(st, finCuerpo, 32))) {
+            throw new Error('HMAC inválido — contenedor manipulado o clave incorrecta');
+        }
+
+        // 3) Cabecera cifrada.
+        const salt = cabeza.subarray(8, 24);
+        const hdrLen = cabeza.readUInt32LE(24);
+        let off = 28;
+        if (hdrLen < 16 || hdrLen > finCuerpo - off) throw new Error('Cabecera .edu inválida');
+        const hdrCt = leerCrudo(st, off, hdrLen); off += hdrLen;
+        const hd = crypto.createDecipheriv('aes-256-gcm', hkdf(cek, Buffer.from('header')), salt.subarray(0, 12));
+        hd.setAuthTag(hdrCt.subarray(hdrCt.length - 16));
+        const meta = JSON.parse(Buffer.concat([hd.update(hdrCt.subarray(0, hdrCt.length - 16)), hd.final()]).toString('utf8'));
+
+        const chunkSize = meta.chunk_size || 8192;
+        if (!Number.isSafeInteger(meta.orig_len) || meta.orig_len < 1) throw new Error('.edu sin longitud original válida (re-empaquétalo)');
+        if (!Number.isSafeInteger(chunkSize) || chunkSize < 1 || chunkSize > 4194304 ||
+            meta.total_chunks !== Math.ceil(meta.orig_len / chunkSize) ||
+            finCuerpo - off !== meta.orig_len + meta.total_chunks * 20) {
+            throw new Error('Longitudes .edu inconsistentes');
+        }
+
+        return Object.assign(st, {
+            cek, salt, tKey: hkdf(cek, Buffer.from('transport')),
+            bodyStart: off, chunkSize, totalChunks: meta.total_chunks,
+            origLen: meta.orig_len, meta, firmado, ruta,
+            close() { this.closed = true; try { fs.closeSync(this.fd); } catch {} },
+        });
+    } catch (e) {
+        try { fs.closeSync(fd); } catch {}
+        throw e;
+    }
+}
+
+module.exports = { decryptEdu, openEdu, openEduFile, readRange, verificarFirma, EDU_PUBLIC_KEY };

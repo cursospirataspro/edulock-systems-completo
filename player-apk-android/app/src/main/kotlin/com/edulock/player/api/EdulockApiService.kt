@@ -7,6 +7,7 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Header
+import retrofit2.http.Streaming
 import com.edulock.player.api.data.*
 
 /**
@@ -158,6 +159,33 @@ interface EdulockApiService {
         @Path("videoId") videoId: String,
         @Header("Authorization") authorization: String
     ): DrmKeyResponse
+
+    /**
+     * POST /api/edu/key
+     * Clave del contenedor .edu para esta sesion. El servidor la re-deriva cada
+     * vez a partir de su clave maestra y solo la entrega con licencia valida:
+     * nunca se almacena, ni en el servidor ni en el telefono.
+     *
+     * Header: Authorization: Bearer <token de reproduccion>
+     */
+    @POST("api/edu/key")
+    suspend fun getEduKey(
+        @Body request: EduKeyRequest,
+        @Header("Authorization") authorization: String
+    ): EduKeyResponse
+
+    /**
+     * GET /api/edu/data/{contentId}
+     * Descarga el contenedor .edu. Los bytes van cifrados; sin la clave de arriba
+     * no sirven de nada, asi que se pueden guardar en el almacenamiento privado
+     * de la app mientras dura la reproduccion.
+     */
+    @Streaming
+    @GET("api/edu/data/{contentId}")
+    suspend fun downloadEdu(
+        @Path("contentId") contentId: String,
+        @Header("Authorization") authorization: String
+    ): retrofit2.Response<okhttp3.ResponseBody>
 
     // ════════════════════════════════════════════════════════════════════════════════
     // AUDITORÍA Y WATERMARKING

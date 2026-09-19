@@ -304,6 +304,7 @@ class WaitingActivity : AppCompatActivity() {
                 playbackInfo = data.playbackInfo,
                 mediaToken = data.mediaToken,
                 sessionToken = data.sessionToken,
+                eduContentId = data.eduContentId,
                 drmScheme = data.drmScheme,
                 drmLicenseUrl = data.drmLicenseUrl,
                 error = data.error
@@ -325,6 +326,11 @@ class WaitingActivity : AppCompatActivity() {
             is PlaybackPolicy.Plan.VdoDirect -> {
                 intent.putExtra(PlayerActivity.EXTRA_SOURCE_TYPE, "vdocipher_direct")
                 intent.putExtra(PlayerActivity.EXTRA_VDO_DIRECT_URL, plan.directUrl)
+            }
+            is PlaybackPolicy.Plan.Edu -> {
+                intent.putExtra(PlayerActivity.EXTRA_SOURCE_TYPE, "edu")
+                intent.putExtra(PlayerActivity.EXTRA_EDU_CONTENT_ID, plan.contentId)
+                intent.putExtra(PlayerActivity.EXTRA_AUTH_TOKEN, plan.mediaToken)
             }
             is PlaybackPolicy.Plan.Unsupported -> { toast(plan.message); return }
             is PlaybackPolicy.Plan.Incomplete -> { toast(plan.message); return }

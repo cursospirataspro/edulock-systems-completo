@@ -13,8 +13,8 @@ android {
         applicationId 'edulock.systemsoficial.com'
         minSdk 24
         targetSdk 34
-        versionCode 115
-        versionName '1.1.5'
+        versionCode 116
+        versionName '1.1.6'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
@@ -139,6 +139,9 @@ dependencies {
 
     // Testing
     testImplementation 'junit:junit:4.13.2'
+    // org.json real para las pruebas en el PC: el stub de Android devuelve null y
+    // el lector de .edu necesita analizar la cabecera de verdad.
+    testImplementation 'org.json:json:20231013'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }

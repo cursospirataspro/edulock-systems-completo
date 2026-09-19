@@ -62,7 +62,97 @@ const { createActivationValidator } = require('./lib/activation-validator');
 const {verifyResourceSignature,belongsToVideo,rewriteBunnyManifest,segmentIV}=require('./lib/hls-manifest');
 const {fetchBunnyText}=require('./lib/bunny-media-fetch');
 const { createStreamService, STAGES: STREAM_STAGES } = require('./lib/stream-service');
-const streamService = createStreamService({ db, getAccountKey: getBunnyAccountKey, createKey: generateKey, logger: console });
+/**
+ * Empaquetado .edu para las subidas del panel. Mientras este disponible, TODA
+ * clase nueva se guarda como contenedor .edu propio (cifrado, firmado y con la
+ * clave en el servidor) en vez de quedarse como HLS del proveedor.
+ *
+ * Si falta la clave maestra o el almacenamiento no esta configurado, devuelve
+ * false y la subida sigue el camino de siempre: asi activar .edu nunca deja el
+ * panel sin poder subir.
+ */
+const eduUploader = {
+    async disponible() {
+        if (!EDU_MASTER_KEY || EDU_MASTER_KEY.length < 32) return false;
+        if (String(process.env.EDU_DEFAULT_UPLOADS || '1') === '0') return false;
+        try {
+            const { zone, key } = await getBunnyStorageConfig();
+            return !!(zone && key);
+        } catch { return false; }
+    },
+
+    async empaquetarYSubir({ filePath, title, videoId, courseId, moduleId, producerId, operationId, onProgress }) {
+        const { zone, key, host, pull } = await getBunnyStorageConfig();
+        if (!zone || !key) throw new Error('El almacenamiento de video no esta configurado.');
+
+        // El contentId identifica al contenedor y entra en la derivacion de la
+        // clave: se fija una sola vez y no se reutiliza entre clases.
+        const contentId = ('edu-' + (producerId ? producerId.slice(0, 8) + '-' : '') + videoId.slice(0, 8) + '-' +
+            crypto.randomBytes(4).toString('hex')).toLowerCase().replace(/[^a-z0-9._-]/g, '-').slice(0, 60);
+
+        const mp4 = await fs.promises.readFile(filePath);
+        onProgress?.(20);
+        const { packEdu } = require('./edu-packer');
+        const { edu, salt, firmado } = packEdu(mp4, {
+            contentId, title, masterKeyHex: EDU_MASTER_KEY, signingKeyPem: EDU_SIGNING_KEY || null,
+        });
+        if (!firmado) console.warn('[edu] contenedor sin firmar: configura EDU_SIGNING_KEY_FILE');
+        onProgress?.(60);
+
+        const pathInZone = producerId ? `edu/${producerId}/${contentId}.edu` : `edu/${contentId}.edu`;
+        await bunnyStoragePut(host, zone, key, pathInZone, edu);
+        onProgress?.(95);
+
+        const bunnyUrl = pull ? `${pull}/${pathInZone}` : `https://${host}/${zone}/${pathInZone}`;
+        await db.registerEduContent({ contentId, salt, bunnyUrl, title,
+            watermark: 'buyer:{ID_COMPRADOR}', flags: 3, courseId: courseId || null, videoId, producerId: producerId || null });
+
+        const existente = await db.getCatalogById(videoId);
+        if (!existente) {
+            await db.addToCatalog({ videoId, title, status: 'ready', sourceType: 'edu',
+                courseId: courseId || null, producerId: producerId || null,
+                uploadedAt: new Date().toISOString(), segmentCount: 0 });
+        } else {
+            await db.updateCatalogEntry({ videoId, status: 'ready', error: null });
+        }
+        onProgress?.(100);
+        return { contentId, bytes: edu.length, firmado };
+    },
+
+    /**
+     * Borra un contenedor del almacenamiento. Lo llama la cola de borrados del
+     * proveedor cuando se elimina una clase, con reintentos: si Bunny esta caido
+     * el borrado no se pierde, se reintenta luego.
+     *
+     * Devuelve 'done' si se borro, 'gone' si ya no estaba.
+     */
+    async borrar(zonaPedida, rutaEnZona) {
+        const { zone, key, host } = await getBunnyStorageConfig();
+        const zona = zonaPedida || zone;
+        if (!zona || !key) throw new Error('El almacenamiento de video no esta configurado.');
+        if (!rutaEnZona || rutaEnZona.includes('..')) throw new Error('Ruta de contenedor invalida.');
+
+        const status = await new Promise((resolve, reject) => {
+            const q = https.request({ hostname: host, path: '/' + zona + '/' + rutaEnZona,
+                method: 'DELETE', headers: { AccessKey: key }, timeout: 30000 }, (res) => {
+                res.resume();
+                res.on('end', () => resolve(res.statusCode));
+            });
+            q.on('error', reject);
+            q.on('timeout', () => { q.destroy(); reject(new Error('timeout borrando el contenedor')); });
+            q.end();
+        });
+        if (status === 404) return 'gone';
+        if (status >= 400) {
+            const e = new Error('El almacenamiento rechazo el borrado (HTTP ' + status + ')');
+            e.httpStatus = status;
+            throw e;
+        }
+        return 'done';
+    },
+};
+
+const streamService = createStreamService({ db, getAccountKey: getBunnyAccountKey, createKey: generateKey, logger: console, edu: eduUploader });
 const https = require('https');
 const http  = require('http');
 
@@ -605,6 +695,22 @@ const playerHandshake = createPlayerHandshake({
 // El servidor la re-deriva por sesión y la entrega solo con licencia válida; nunca
 // se almacena la CEK. MASTER_KEY debe ser independiente de JWT_SECRET.
 const EDU_MASTER_KEY = process.env.EDU_MASTER_KEY || '';
+// Clave privada con la que se FIRMAN los contenedores .edu. El reproductor lleva
+// solo la publica, asi que un contenedor alterado no se puede volver a firmar
+// desde el cliente. Sin esta clave los .edu se generan sin firmar.
+const EDU_SIGNING_KEY = (() => {
+    // La clave privada vive en un archivo PEM con permisos restringidos, no en una
+    // variable de entorno: asi no hay que escapar saltos de linea y el archivo se
+    // protege con permisos del sistema (chmod 600).
+    const ruta = process.env.EDU_SIGNING_KEY_FILE || '';
+    if (!ruta) return '';
+    try {
+        return fs.readFileSync(ruta, 'utf8');
+    } catch (e) {
+        console.warn('[edu] no se pudo leer la clave de firma:', e.message);
+        return '';
+    }
+})();
 function deriveEduCek(saltHex, contentId) {
     const salt = Buffer.from(saltHex, 'hex');
     const info = Buffer.concat([Buffer.from('edu-cek|'), salt, Buffer.from('|'), Buffer.from(contentId)]);
@@ -1225,6 +1331,12 @@ app.post('/api/auth/login-email', authRateLimit, async (req, res) => {
                 label: student.name || student.email,
                 deviceId: deviceId || 'unknown',
                 admin: false,
+                // Iniciar sesion NO da contenido: hace falta activar la licencia.
+                // El acceso ya lo negaba la comprobacion contra la base, pero sin
+                // esta marca el camino del PC se quedaba con una sola capa,
+                // mientras que el del telefono tenia dos. Ahora son iguales.
+                role: 'student',
+                hasLicense: false,
             },
             JWT_SECRET,
             { expiresIn: STUDENT_JWT_EXPIRES, issuer: 'reproductor-cursos' }
@@ -5414,7 +5526,7 @@ app.post('/api/producer/upload', requireProducer, upload.single('video'), async 
 
         const mp4 = fs.readFileSync(req.file.path);
         const { packEdu } = require('./edu-packer');
-        const { edu, salt } = packEdu(mp4, { contentId, title, masterKeyHex: EDU_MASTER_KEY });
+        const { edu, salt } = packEdu(mp4, { contentId, title, masterKeyHex: EDU_MASTER_KEY, signingKeyPem: EDU_SIGNING_KEY || null });
 
         const pathInZone = `edu/${pid}/${contentId}.edu`;   // aislamiento por productor en Bunny
         await bunnyStoragePut(host, zone, key, pathInZone, edu);
@@ -5800,7 +5912,7 @@ app.post('/api/edu/upload', requireAdmin, upload.single('video'), async (req, re
         // 1) Empaquetar a .edu (cifrado, derivando la CEK del MASTER_KEY del servidor).
         const mp4 = fs.readFileSync(req.file.path);
         const { packEdu } = require('./edu-packer');
-        const { edu, salt } = packEdu(mp4, { contentId, title, masterKeyHex: EDU_MASTER_KEY });
+        const { edu, salt } = packEdu(mp4, { contentId, title, masterKeyHex: EDU_MASTER_KEY, signingKeyPem: EDU_SIGNING_KEY || null });
 
         // 2) Subir el .edu a TU Bunny Storage.
         const pathInZone = `edu/${contentId}.edu`;

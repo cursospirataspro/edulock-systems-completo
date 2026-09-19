@@ -1,0 +1,156 @@
+AUDITORÍA DEL CONTENEDOR .edu — 2026-09-19T00:24:57.210Z
+Implementación: edu-packer.js (escritura) / player-app/edu-native.js (lectura)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A. ESTRUCTURA REAL DEL ARCHIVO (parseada del binario, no del código)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Mapa del archivo (3.154.822 bytes):
+    0x0000  magic          4 B   "EDU!"  (45445521)
+    0x0004  version        2 B   1  (uint16 LE)
+    0x0006  flags          2 B   3  (0b0011 = online|watermark)
+    0x0008  salt          16 B   0cb4acc2fe237ed97e183d0e7cf61061
+    0x0018  hdr_len        4 B   295  (uint32 LE)
+    0x001C  cabecera     295 B   AES-256-GCM (ct‖tag16)
+    0x0143  datos     3154205 B   AES-256-CTR sobre trozos AES-256-GCM
+    0x302260  hmac          32 B   HMAC-SHA256 de todo lo anterior
+    0x302280  firma        256 B   RSA-PSS/SHA-256 + u16 largo + "EDUS"
+
+  Contra la especificación que me diste:
+
+  NO CUMPLE   magic = "EDU\x01"
+                 → leído "EDU!" (45445521). El formato real usa "EDU!" = 45445521.
+  CUMPLE      version uint16 LE en el offset 4
+                 → valor 1
+  CUMPLE      flags uint16 LE en el offset 6
+                 → valor 3
+  NO CUMPLE   manifest_len (uint32 LE) en el offset 8
+                 → en el offset 8 hay el salt de 16 B; hdr_len está en el 24.
+  NO CUMPLE   sig_len (uint16 LE) en la cabecera fija
+                 → el largo de la firma va al FINAL del archivo, en los 6 últimos bytes.
+  PARCIAL     manifiesto JSON UTF-8
+                 → existe un manifiesto JSON, pero CIFRADO (AES-256-GCM). Entropía de la cabecera: 7.270 bits/byte. Es más fuerte que la especificación, no menos: sin la clave no se sabe ni el título.
+  NO CUMPLE   firma Ed25519 (64 B)
+                 → hay firma de 256 B = RSA-2048-PSS. Distinta de la especificación, equivalente en seguridad (~112 bits), más lenta y más larga.
+  CUMPLE      encrypt-then-MAC
+                 → el HMAC-SHA256 cubre magic+cabecera+datos cifrados; se comprueba antes de descifrar nada.
+  CUMPLE      encrypt-then-sign
+                 → la firma RSA cubre el contenedor entero incluido el HMAC (offsets 0…3154560).
+  NO CUMPLE   bloques de 1 MiB
+                 → los bloques son de 8192 B (8 KiB). 385 bloques para 3146505 B.
+  ·           Nonce por bloque: salt[0:4] ‖ uint64 LE(índice) = 12 B. La especificación pedía 8 B aleatorios ‖ 4 B índice BE.
+  PARCIAL     nonce irrepetible con la misma clave
+                 → se cumple el objetivo (la CEK es única por archivo y el índice no se repite dentro del archivo), pero por una vía distinta: los 4 B fijos vienen del salt, no son 8 B aleatorios por entrada.
+  PARCIAL     AAD "nombre|índice|total"
+                 → NO se usa AAD. El ligado del bloque a su posición se consigue con la subclave por bloque HKDF(cek,"chunk"‖idx) y el nonce con el índice: mover un bloque a otra posición hace fallar el tag. Es equivalente en efecto, distinto en mecanismo.
+  NO CUMPLE   clave por contraseña con scrypt N=2^15
+                 → no hay modo contraseña. La CEK se deriva en el servidor: HKDF(MASTER_KEY, "edu-cek|"‖salt‖"|"‖contentId) y se entrega por sesión con licencia válida.
+  NO CUMPLE   clave por licencia con RSA-OAEP-SHA256
+                 → la CEK no viaja envuelta dentro del archivo: se pide al servidor (/api/edu/key) sobre HTTPS y con JWT de reproducción. Es un modelo online, no offline.
+  PARCIAL     el manifiesto lleva el SHA-256 de cada entrada
+                 → lleva orig_sha256 del vídeo completo, no un hash por bloque. La integridad por bloque la da el tag GCM y la del archivo el HMAC.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B. PRUEBAS EJECUTADAS SOBRE ARCHIVOS REALES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  B1. Patrones repetidos (1 MiB de ceros)
+      bloques de 16 B en la zona de datos : 65.953
+      bloques repetidos                   : 0
+      entropía de la zona de datos        : 7.9998 bits/byte
+  CUMPLE      0 bloques repetidos con entrada de solo ceros
+                 → frente a los 94 medidos en el .ipr (ECB).
+
+  B2. Reutilización de clave y nonce
+      salt archivo 1 : faccf7a46d2b462860de9cac2d1c6055
+      salt archivo 2 : 567b9db61bc646baf8c971b07404c6b9
+      CEK distintas  : true
+      cifrados distintos: true
+  CUMPLE      mismo vídeo empaquetado dos veces → CEK y bytes distintos
+                 → el salt es aleatorio por archivo y la CEK se deriva de él.
+
+  B3. Manipulación de un byte
+      con firma  : firma invalida — el contenido fue alterado o no lo emitio este servidor
+      sin firma  : HMAC inválido — contenedor manipulado o clave incorrecta
+  CUMPLE      un byte alterado se detecta
+                 → con firma la rechaza la firma; quitando la firma, la rechaza el HMAC antes de descifrar.
+
+  B3b. ¿Y si alguien recalcula el HMAC? (tiene la CEK, caso peor)
+      resultado  : Error: Unsupported state or unable to authenticate data
+  CUMPLE      el tag GCM del bloque lo detecta igualmente
+                 → Error: Unsupported state or unable to authenticate data
+
+  B4. Firma de otro emisor
+      resultado  : firma invalida — el contenido fue alterado o no lo emitio este servidor
+  CUMPLE      un .edu firmado por otra clave se rechaza al abrir
+                 → firma invalida — el contenido fue alterado o no lo emitio este servidor
+      sin firmar : el contenido no esta firmado y este reproductor exige firma
+  CUMPLE      un .edu SIN firmar también se rechaza
+                 → no se puede degradar el archivo quitándole la firma.
+
+  B5. Credencial incorrecta
+      clave al azar        : HMAC inválido — contenedor manipulado o clave incorrecta
+      CEK de otro contenido: HMAC inválido — contenedor manipulado o clave incorrecta
+  CUMPLE      sin la credencial correcta no se descifra ni un bloque
+                 → falla en el HMAC, antes de tocar los datos.
+
+  B6. Acceso aleatorio (rangos inclusivos, estilo HTTP Range)
+      inicio               [0…4095] →     4096 B  idéntico
+      cruce de bloque      [8182…12287] →     4106 B  idéntico
+      medio                [1500000…1500999] →     1000 B  idéntico
+      final exacto         [3142409…3146504] →     4096 B  idéntico
+      más allá del final   [3146495…3246504] →       10 B  idéntico
+      un byte              [2000000…2000000] →        1 B  idéntico
+      todo                 [0…3146504] →  3146505 B  idéntico
+  CUMPLE      todos los rangos coinciden byte a byte con el original
+  ·           Para leer 1 000 B en la posición 1 500 000 se descifran 1 bloque(s) de 8192 B, no el archivo entero.
+
+  B7. Último bloque (el más corto)
+      orig_len 3146505 = 385 bloques; el último mide 777 B
+  CUMPLE      el último bloque se descifra entero y correcto
+                 → 777 B
+  CUMPLE      leer más allá del final devuelve vacío, no basura
+
+  B8. Ida y vuelta
+      SHA-256 original : 5036caa24b94e84c7b0a7d368df29e6862578f20cdaf488f0918feea38be0efa
+      SHA-256 extraído : 5036caa24b94e84c7b0a7d368df29e6862578f20cdaf488f0918feea38be0efa
+      manifiesto dice  : 5036caa24b94e84c7b0a7d368df29e6862578f20cdaf488f0918feea38be0efa
+  CUMPLE      extracción byte-idéntica
+
+  Coste de espacio: 3.146.505 B → 3.154.822 B  (+0.26 %)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COMPARACIÓN MEDIDA CON EL .ipr
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Archivo: test video.ipr  (27.969.976 bytes)
+  magic  : 7AB3F973
+
+  Entradas encontradas:
+    config                                         12044 B
+    video                                        9338988 B
+    069bb2930c92fc710c12bb4715a9242a.zip        11699358 B
+    069bb2930c92fc710c12bb4715a9242a.zip.sign         128 B
+    0cdce8d46536dfdc679a8e867b5ba1a5.zip         6919085 B
+    0cdce8d46536dfdc679a8e867b5ba1a5.zip.sign         128 B
+
+  Entrada "video" (9.338.988 B):
+    bloques de 16 B      : 583.685
+    bloques repetidos    : 94   ← huella de AES-ECB
+    entropía             : 7.9999 bits/byte
+
+  El mismo experimento sobre mi .edu con 1 MiB de ceros: 0 bloques repetidos.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RESUMEN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Puntos que NO cumplen la especificación que diste : 7
+  Puntos parciales (objetivo cumplido, vía distinta): 4
+
+  Lo que sí quedó demostrado sobre los bytes reales:
+   · 0 bloques repetidos con 1 MiB de ceros (el .ipr tiene 94).
+   · CEK y bytes distintos en cada empaquetado del mismo vídeo.
+   · Un byte alterado se detecta por firma, por HMAC y por el tag GCM del bloque.
+   · Firma ajena y contenedor sin firmar: rechazados.
+   · Sin la credencial no se descifra ni un bloque.
+   · Lectura por rangos exacta, incluido el último bloque corto.
+   · Extracción byte-idéntica (SHA-256 coincide).
